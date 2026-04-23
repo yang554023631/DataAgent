@@ -4,11 +4,27 @@
 
 import time
 from src.tools.executor import execute_ad_report_query
+from src.agents.nlu_agent import nlu_agent
 
 async def nlu_node(state: dict) -> dict:
     """意图理解节点"""
-    # TODO: 实现
-    return {"query_intent": None, "ambiguity": None}
+    user_input = state.get("user_input", "")
+    conversation_history = state.get("conversation_history", [])
+
+    try:
+        query_intent = await nlu_agent(user_input, conversation_history)
+
+        return {
+            "query_intent": query_intent,
+            "ambiguity": query_intent.get("ambiguity"),
+            "error": None
+        }
+    except Exception as e:
+        return {
+            "query_intent": None,
+            "ambiguity": None,
+            "error": {"type": "nlu_error", "message": str(e)}
+        }
 
 async def hitl_node(state: dict) -> dict:
     """人机协调节点"""
