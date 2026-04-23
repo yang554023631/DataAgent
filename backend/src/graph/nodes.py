@@ -6,6 +6,8 @@ import time
 from src.tools.executor import execute_ad_report_query
 from src.agents.nlu_agent import nlu_agent
 from src.agents.planner_agent import planner_agent
+from src.agents.analyst_agent import analyst_agent
+from src.agents.reporter_agent import reporter_agent
 
 async def nlu_node(state: dict) -> dict:
     """意图理解节点"""
@@ -98,14 +100,47 @@ async def executor_node(state: dict) -> dict:
 
 async def analyst_node(state: dict) -> dict:
     """数据分析节点"""
-    # TODO: 实现
-    return {
-        "analysis_result": None,
-        "drill_down_level": state.get("drill_down_level", 0),
-        "needs_drill_down": False
-    }
+    query_result = state.get("query_result", {})
+    query_request = state.get("query_request", {})
+
+    try:
+        result = await analyst_agent(query_result, query_request)
+
+        return {
+            "analysis_result": result,
+            "drill_down_level": state.get("drill_down_level", 0),
+            "needs_drill_down": False,
+            "error": None
+        }
+    except Exception as e:
+        return {
+            "analysis_result": None,
+            "drill_down_level": state.get("drill_down_level", 0),
+            "needs_drill_down": False,
+            "error": {"type": "analyst_error", "message": str(e)}
+        }
 
 async def reporter_node(state: dict) -> dict:
     """报告生成节点"""
-    # TODO: 实现
-    return {"final_report": None}
+    query_intent = state.get("query_intent", {})
+    query_request = state.get("query_request", {})
+    query_result = state.get("query_result", {})
+    analysis_result = state.get("analysis_result", {})
+
+    try:
+        final_report = await reporter_agent(
+            query_intent,
+            query_request,
+            query_result,
+            analysis_result
+        )
+
+        return {
+            "final_report": final_report,
+            "error": None
+        }
+    except Exception as e:
+        return {
+            "final_report": None,
+            "error": {"type": "reporter_error", "message": str(e)}
+        }
