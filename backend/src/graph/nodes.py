@@ -27,9 +27,19 @@ async def nlu_node(state: dict) -> dict:
         }
 
 async def hitl_node(state: dict) -> dict:
-    """人机协调节点"""
-    # TODO: 实现
-    return {"user_feedback": None}
+    """
+    人机协调节点
+
+    注意：此节点执行前 Graph 已经 interrupt 等待用户输入，
+    用户反馈已经通过 API 写入 user_feedback
+    """
+    user_feedback = state.get("user_feedback")
+    clarification_count = state.get("clarification_count", 0) + 1
+
+    return {
+        "user_feedback": user_feedback,
+        "clarification_count": clarification_count
+    }
 
 async def planner_node(state: dict) -> dict:
     """查询规划节点"""

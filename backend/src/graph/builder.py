@@ -66,7 +66,7 @@ def build_graph():
     # Reporter -> 结束
     graph.add_edge("reporter", END)
 
-    return graph.compile()
+    return graph.compile(interrupt_before=["hitl"])
 
 # 导出编译好的Graph
 app = build_graph()
