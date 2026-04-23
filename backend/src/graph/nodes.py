@@ -5,6 +5,7 @@
 import time
 from src.tools.executor import execute_ad_report_query
 from src.agents.nlu_agent import nlu_agent
+from src.agents.planner_agent import planner_agent
 
 async def nlu_node(state: dict) -> dict:
     """意图理解节点"""
@@ -43,8 +44,23 @@ async def hitl_node(state: dict) -> dict:
 
 async def planner_node(state: dict) -> dict:
     """查询规划节点"""
-    # TODO: 实现
-    return {"query_request": None, "query_warnings": []}
+    query_intent = state.get("query_intent", {})
+    user_feedback = state.get("user_feedback")
+
+    try:
+        result = await planner_agent(query_intent, user_feedback)
+
+        return {
+            "query_request": result["query_request"],
+            "query_warnings": result["query_warnings"],
+            "error": None
+        }
+    except Exception as e:
+        return {
+            "query_request": None,
+            "query_warnings": [],
+            "error": {"type": "planner_error", "message": str(e)}
+        }
 
 async def executor_node(state: dict) -> dict:
     """数据执行节点：调用 CustomReport 接口"""
