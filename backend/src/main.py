@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config.settings import settings
+from src.api.sessions import router as sessions_router
 
 app = FastAPI(title="Ad Report Agent API", version="0.1.0")
 
@@ -18,6 +19,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(sessions_router)
 
 @app.get("/health")
 async def health_check():
