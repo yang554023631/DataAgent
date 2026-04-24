@@ -16,6 +16,7 @@ async def planner_agent(query_intent: Dict[str, Any], user_feedback: Dict[str, A
     """
     # Step 1: 应用业务规则
     intent_with_rules = apply_business_rules.func(query_intent)
+    business_warnings = intent_with_rules.pop("warnings", [])
 
     # Step 2: 自动选择图表类型
     metrics = intent_with_rules.get("metrics", [])
@@ -33,7 +34,10 @@ async def planner_agent(query_intent: Dict[str, Any], user_feedback: Dict[str, A
     }
 
     # Step 4: 校验参数生成警告
-    query_warnings = validate_and_warn.func(query_request)
+    validation_warnings = validate_and_warn.func(query_request)
+
+    # 合并业务规则警告和校验警告
+    query_warnings = business_warnings + validation_warnings
 
     return {
         "query_request": query_request,
