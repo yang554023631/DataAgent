@@ -231,11 +231,23 @@ async def reporter_agent(
     end = time_range.get("end_date", "")
     title = f"{start} ~ {end} 广告报表分析"
 
+    # 5. 生成图表配置（用于前端渲染）
+    group_by = query_request.get("group_by", [])
+    chart_config = None
+    if data and len(data) > 1 and metrics:  # 至少有2条数据才渲染图表
+        chart_type = auto_select_chart_type_for_comparison(group_by)
+        chart_config = {
+            "type": chart_type,
+            "series": [{"name": get_metric_display_name.func(m), "color": "#3b82f6"} for m in metrics],
+            "metrics": metrics
+        }
+
     return {
         "title": title,
         "time_range": {"start": start, "end": end},
         "metrics": formatted_metrics,
         "highlights": highlights,
         "data_table": {"columns": columns, "rows": rows},
+        "chart_config": chart_config,
         "next_queries": next_queries
     }

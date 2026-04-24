@@ -9,6 +9,7 @@ interface ChartSeriesConfig {
 interface ChartConfig {
   type: 'line' | 'bar' | 'pie';
   series: ChartSeriesConfig[];
+  metrics?: string[];
   comparison_data?: {
     period1: { name: string; color: string; data: any[] };
     period2: { name: string; color: string; data: any[] };
@@ -173,20 +174,24 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
     }
   }
 
-  // 普通查询图表渲染（原有逻辑）
-  if (data && data.length > 0) {
-    const primaryMetric = metrics[0] || 'clicks';
+  // 普通查询图表渲染
+  if (data && data.length > 1) {  // 至少2条数据才渲染图表
+    // 使用后端传的 chart_config 来确定图表类型和指标
+    const chartType = report?.chart_config?.type || 'bar';
+    const primaryMetric = report?.chart_config?.metrics?.[0] || 'clicks';
     const categories: string[] = [];
     const values: number[] = [];
 
     data.slice(0, 15).forEach((item) => {
-      const category = item.name || item[groupBy?.[0] || 'name'] || '-';
+      // 第一列作为分类（维度值）
+      const firstKey = Object.keys(item)[0];
+      const category = item[firstKey] || item.name || '-';
       categories.push(String(category));
       values.push(Number(item[primaryMetric]) || 0);
     });
 
-    // 根据数据类型选择图表
-    const isTimeDimension = groupBy.some((g) => g.includes('date') || g.includes('hour') || g.includes('day'));
+    // 根据图表类型渲染
+    const isTimeDimension = chartType === 'line';
 
     if (isTimeDimension) {
       // 时间趋势用折线图

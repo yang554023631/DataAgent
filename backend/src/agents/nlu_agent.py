@@ -13,16 +13,10 @@ def detect_comparison_query(text: str) -> Tuple[bool, Optional[TimeRange], Optio
     """
     检测是否为对比查询，并尝试解析两个时间范围
 
+    只有当明确包含两个时间周期时，才判断为对比查询，避免误判"细分对比"等
+
     返回: (is_comparison, time_range1, time_range2)
     """
-    # 对比关键词
-    comparison_keywords = ["对比", "比较", "vs", "VS", "和", "与", "环比"]
-    is_comparison = any(kw in text for kw in comparison_keywords)
-
-    if not is_comparison:
-        return False, None, None
-
-    # 尝试识别常见的对比模式
     # 模式1: "上个月和上上个月"
     if "上个月" in text and "上上个月" in text:
         range1 = parse_time_range.invoke("上个月")
@@ -53,9 +47,19 @@ def detect_comparison_query(text: str) -> Tuple[bool, Optional[TimeRange], Optio
         range2 = parse_time_range.invoke("上周")
         return True, range1, range2
 
-    # 默认：识别到对比关键词但没解析到两个时间范围
-    # 返回主时间范围和 None，由后续流程处理
-    return True, None, None
+    # 模式4: "3月 vs 4月" 或 "3月和4月"
+    import re
+    month_pattern = r'(\d+月)\s*(vs|VS|和|与)\s*(\d+月)'
+    match = re.search(month_pattern, text)
+    if match:
+        month1 = match.group(1)
+        month2 = match.group(3)
+        range1 = parse_time_range.invoke(month1)
+        range2 = parse_time_range.invoke(month2)
+        return True, range1, range2
+
+    # 其他情况：不判断为对比查询，避免误判"细分对比"、"维度对比"等
+    return False, None, None
 
 async def nlu_agent(user_input: str, conversation_history: list = None, existing_advertiser_ids: List[str] = None) -> Dict[str, Any]:
     """
