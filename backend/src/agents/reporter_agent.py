@@ -188,11 +188,12 @@ async def reporter_agent(
     # 2. 生成亮点/告警
     highlights = []
     for anomaly in anomalies:
-        emoji = "🟢" if anomaly.get("change_percent", 0) > 0 else "🔴"
+        change_percent = anomaly.get("change_percent", 0) or 0
+        emoji = "🟢" if change_percent > 0 else "🔴"
         metric_name = get_metric_display_name.func(anomaly.get("metric", ""))
-        change_str = format_change.func(anomaly.get("change_percent", 0)) if anomaly.get("change_percent") is not None else ""
+        change_str = format_change.func(change_percent) if change_percent != 0 else ""
         highlights.append({
-            "type": "positive" if anomaly.get("change_percent", 0) > 0 else "negative",
+            "type": "positive" if change_percent > 0 else "negative",
             "text": f"{emoji} {anomaly.get('dimension_value', '')} {metric_name} 异常：{change_str}"
         })
 
