@@ -30,11 +30,13 @@ class AdReportState(TypedDict):
     clarification_count: int
 
     # 查询规划输出
-    query_request: Optional[Dict]
+    query_request: Optional[Dict]  # 向后兼容：单个查询
+    query_requests: List[Dict]     # 支持多个查询（对比查询）
     query_warnings: List[str]
 
     # 数据执行输出
-    query_result: Optional[Dict]
+    query_result: Optional[Dict]    # 向后兼容：单个结果
+    query_results: List[Dict]       # 支持多个结果（对比查询）
     execution_time_ms: Optional[int]
 
     # 数据分析输出
@@ -44,6 +46,10 @@ class AdReportState(TypedDict):
 
     # 报告生成输出
     final_report: Optional[Dict]
+
+    # 广告主选择
+    advertiser_ids: List[str]
+    show_advertiser_list: bool
 
     # 执行控制
     error: Optional[Dict]

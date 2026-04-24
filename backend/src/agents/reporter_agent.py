@@ -1,4 +1,4 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from src.tools.formatters import (
     format_number,
     format_percent,
@@ -6,6 +6,142 @@ from src.tools.formatters import (
     format_change,
     get_metric_display_name
 )
+
+
+def auto_select_chart_type_for_comparison(group_by: List[str]) -> str:
+    """根据维度自动选择对比图表类型"""
+    time_dimensions = {"data_date", "data_day", "data_hour", "date", "day", "hour"}
+    if any(dim in group_by for dim in time_dimensions):
+        return "line"  # 时间维度对比用折线图
+    return "bar"  # 分类维度对比用柱状图
+
+
+def format_comparison_report(
+    query_intent: Dict[str, Any],
+    query_requests: List[Dict[str, Any]],
+    query_results: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """格式化对比查询报告"""
+    if len(query_results) < 2:
+        return None
+
+    result1, result2 = query_results[:2]
+    data1 = result1.get("data", [])
+    data2 = result2.get("data", [])
+    metrics = query_requests[0].get("metrics", [])
+    group_by = query_requests[0].get("group_by", [])
+
+    # 计算两个周期的总指标
+    formatted_metrics = []
+    for metric in metrics:
+        total1 = sum(float(row.get(metric, 0)) for row in data1) if data1 else 0
+        total2 = sum(float(row.get(metric, 0)) for row in data2) if data2 else 0
+
+        # 根据指标类型选择格式化
+        if metric in ["ctr", "cvr"]:
+            value1 = format_percent.func(total1 / len(data1) if data1 else 0)
+            value2 = format_percent.func(total2 / len(data2) if data2 else 0)
+        elif metric == "cost":
+            value1 = format_currency.func(total1)
+            value2 = format_currency.func(total2)
+        else:
+            value1 = format_number.func(total1)
+            value2 = format_number.func(total2)
+
+        # 计算变化率
+        change = (total2 - total1) / total1 * 100 if total1 != 0 else 0
+        trend = "up" if change > 0 else "down" if change < 0 else "flat"
+
+        formatted_metrics.append({
+            "name": get_metric_display_name.func(metric),
+            "period1": value1,
+            "period2": value2,
+            "change": f"{change:+.1f}%",
+            "trend": trend
+        })
+
+    # 获取两个周期的标签
+    time_range1 = query_requests[0].get("time_range", {})
+    time_range2 = query_requests[1].get("time_range", {})
+    period1_label = f"{time_range1.get('start_date', '')}"
+    period2_label = f"{time_range2.get('start_date', '')}"
+
+    # 生成图表配置
+    chart_type = auto_select_chart_type_for_comparison(group_by)
+
+    # 颜色配置（绿色表示第一个周期，蓝色表示第二个周期）
+    colors = ["#10b981", "#3b82f6"]
+
+    chart_config = {
+        "type": chart_type,
+        "series": [
+            {"name": period1_label, "color": colors[0]},
+            {"name": period2_label, "color": colors[1]}
+        ],
+        "comparison_data": {
+            "period1": {"name": period1_label, "color": colors[0], "data": data1},
+            "period2": {"name": period2_label, "color": colors[1], "data": data2}
+        }
+    }
+
+    # 生成标题
+    title = f"{period1_label} vs {period2_label} 对比分析"
+
+    # 生成亮点（变化率提示）
+    highlights = []
+    for metric in formatted_metrics:
+        if metric["trend"] == "up":
+            highlights.append({
+                "type": "positive",
+                "text": f"🟢 {metric['name']} 上升 {metric['change']}，表现良好"
+            })
+        elif metric["trend"] == "down":
+            highlights.append({
+                "type": "negative",
+                "text": f"🔴 {metric['name']} 下降 {metric['change']}，需要关注"
+            })
+
+    # 准备合并后的表格数据
+    columns = ["维度", f"{period1_label}", f"{period2_label}", "变化"]
+    rows = []
+
+    # 如果有分组维度，展示每个维度的对比
+    if group_by and data1 and data2 and len(data1) == len(data2):
+        for i, (row1, row2) in enumerate(zip(data1, data2)):
+            dim_value = row1.get("name") or row1.get(group_by[0]) or f"第{i+1}项"
+            metric_value1 = row1.get(metrics[0], 0) if metrics else 0
+            metric_value2 = row2.get(metrics[0], 0) if metrics else 0
+            change = (metric_value2 - metric_value1) / metric_value1 * 100 if metric_value1 != 0 else 0
+            rows.append([
+                str(dim_value),
+                format_number.func(metric_value1),
+                format_number.func(metric_value2),
+                f"{change:+.1f}%"
+            ])
+    else:
+        # 无分组维度，展示总指标对比
+        for metric in formatted_metrics:
+            rows.append([
+                metric["name"],
+                metric["period1"],
+                metric["period2"],
+                metric["change"]
+            ])
+
+    return {
+        "title": title,
+        "is_comparison": True,
+        "time_range": {"start": period1_label, "end": period2_label},
+        "metrics": formatted_metrics,
+        "highlights": highlights,
+        "data_table": {"columns": columns, "rows": rows},
+        "chart_config": chart_config,
+        "next_queries": [
+            "查看更多维度的对比分析",
+            "分渠道对比效果",
+            "分受众对比效果"
+        ]
+    }
 
 def get_trend(change: float) -> str:
     """判断趋势：up, down, flat"""
