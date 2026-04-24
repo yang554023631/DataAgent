@@ -93,7 +93,7 @@ describe('ChartRenderer', () => {
       )
 
       const container = screen.getByTestId('echarts-mock').parentElement
-      expect(container).toHaveClass('h-[520px]')
+      expect(container).toHaveClass('min-h-[500px]')
     })
   })
 

@@ -79,19 +79,27 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
           data: [period1.name, period2.name],
         },
         grid: {
-          left: '3%',
-          right: '4%',
-          top: '10%',
-          bottom: '15%',
+          left: 60,
+          right: 40,
+          top: 60,
+          bottom: 100,
           containLabel: true,
         },
         xAxis: {
           type: 'category',
           boundaryGap: false,
           data: categories,
+          axisLabel: {
+            rotate: 45,
+            interval: 0,
+            fontSize: 11,
+          },
         },
         yAxis: {
           type: 'value',
+          axisLabel: {
+            fontSize: 11,
+          },
         },
         series: [
           {
@@ -114,11 +122,11 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
       };
 
       return (
-        <div className="w-full h-[520px] bg-white rounded-lg shadow-sm p-4">
+        <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
           <h3 className="text-sm font-medium text-gray-700 mb-2">
             {period1.name} vs {period2.name} 趋势对比
           </h3>
-          <ReactECharts option={lineOption} style={{ height: '420px' }} />
+          <ReactECharts option={lineOption} style={{ height: '440px' }} />
         </div>
       );
     }
@@ -136,15 +144,20 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
           data: [period1.name, period2.name],
         },
         grid: {
-          left: '3%',
-          right: '4%',
-          top: '10%',
-          bottom: '15%',
+          left: 60,
+          right: 40,
+          top: 60,
+          bottom: 120,  // 加大底部边距，给长标签留出足够空间
           containLabel: true,
         },
         xAxis: {
           type: 'category',
           data: categories,
+          axisLabel: {
+            rotate: 45,
+            interval: 0,
+            fontSize: 11,
+          },
         },
         yAxis: {
           type: 'value',
@@ -166,11 +179,11 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
       };
 
       return (
-        <div className="w-full h-[520px] bg-white rounded-lg shadow-sm p-4">
+        <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
           <h3 className="text-sm font-medium text-gray-700 mb-2">
             {period1.name} vs {period2.name} 对比
           </h3>
-          <ReactECharts option={barOption} style={{ height: '420px' }} />
+          <ReactECharts option={barOption} style={{ height: '440px' }} />
         </div>
       );
     }
@@ -202,19 +215,27 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
           trigger: 'axis',
         },
         grid: {
-          left: '3%',
-          right: '4%',
-          top: '10%',
-          bottom: '15%',
+          left: 60,
+          right: 40,
+          top: 60,
+          bottom: 100,
           containLabel: true,
         },
         xAxis: {
           type: 'category',
           boundaryGap: false,
           data: categories,
+          axisLabel: {
+            rotate: 45,
+            interval: 0,
+            fontSize: 11,
+          },
         },
         yAxis: {
           type: 'value',
+          axisLabel: {
+            fontSize: 11,
+          },
         },
         series: [
           {
@@ -242,11 +263,11 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
       };
 
       return (
-        <div className="w-full h-[520px] bg-white rounded-lg shadow-sm p-4">
+        <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
           <h3 className="text-sm font-medium text-gray-700 mb-2">
             {getMetricDisplayName(primaryMetric)} 趋势
           </h3>
-          <ReactECharts option={lineOption} style={{ height: '220px' }} />
+          <ReactECharts option={lineOption} style={{ height: '440px' }} />
         </div>
       );
     }
@@ -260,27 +281,33 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
         },
       },
       grid: {
-        left: '3%',
-        right: '4%',
-        bottom: '3%',
+        left: 60,
+        right: 40,
+        top: 40,
+        bottom: 120,  // 加大底部边距，给长标签留出足够空间
         containLabel: true,
       },
       xAxis: {
         type: 'category',
         data: categories,
         axisLabel: {
-          rotate: categories.length > 5 ? 30 : 0,
+          rotate: 45,  // 加大旋转角度，避免重叠
           interval: 0,
+          fontSize: 11,
         },
       },
       yAxis: {
         type: 'value',
+        axisLabel: {
+          fontSize: 11,
+        },
       },
       series: [
         {
           name: getMetricDisplayName(primaryMetric),
           type: 'bar',
           data: values,
+          barWidth: '50%',  // 控制条形宽度，避免太胖
           itemStyle: {
             color: {
               type: 'linear',
@@ -300,11 +327,11 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
     };
 
     return (
-      <div className="w-full h-[520px] bg-white rounded-lg shadow-sm p-4">
+      <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
         <h3 className="text-sm font-medium text-gray-700 mb-2">
           {getMetricDisplayName(primaryMetric)} 分布
         </h3>
-        <ReactECharts option={barOption} style={{ height: '220px' }} />
+        <ReactECharts option={barOption} style={{ height: '440px' }} />
       </div>
     );
   }
