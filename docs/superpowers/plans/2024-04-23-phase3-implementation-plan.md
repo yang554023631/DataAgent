@@ -621,3 +621,66 @@ change_percent = anomaly.get("change_percent", 0)
 # 修复后
 change_percent = anomaly.get("change_percent", 0) or 0
 ```
+
+---
+
+## Task 21：前端单元测试（补充）
+
+**Files:**
+- Create: `frontend/vite.config.ts` (add test config)
+- Create: `frontend/src/components/__tests__/DataTable.test.tsx`
+- Create: `frontend/src/components/__tests__/ChartRenderer.test.tsx`
+- Create: `frontend/src/components/__tests__/ChatMessage.test.tsx`
+- Create: `frontend/src/stores/__tests__/chatStore.test.ts`
+
+### 技术栈：
+- **Vitest** - Vite 原生测试框架
+- **React Testing Library** - React 组件测试
+- **@testing-library/jest-dom** - DOM 断言扩展
+
+### 安装依赖：
+```bash
+npm install -D vitest @testing-library/react @testing-library/jest-dom jsdom
+```
+
+### 测试覆盖范围：
+
+#### 1. DataTable 组件测试
+- ✅ 正确渲染列名和数据行
+- ✅ 分页功能（首页/上一页/下一页/末页）
+- ✅ 页面大小选择器正常工作
+- ✅ 页码跳转功能
+- ✅ 空数据场景处理
+- ✅ flex-wrap 响应式布局
+
+#### 2. ChartRenderer 组件测试
+- ✅ 普通查询正确渲染柱状图
+- ✅ 时间维度正确渲染折线图
+- ✅ 对比查询正确渲染双周期图表
+- ✅ 空数据场景不渲染
+- ✅ chart_config 参数正确解析
+
+#### 3. ChatMessage 组件测试
+- ✅ 用户消息正确右对齐
+- ✅ Assistant 消息正确左对齐
+- ✅ FinalReport 正确渲染 MetricCard
+- ✅ FinalReport 正确渲染 DataTable
+- ✅ FinalReport 正确渲染 ChartRenderer
+- ✅ 推荐查询点击事件正常触发
+
+#### 4. chatStore 状态管理测试
+- ✅ 初始化 session
+- ✅ 发送消息
+- ✅ 处理澄清模态框
+- ✅ 消息历史正确追加
+
+### 测试脚本（package.json）：
+```json
+{
+  "scripts": {
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  }
+}
+```
