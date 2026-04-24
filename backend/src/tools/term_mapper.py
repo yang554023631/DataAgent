@@ -29,12 +29,15 @@ DIMENSION_MAPPING = {
     "日期": "data_date",
     "按天": "data_date",
     "每天": "data_date",
+    "分天": "data_date",
+    "天": "data_date",
     "小时": "data_hour",
     "分时": "data_hour",
     "时段": "data_hour",
     "月份": "data_month",
     "按月": "data_month",
     "每月": "data_month",
+    "月": "data_month",
     "周": "data_week",
     "按周": "data_week",
     "每周": "data_week",
@@ -59,6 +62,11 @@ DIMENSION_MAPPING = {
     "兴趣": "audience_interest",
     "兴趣标签": "audience_interest",
     "按兴趣": "audience_interest",
+    "受众": "audience_gender",  # 默认受众按性别细分
+    "分受众": "audience_gender",
+    "地区": "region_id",
+    "区域": "region_id",
+    "设备": "device_type",
 }
 
 FILTER_VALUE_MAPPING = {
@@ -86,6 +94,6 @@ def map_dimensions(text: str) -> List[str]:
     """将自然语言维度名称映射为标准维度名"""
     result = []
     for term, standard in DIMENSION_MAPPING.items():
-        if term in text and standard not in result:
+        if term.lower() in text.lower() and standard not in result:
             result.append(standard)
     return result
