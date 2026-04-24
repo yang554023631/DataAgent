@@ -285,6 +285,23 @@ change_percent = anomaly.get("change_percent", 0) or 0
 原因：anomaly.change_percent 可能为 None，导致 TypeError
 ```
 
+### 8.2 DataTable 分页条在单页时消失 Bug
+```
+位置：frontend/src/components/DataTable.tsx
+
+问题：当数据行数刚好等于 pageSize（如 50 条）时，totalPages = 1，
+      整个分页条（包括页面大小选择器）都消失了，用户无法切换页面大小。
+
+修复前：
+{totalPages > 1 && (...)}  // 只有多页才显示整个分页条
+
+修复后：
+{rows.length > 0 && (...)}  // 只要有数据就显示分页条
+{totalPages > 1 && (...)}   // 但只有多页时才显示页码导航按钮
+
+影响：选择 50 条/页时，页面大小选择器消失，用户无法改回 10 条/页
+```
+
 ---
 
 ## 九、前端单元测试要求

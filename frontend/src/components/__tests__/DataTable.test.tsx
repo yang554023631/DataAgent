@@ -40,9 +40,27 @@ describe('DataTable', () => {
   })
 
   describe('分页功能', () => {
-    it('数据少于10条时不显示分页控件', () => {
+    it('只要有数据就显示页面大小选择器（即使只有一页）', () => {
+      // 50 条数据，每页 50 条，刚好一页 - 修复前 Bug：选择器会消失
+      const fiftyRows = Array.from({ length: 50 }, (_, i) => [`渠道${i + 1}`, i * 100, i * 500])
+      render(<DataTable columns={mockColumns} rows={fiftyRows} pageSize={50} />)
+
+      // 页面大小选择器应该显示
+      expect(screen.getByRole('combobox')).toBeInTheDocument()
+      // 总条数应该显示（使用部分匹配）
+      expect(screen.getByText(/共 50 条/)).toBeInTheDocument()
+      // 页码导航按钮不应该显示（只有一页）
+      expect(screen.queryByText('首页')).not.toBeInTheDocument()
+      expect(screen.queryByText('下一页')).not.toBeInTheDocument()
+    })
+
+    it('数据少于10条时仍然显示页面大小选择器', () => {
       render(<DataTable columns={mockColumns} rows={mockRows.slice(0, 5)} />)
 
+      // 页面大小选择器应该始终显示
+      expect(screen.getByRole('combobox')).toBeInTheDocument()
+      expect(screen.getByText(/共 5 条/)).toBeInTheDocument()
+      // 但页码按钮不显示
       expect(screen.queryByText('首页')).not.toBeInTheDocument()
     })
 
