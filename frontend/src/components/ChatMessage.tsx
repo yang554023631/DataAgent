@@ -19,10 +19,10 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
 
   return (
     <div className={`flex w-full mb-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[80%] rounded-lg px-4 py-3 ${
+      <div className={`w-full rounded-lg px-4 py-3 ${
         isUser
-          ? 'bg-blue-600 text-white'
-          : 'bg-gray-100 text-gray-800'
+          ? 'bg-blue-600 text-white max-w-[60%]'
+          : 'bg-gray-100 text-gray-800 max-w-full'
       }`}>
         {message.content.split('\n').map((line, i) => (
           <p key={i} className="whitespace-pre-wrap">{line}</p>

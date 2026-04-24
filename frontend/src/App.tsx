@@ -30,12 +30,12 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <header className="bg-blue-600 shadow-md">
-        <div className="max-w-4xl mx-auto px-4 py-4">
+        <div className="max-w-7xl mx-auto px-4 py-4">
           <h1 className="text-2xl font-bold text-white">广告报表智能助手</h1>
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col max-w-4xl mx-auto w-full">
+      <main className="flex-1 flex flex-col max-w-7xl mx-auto w-full">
         {/* Messages area */}
         <div className="flex-1 overflow-y-auto p-4">
           {messages.map((message, index) => (

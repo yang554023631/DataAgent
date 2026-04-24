@@ -6,8 +6,11 @@ interface DataTableProps {
   pageSize?: number;
 }
 
-export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize = 10 }) => {
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
+export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize: initialPageSize = 10 }) => {
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
   const [jumpValue, setJumpValue] = useState('');
   const totalPages = Math.ceil(rows.length / pageSize);
 
@@ -19,6 +22,11 @@ export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize = 
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);
     }
+  };
+
+  const changePageSize = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1); // 切换每页大小时重置到第一页
   };
 
   const handleJump = () => {
@@ -98,11 +106,27 @@ export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize = 
 
       {/* 分页控制 */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200">
-          <div className="text-sm text-gray-700">
-            共 {rows.length} 条，第 {currentPage} / {totalPages} 页
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-gray-700">
+              共 {rows.length} 条，第 {currentPage} / {totalPages} 页
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">每页显示</span>
+              <select
+                value={pageSize}
+                onChange={(e) => changePageSize(Number(e.target.value))}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size} 条
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => goToPage(1)}
               disabled={currentPage === 1}
