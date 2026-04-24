@@ -8,6 +8,7 @@ interface DataTableProps {
 
 export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize = 10 }) => {
   const [currentPage, setCurrentPage] = useState(1);
+  const [jumpValue, setJumpValue] = useState('');
   const totalPages = Math.ceil(rows.length / pageSize);
 
   const startIndex = (currentPage - 1) * pageSize;
@@ -17,6 +18,20 @@ export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize = 
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages) {
       setCurrentPage(page);
+    }
+  };
+
+  const handleJump = () => {
+    const page = parseInt(jumpValue, 10);
+    if (!isNaN(page)) {
+      goToPage(page);
+    }
+    setJumpValue('');
+  };
+
+  const handleJumpKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleJump();
     }
   };
 
@@ -87,7 +102,7 @@ export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize = 
           <div className="text-sm text-gray-700">
             共 {rows.length} 条，第 {currentPage} / {totalPages} 页
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => goToPage(1)}
               disabled={currentPage === 1}
@@ -117,6 +132,25 @@ export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize = 
             >
               末页
             </button>
+            <span className="mx-1 text-gray-500 text-sm">|</span>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={1}
+                max={totalPages}
+                value={jumpValue}
+                onChange={(e) => setJumpValue(e.target.value)}
+                onKeyPress={handleJumpKeyPress}
+                placeholder="页码"
+                className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              />
+              <button
+                onClick={handleJump}
+                className="px-2 py-1 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                跳转
+              </button>
+            </div>
           </div>
         </div>
       )}
