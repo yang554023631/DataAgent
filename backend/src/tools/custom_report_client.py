@@ -219,6 +219,30 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
                     elif dim == "data_hour":
                         # 小时维度显示为 "X点"
                         mapped_path.append(f"{val_str}点")
+                    elif dim == "data_month":
+                        # 月份维度：timestamp 毫秒转 YYYY-MM 格式
+                        try:
+                            ts = int(val) / 1000 if isinstance(val, (int, float, str)) and len(str(val)) > 10 else val
+                            dt = datetime.fromtimestamp(float(ts))
+                            mapped_path.append(dt.strftime("%Y年%m月"))
+                        except (ValueError, TypeError):
+                            mapped_path.append(val_str)
+                    elif dim == "data_week":
+                        # 周维度：timestamp 毫秒转 第X周 格式
+                        try:
+                            ts = int(val) / 1000 if isinstance(val, (int, float, str)) and len(str(val)) > 10 else val
+                            dt = datetime.fromtimestamp(float(ts))
+                            mapped_path.append(f"{dt.year}年第{dt.isocalendar()[1]}周")
+                        except (ValueError, TypeError):
+                            mapped_path.append(val_str)
+                    elif dim == "data_date":
+                        # 日期维度：timestamp 毫秒转 YYYY-MM-DD 格式
+                        try:
+                            ts = int(val) / 1000 if isinstance(val, (int, float, str)) and len(str(val)) > 10 else val
+                            dt = datetime.fromtimestamp(float(ts))
+                            mapped_path.append(dt.strftime("%Y-%m-%d"))
+                        except (ValueError, TypeError):
+                            mapped_path.append(val_str)
                     else:
                         mapped_path.append(val_str)
 
