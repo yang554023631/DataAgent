@@ -184,4 +184,165 @@ describe('ChatMessage', () => {
       expect(screen.getByText('测试')).toBeInTheDocument()
     })
   })
+
+  describe('广告主列表场景', () => {
+    const mockAdvertiserListReport = {
+      title: '可用的广告主列表',
+      time_range: { start: '', end: '' },
+      metrics: [],  // 空数组，没有指标数据
+      highlights: [
+        { type: 'info', text: '💡 点击以下广告主名称即可查看对应数据' },
+      ],
+      data_table: {
+        columns: ['广告主ID', '广告主名称'],
+        rows: [
+          ['1', '六一八智能_406'],
+          ['2', '促销食品'],
+          ['3', 'sport_winter'],
+        ],
+      },
+      next_queries: [
+        '查看 六一八智能_406 的数据',
+        '查看 促销食品 的数据',
+        '查看 sport_winter 的数据',
+      ],
+    }
+
+    it('应该显示广告主列表表格', () => {
+      render(
+        <ChatMessage
+          message={{ role: 'assistant', content: '', finalReport: mockAdvertiserListReport }}
+        />
+      )
+
+      // 应该显示标题
+      expect(screen.getByText('可用的广告主列表')).toBeInTheDocument()
+
+      // 应该显示数据表格
+      expect(screen.getByTestId('data-table-mock')).toBeInTheDocument()
+    })
+
+    it('不应该渲染图表（因为 metrics 为空）', () => {
+      render(
+        <ChatMessage
+          message={{ role: 'assistant', content: '', finalReport: mockAdvertiserListReport }}
+        />
+      )
+
+      // metrics 为空数组，不应该渲染图表
+      expect(screen.queryByTestId('chart-renderer-mock')).not.toBeInTheDocument()
+    })
+
+    it('不应该渲染指标卡片（因为 metrics 为空）', () => {
+      render(
+        <ChatMessage
+          message={{ role: 'assistant', content: '', finalReport: mockAdvertiserListReport }}
+        />
+      )
+
+      // metrics 为空数组，不应该渲染指标卡片
+      expect(screen.queryByTestId('metric-card-mock')).not.toBeInTheDocument()
+    })
+
+    it('应该渲染推荐查询', () => {
+      render(
+        <ChatMessage
+          message={{ role: 'assistant', content: '', finalReport: mockAdvertiserListReport }}
+        />
+      )
+
+      expect(screen.getByText('推荐查询')).toBeInTheDocument()
+      expect(screen.getByText('→ 查看 六一八智能_406 的数据')).toBeInTheDocument()
+    })
+  })
+
+  describe('特定广告主数据查询场景', () => {
+    const mockSpecificAdvertiserReport = {
+      title: '电商家居_40_new 广告报表分析',
+      time_range: { start: '2024-01-01', end: '2024-03-31' },
+      metrics: [
+        { name: '点击量', value: '12,500', trend: 'up' as const },
+        { name: '曝光量', value: '250,000', trend: 'up' as const },
+      ],
+      highlights: [
+        { type: 'positive', text: '点击量环比增长 15%' },
+      ],
+      data_table: {
+        columns: ['月份', '点击量', '曝光量'],
+        rows: [
+          ['1月', 3500, 70000],
+          ['2月', 4000, 80000],
+          ['3月', 5000, 100000],
+        ],
+      },
+      next_queries: [
+        '按渠道查看点击量',
+        '对比上周数据',
+      ],
+    }
+
+    it('应该显示特定广告主的报表标题', () => {
+      render(
+        <ChatMessage
+          message={{ role: 'assistant', content: '', finalReport: mockSpecificAdvertiserReport }}
+        />
+      )
+
+      expect(screen.getByText('电商家居_40_new 广告报表分析')).toBeInTheDocument()
+    })
+
+    it('应该渲染指标卡片（有数据时）', () => {
+      render(
+        <ChatMessage
+          message={{ role: 'assistant', content: '', finalReport: mockSpecificAdvertiserReport }}
+        />
+      )
+
+      const metricCards = screen.getAllByTestId('metric-card-mock')
+      expect(metricCards).toHaveLength(2)
+      expect(screen.getByText('点击量: 12,500')).toBeInTheDocument()
+      expect(screen.getByText('曝光量: 250,000')).toBeInTheDocument()
+    })
+
+    it('应该渲染图表（有指标数据时）', () => {
+      render(
+        <ChatMessage
+          message={{ role: 'assistant', content: '', finalReport: mockSpecificAdvertiserReport }}
+        />
+      )
+
+      expect(screen.getByTestId('chart-renderer-mock')).toBeInTheDocument()
+    })
+
+    it('应该渲染数据详情表格', () => {
+      render(
+        <ChatMessage
+          message={{ role: 'assistant', content: '', finalReport: mockSpecificAdvertiserReport }}
+        />
+      )
+
+      expect(screen.getByTestId('data-table-mock')).toBeInTheDocument()
+      expect(screen.getByText(/月份,点击量,曝光量/)).toBeInTheDocument()
+    })
+
+    it('不应该显示"可用的广告主列表"标题', () => {
+      render(
+        <ChatMessage
+          message={{ role: 'assistant', content: '', finalReport: mockSpecificAdvertiserReport }}
+        />
+      )
+
+      expect(screen.queryByText('可用的广告主列表')).not.toBeInTheDocument()
+    })
+
+    it('不应该显示广告主选择提示信息', () => {
+      render(
+        <ChatMessage
+          message={{ role: 'assistant', content: '', finalReport: mockSpecificAdvertiserReport }}
+        />
+      )
+
+      expect(screen.queryByText(/点击以下广告主名称即可查看对应数据/)).not.toBeInTheDocument()
+    })
+  })
 })

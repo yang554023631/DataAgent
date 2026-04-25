@@ -107,18 +107,18 @@ describe('chatStore', () => {
       expect(useChatStore.getState().isLoading).toBe(false)
     })
 
-    it('成功响应应该添加 Assistant 消息', async () => {
+    it('成功响应应该添加 Assistant 消息（带 final_report）', async () => {
+      const mockFinalReport = {
+        title: '测试报表',
+        metrics: [],
+        highlights: [],
+        data_table: { columns: [], rows: [] },
+        next_queries: [],
+      };
+
       (apiService.sendMessage as any).mockResolvedValueOnce({
         status: 'success',
-        result: {
-          final_report: {
-            title: '测试报表',
-            metrics: [],
-            highlights: [],
-            data_table: { columns: [], rows: [] },
-            next_queries: [],
-          },
-        },
+        result: { final_report: mockFinalReport },
       })
 
       const { sendMessage } = useChatStore.getState()
@@ -127,8 +127,61 @@ describe('chatStore', () => {
       const messages = useChatStore.getState().messages
       expect(messages).toHaveLength(2)
       expect(messages[1].role).toBe('assistant')
-      expect(messages[1].content).toContain('测试报表')
+      expect(messages[1].content).toBe('')
+      expect(messages[1].finalReport).toEqual(mockFinalReport)
+    })
+
+    it('特定广告主查询应该正确渲染 final_report 而不是显示 JSON', async () => {
+      const mockAdvertiserReport = {
+        title: '电商家居_40_new 广告报表分析',
+        time_range: { start: '2024-01-01', end: '2024-03-31' },
+        metrics: [
+          { name: '点击量', value: '12,500', trend: 'up' },
+          { name: '曝光量', value: '250,000', trend: 'up' },
+        ],
+        highlights: [{ type: 'positive', text: '点击量环比增长 15%' }],
+        data_table: {
+          columns: ['月份', '点击量', '曝光量'],
+          rows: [['1月', 3500, 70000]],
+        },
+        next_queries: ['按渠道查看点击量'],
+      };
+
+      (apiService.sendMessage as any).mockResolvedValueOnce({
+        status: 'completed',
+        result: {
+          query_intent: { advertiser_id: 2, advertiser_name: '电商家居_40_new' },
+          final_report: mockAdvertiserReport,
+        },
+      })
+
+      const { sendMessage } = useChatStore.getState()
+      await sendMessage('电商家居_40_new 最近三个月的点击量 按月细分')
+
+      const messages = useChatStore.getState().messages
+      expect(messages).toHaveLength(2)
+      expect(messages[1].role).toBe('assistant')
+      expect(messages[1].content).toBe('')
       expect(messages[1].finalReport).toBeDefined()
+      expect(messages[1].finalReport?.title).toBe('电商家居_40_new 广告报表分析')
+      expect(messages[1].finalReport?.metrics).toHaveLength(2)
+    })
+
+    it('没有 final_report 时应该显示 JSON 结果', async () => {
+      (apiService.sendMessage as any).mockResolvedValueOnce({
+        status: 'completed',
+        result: { query_intent: { time_range: '最近7天' } },
+      })
+
+      const { sendMessage } = useChatStore.getState()
+      await sendMessage('测试消息')
+
+      const messages = useChatStore.getState().messages
+      expect(messages).toHaveLength(2)
+      expect(messages[1].role).toBe('assistant')
+      expect(messages[1].content).toContain('查询成功')
+      expect(messages[1].content).toContain('最近7天')
+      expect(messages[1].finalReport).toBeUndefined()
     })
 
     it('需要澄清时应该显示澄清模态框', async () => {
@@ -218,17 +271,17 @@ describe('chatStore', () => {
       expect(useChatStore.getState().clarification).toBeNull()
     })
 
-    it('应该添加 Assistant 回复消息', async () => {
+    it('应该添加 Assistant 回复消息（带 final_report）', async () => {
+      const mockFinalReport = {
+        title: '澄清后的报表',
+        metrics: [],
+        highlights: [],
+        data_table: { columns: [], rows: [] },
+        next_queries: [],
+      };
+
       (apiService.submitClarification as any).mockResolvedValueOnce({
-        result: {
-          final_report: {
-            title: '澄清后的报表',
-            metrics: [],
-            highlights: [],
-            data_table: { columns: [], rows: [] },
-            next_queries: [],
-          },
-        },
+        result: { final_report: mockFinalReport },
       })
 
       const { submitClarification } = useChatStore.getState()
@@ -236,7 +289,8 @@ describe('chatStore', () => {
 
       const messages = useChatStore.getState().messages
       expect(messages).toHaveLength(1)
-      expect(messages[0].content).toContain('澄清后的报表')
+      expect(messages[0].content).toBe('')
+      expect(messages[0].finalReport).toEqual(mockFinalReport)
     })
 
     it('提交失败时应该设置错误状态', async () => {

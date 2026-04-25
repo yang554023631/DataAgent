@@ -61,15 +61,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
           isLoading: false,
         });
       } else {
-        // Display result
-        const resultMessage = JSON.stringify(result.result?.query_intent || result.result, null, 2);
-        set(state => ({
-          messages: [...state.messages, {
-            role: 'assistant',
-            content: `查询成功！\n\n\`\`\`json\n${resultMessage}\n\`\`\``,
-          }],
-          isLoading: false,
-        }));
+        // 如果有 final_report，用它渲染报表；否则显示 JSON
+        const finalReport = result.result?.final_report;
+        if (finalReport) {
+          set(state => ({
+            messages: [...state.messages, {
+              role: 'assistant',
+              content: '',
+              finalReport,
+            }],
+            isLoading: false,
+          }));
+        } else {
+          const resultMessage = JSON.stringify(result.result?.query_intent || result.result, null, 2);
+          set(state => ({
+            messages: [...state.messages, {
+              role: 'assistant',
+              content: `查询成功！\n\n\`\`\`json\n${resultMessage}\n\`\`\``,
+            }],
+            isLoading: false,
+          }));
+        }
       }
     } catch (error) {
       set(state => ({
@@ -91,16 +103,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const result = await apiService.submitClarification(sessionId, selectedValue);
 
-      const resultMessage = JSON.stringify(result.result, null, 2);
-      set(state => ({
-        messages: [...state.messages, {
-          role: 'assistant',
-          content: `已确认！\n\n\`\`\`json\n${resultMessage}\n\`\`\``,
-        }],
-        showClarification: false,
-        clarification: null,
-        isLoading: false,
-      }));
+      const finalReport = result.result?.final_report;
+      if (finalReport) {
+        set(state => ({
+          messages: [...state.messages, {
+            role: 'assistant',
+            content: '',
+            finalReport,
+          }],
+          showClarification: false,
+          clarification: null,
+          isLoading: false,
+        }));
+      } else {
+        const resultMessage = JSON.stringify(result.result, null, 2);
+        set(state => ({
+          messages: [...state.messages, {
+            role: 'assistant',
+            content: `已确认！\n\n\`\`\`json\n${resultMessage}\n\`\`\``,
+          }],
+          showClarification: false,
+          clarification: null,
+          isLoading: false,
+        }));
+      }
     } catch (error) {
       set({ isLoading: false, error: 'Failed to submit clarification' });
     }
