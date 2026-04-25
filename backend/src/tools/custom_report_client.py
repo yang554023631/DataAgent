@@ -18,6 +18,21 @@ DATA_TYPE_MAP = {
 FACT_INDEX = "ad_stat_data"
 AUDIENCE_INDEX = "ad_stat_audience"
 
+# 维度中文名映射
+DIMENSION_NAME_MAP = {
+    "audience_gender": "性别",
+    "audience_age": "年龄段",
+    "audience_os": "操作系统",
+    "audience_interest": "兴趣标签",
+    "data_date": "日期",
+    "data_month": "月份",
+    "data_week": "周",
+    "data_hour": "小时",
+    "channel": "渠道",
+    "campaign_id": "计划ID",
+    "advertiser_id": "广告主ID",
+}
+
 # 受众维度值映射（数字 → 中文）
 AUDIENCE_VALUE_MAPS = {
     "audience_gender": {
@@ -246,7 +261,16 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
                     else:
                         mapped_path.append(val_str)
 
-                row = {"name": " / ".join(str(p) for p in mapped_path) if mapped_path else "总计"}
+                row = {}
+                # 每个维度拆成独立列
+                for i, val in enumerate(mapped_path):
+                    dim = group_by[i] if isinstance(group_by[i], str) else group_by[i].get("field", "")
+                    col_name = DIMENSION_NAME_MAP.get(dim, dim)
+                    row[col_name] = val
+
+                # name 列保留兼容（用于图表展示）
+                row["name"] = " / ".join(str(p) for p in mapped_path) if mapped_path else "总计"
+
                 for metric in metrics:
                     agg_key = f"sum_{metric}"
                     value = current_agg.get(agg_key, {}).get("value", {}).get("value", 0) or 0

@@ -8,15 +8,68 @@ interface DataTableProps {
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 
+type SortDirection = 'asc' | 'desc' | null;
+
 export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize: initialPageSize = 10 }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(initialPageSize);
   const [jumpValue, setJumpValue] = useState('');
+  const [sortColumn, setSortColumn] = useState<number | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
   const totalPages = Math.ceil(rows.length / pageSize);
+
+  // 处理表头点击排序
+  const handleHeaderClick = (index: number) => {
+    if (sortColumn === index) {
+      // 第三次点击取消排序
+      if (sortDirection === 'desc') {
+        setSortColumn(null);
+        setSortDirection(null);
+      } else {
+        setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      }
+    } else {
+      setSortColumn(index);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1); // 排序后跳转到第一页
+  };
+
+  // 排序逻辑
+  const sortedRows = [...rows];
+  if (sortColumn !== null && sortDirection !== null) {
+    sortedRows.sort((a, b) => {
+      const valA = a[sortColumn];
+      const valB = b[sortColumn];
+
+      // 数字排序
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+
+      // 字符串排序（支持中文）
+      const strA = String(valA || '');
+      const strB = String(valB || '');
+
+      return sortDirection === 'asc'
+        ? strA.localeCompare(strB, 'zh-CN')
+        : strB.localeCompare(strA, 'zh-CN');
+    });
+  }
 
   const startIndex = (currentPage - 1) * pageSize;
   const endIndex = startIndex + pageSize;
-  const currentRows = rows.slice(startIndex, endIndex);
+  const currentRows = sortedRows.slice(startIndex, endIndex);
+
+  // 获取排序图标
+  const getSortIcon = (index: number) => {
+    if (sortColumn !== index) {
+      return <span className="ml-1 text-gray-300">⇅</span>;
+    }
+    return sortDirection === 'asc'
+      ? <span className="ml-1 text-blue-600">↑</span>
+      : <span className="ml-1 text-blue-600">↓</span>;
+  };
 
   const goToPage = (page: number) => {
     if (page >= 1 && page <= totalPages) {
@@ -83,9 +136,11 @@ export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize: i
               {columns.map((col, index) => (
                 <th
                   key={index}
-                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleHeaderClick(index)}
                 >
                   {col}
+                  {getSortIcon(index)}
                 </th>
               ))}
             </tr>

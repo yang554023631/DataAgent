@@ -191,6 +191,70 @@ def test_parse_es_result_data_month_formatting():
     assert result[0]["clicks"] == 5000
 
 
+def test_parse_es_result_multi_dimension_split_columns():
+    """测试多维度分组时各维度拆成独立列"""
+    query = QueryRequest(
+        metrics=["clicks"],
+        group_by=["data_month", "audience_gender"],
+        filters=[],
+        time_range={"start_date": "2026-01-01", "end_date": "2026-03-31", "unit": "month"}
+    )
+
+    mock_response = {
+        "aggregations": {
+            "group_0": {
+                "buckets": [
+                    {
+                        "key": 1769875200000,  # 2026-02-01
+                        "group_1": {
+                            "buckets": [
+                                {"key": 1, "sum_clicks": {"value": {"value": 5000}}},
+                                {"key": 2, "sum_clicks": {"value": {"value": 6000}}},
+                            ]
+                        }
+                    },
+                    {
+                        "key": 1772294400000,  # 2026-03-01
+                        "group_1": {
+                            "buckets": [
+                                {"key": 1, "sum_clicks": {"value": {"value": 7000}}},
+                            ]
+                        }
+                    }
+                ]
+            }
+        }
+    }
+
+    result = parse_es_result(mock_response, query, ["data_month", "audience_gender"])
+
+    assert len(result) == 3
+
+    # 验证各列存在
+    assert "月份" in result[0], "应该有'月份'列"
+    assert "性别" in result[0], "应该有'性别'列"
+    assert "name" in result[0], "应该有'name'列（用于兼容）"
+    assert "clicks" in result[0], "应该有'clicks'列"
+
+    # 验证第一行数据
+    assert result[0]["月份"] == "2026年02月"
+    assert result[0]["性别"] == "男性"
+    assert result[0]["name"] == "2026年02月 / 男性"
+    assert result[0]["clicks"] == 5000
+
+    # 验证第二行数据
+    assert result[1]["月份"] == "2026年02月"
+    assert result[1]["性别"] == "女性"
+    assert result[1]["name"] == "2026年02月 / 女性"
+    assert result[1]["clicks"] == 6000
+
+    # 验证第三行数据
+    assert result[2]["月份"] == "2026年03月"
+    assert result[2]["性别"] == "男性"
+    assert result[2]["name"] == "2026年03月 / 男性"
+    assert result[2]["clicks"] == 7000
+
+
 @pytest.mark.asyncio
 async def test_real_es_query_with_group_by():
     """测试真实带分组的 ES 查询"""

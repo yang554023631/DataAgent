@@ -172,4 +172,85 @@ describe('DataTable', () => {
       expect(screen.getByText(/第 1 \/ 3 页/)).toBeInTheDocument()
     })
   })
+
+  describe('排序功能', () => {
+    it('点击表头第一次应该按升序排序', () => {
+      render(<DataTable columns={mockColumns} rows={mockRows} />)
+
+      // 点击"点击量"表头
+      fireEvent.click(screen.getByText('点击量'))
+
+      // 按点击量升序排列：渠道A(1000) -> 渠道C(1500) -> 渠道B(2000)
+      const allRows = screen.getAllByText(/渠道[ABCD]/)
+      expect(allRows[0]).toHaveTextContent('渠道A')
+      expect(allRows[1]).toHaveTextContent('渠道C')
+      expect(allRows[2]).toHaveTextContent('渠道B')
+    })
+
+    it('点击表头第二次应该按降序排序', () => {
+      render(<DataTable columns={mockColumns} rows={mockRows} />)
+
+      // 点击两次"点击量"表头
+      fireEvent.click(screen.getByText('点击量'))
+      fireEvent.click(screen.getByText('点击量'))
+
+      // 按点击量降序排列：渠道D(3000) -> 渠道E(2500) -> 渠道B(2000)
+      const allRows = screen.getAllByText(/渠道[ABCDE]/)
+      expect(allRows[0]).toHaveTextContent('渠道D')
+      expect(allRows[1]).toHaveTextContent('渠道E')
+      expect(allRows[2]).toHaveTextContent('渠道B')
+    })
+
+    it('点击表头第三次应该取消排序', () => {
+      render(<DataTable columns={mockColumns} rows={mockRows} />)
+
+      // 点击三次"点击量"表头
+      fireEvent.click(screen.getByText('点击量'))  // 升序
+      fireEvent.click(screen.getByText('点击量'))  // 降序
+      fireEvent.click(screen.getByText('点击量'))  // 取消排序
+
+      // 恢复原始顺序
+      const allRows = screen.getAllByText(/渠道[ABCD]/)
+      expect(allRows[0]).toHaveTextContent('渠道A')
+      expect(allRows[1]).toHaveTextContent('渠道B')
+      expect(allRows[2]).toHaveTextContent('渠道C')
+    })
+
+    it('排序后应该重置到第一页', () => {
+      const manyRows = Array.from({ length: 15 }, (_, i) => [`渠道${i + 1}`, i * 100, i * 500])
+      render(<DataTable columns={mockColumns} rows={manyRows} />)
+
+      // 先到第二页
+      fireEvent.click(screen.getByText('下一页'))
+      expect(screen.getByText('渠道11')).toBeInTheDocument()
+
+      // 点击表头排序
+      fireEvent.click(screen.getByText('点击量'))
+
+      // 应该回到第一页
+      expect(screen.getByText('渠道1')).toBeInTheDocument()
+      expect(screen.queryByText('渠道11')).not.toBeInTheDocument()
+    })
+
+    it('字符串列应该支持中文拼音排序', () => {
+      const chineseRows = [
+        ['北京', 1000, 5000],
+        ['上海', 2000, 8000],
+        ['广州', 1500, 6000],
+        ['深圳', 3000, 10000],
+      ]
+      render(<DataTable columns={['城市', '点击量', '花费']} rows={chineseRows} />)
+
+      // 点击城市表头排序
+      fireEvent.click(screen.getByText('城市'))
+
+      // 按拼音排序：北京(B) -> 广州(G) -> 上海(S) -> 深圳(S)
+      const allRows = screen.getAllByRole('row')
+      // 第一行是表头，所以数据行从索引1开始
+      expect(allRows[1]).toHaveTextContent('北京')
+      expect(allRows[2]).toHaveTextContent('广州')
+      expect(allRows[3]).toHaveTextContent('上海')
+      expect(allRows[4]).toHaveTextContent('深圳')
+    })
+  })
 })
