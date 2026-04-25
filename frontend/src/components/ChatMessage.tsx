@@ -40,8 +40,8 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
               </div>
             )}
 
-            {/* 图表渲染 */}
-            {message.finalReport && (
+            {/* 图表渲染 - 只有在有指标数据时才显示 */}
+            {message.finalReport?.metrics?.length > 0 && (
               <ChartRenderer
                 report={message.finalReport as any}
                 data={message.finalReport.data_table?.rows?.map((row: any[]) => {

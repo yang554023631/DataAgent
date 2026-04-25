@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from .state import AdReportState
-from .nodes import nlu_node, hitl_node, planner_node, executor_node, analyst_node, reporter_node
+from .nodes import nlu_node, hitl_node, planner_node, executor_node, analyst_node, reporter_node, advertiser_handle_node
 
 def build_graph():
     """构建完整的 LangGraph 流程图"""
@@ -9,6 +9,7 @@ def build_graph():
     # 添加节点
     graph.add_node("nlu", nlu_node)
     graph.add_node("hitl", hitl_node)
+    graph.add_node("advertiser_handle", advertiser_handle_node)
     graph.add_node("planner", planner_node)
     graph.add_node("executor", executor_node)
     graph.add_node("analyst", analyst_node)
@@ -17,18 +18,26 @@ def build_graph():
     # 设置入口
     graph.set_entry_point("nlu")
 
-    # NLU -> 条件判断
-    def need_clarification_after_nlu(state: dict) -> str:
+    # NLU -> 条件判断：广告主处理 / 澄清 / Planner
+    def route_after_nlu(state: dict) -> str:
         ambiguity = state.get("ambiguity", {})
         if ambiguity and ambiguity.get("has_ambiguity", False):
             return "hitl"
+
+        query_intent = state.get("query_intent", {})
+        if query_intent.get("show_advertiser_list", False) or query_intent.get("need_advertiser_selection", False):
+            return "advertiser_handle"
+
         return "planner"
 
     graph.add_conditional_edges(
         "nlu",
-        need_clarification_after_nlu,
-        {"hitl": "hitl", "planner": "planner"}
+        route_after_nlu,
+        {"hitl": "hitl", "advertiser_handle": "advertiser_handle", "planner": "planner"}
     )
+
+    # advertiser_handle -> 结束（直接返回列表或提示）
+    graph.add_edge("advertiser_handle", END)
 
     # HITL -> 回到 NLU 重新理解
     graph.add_edge("hitl", "nlu")
