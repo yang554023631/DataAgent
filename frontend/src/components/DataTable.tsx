@@ -1,0 +1,241 @@
+import React, { useState } from 'react';
+
+interface DataTableProps {
+  columns: string[];
+  rows: any[][];
+  pageSize?: number;
+}
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+
+type SortDirection = 'asc' | 'desc' | null;
+
+export const DataTable: React.FC<DataTableProps> = ({ columns, rows, pageSize: initialPageSize = 10 }) => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const [jumpValue, setJumpValue] = useState('');
+  const [sortColumn, setSortColumn] = useState<number | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+  const totalPages = Math.ceil(rows.length / pageSize);
+
+  // 处理表头点击排序
+  const handleHeaderClick = (index: number) => {
+    if (sortColumn === index) {
+      // 第三次点击取消排序
+      if (sortDirection === 'desc') {
+        setSortColumn(null);
+        setSortDirection(null);
+      } else {
+        setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+      }
+    } else {
+      setSortColumn(index);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1); // 排序后跳转到第一页
+  };
+
+  // 排序逻辑
+  const sortedRows = [...rows];
+  if (sortColumn !== null && sortDirection !== null) {
+    sortedRows.sort((a, b) => {
+      const valA = a[sortColumn];
+      const valB = b[sortColumn];
+
+      // 数字排序
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+
+      // 字符串排序（支持中文）
+      const strA = String(valA || '');
+      const strB = String(valB || '');
+
+      return sortDirection === 'asc'
+        ? strA.localeCompare(strB, 'zh-CN')
+        : strB.localeCompare(strA, 'zh-CN');
+    });
+  }
+
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const currentRows = sortedRows.slice(startIndex, endIndex);
+
+  // 获取排序图标
+  const getSortIcon = (index: number) => {
+    if (sortColumn !== index) {
+      return <span className="ml-1 text-gray-300">⇅</span>;
+    }
+    return sortDirection === 'asc'
+      ? <span className="ml-1 text-blue-600">↑</span>
+      : <span className="ml-1 text-blue-600">↓</span>;
+  };
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  const changePageSize = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1); // 切换每页大小时重置到第一页
+  };
+
+  const handleJump = () => {
+    const page = parseInt(jumpValue, 10);
+    if (!isNaN(page)) {
+      goToPage(page);
+    }
+    setJumpValue('');
+  };
+
+  const handleJumpKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleJump();
+    }
+  };
+
+  // 生成分页按钮
+  const renderPaginationButtons = () => {
+    const buttons = [];
+    const maxButtons = 5; // 最多显示5个页码按钮
+
+    let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+    let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+
+    // 调整起始页，确保显示足够的按钮
+    if (endPage - startPage + 1 < maxButtons) {
+      startPage = Math.max(1, endPage - maxButtons + 1);
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+      buttons.push(
+        <button
+          key={i}
+          onClick={() => goToPage(i)}
+          className={`px-3 py-1 text-sm rounded ${
+            currentPage === i
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+          }`}
+        >
+          {i}
+        </button>
+      );
+    }
+    return buttons;
+  };
+
+  return (
+    <div>
+      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50 sticky top-0">
+            <tr>
+              {columns.map((col, index) => (
+                <th
+                  key={index}
+                  className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                  onClick={() => handleHeaderClick(index)}
+                >
+                  {col}
+                  {getSortIcon(index)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {currentRows.map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                {row.map((cell, cellIndex) => (
+                  <td key={cellIndex} className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                    {typeof cell === 'number' ? cell.toLocaleString() : cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 分页控制 - 只要有数据就显示，至少显示总条数和页面大小选择器 */}
+      {rows.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 bg-gray-50 border-t border-gray-200">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="text-sm text-gray-700">
+              共 {rows.length} 条，第 {currentPage} / {totalPages} 页
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">每页显示</span>
+              <select
+                value={pageSize}
+                onChange={(e) => changePageSize(Number(e.target.value))}
+                className="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {PAGE_SIZE_OPTIONS.map((size) => (
+                  <option key={size} value={size}>
+                    {size} 条
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {/* 只有多页时才显示页码导航按钮 */}
+          {totalPages > 1 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => goToPage(1)}
+                disabled={currentPage === 1}
+                className="px-2 py-1 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                首页
+              </button>
+              <button
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
+                className="px-2 py-1 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                上一页
+              </button>
+              {renderPaginationButtons()}
+              <button
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                下一页
+              </button>
+              <button
+                onClick={() => goToPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 text-sm rounded bg-gray-100 text-gray-700 hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                末页
+              </button>
+              <span className="mx-1 text-gray-500 text-sm">|</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  value={jumpValue}
+                  onChange={(e) => setJumpValue(e.target.value)}
+                  onKeyPress={handleJumpKeyPress}
+                  placeholder="页码"
+                  className="w-16 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <button
+                  onClick={handleJump}
+                  className="px-2 py-1 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  跳转
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
