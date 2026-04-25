@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from dateutil.relativedelta import relativedelta
 from pydantic import BaseModel
 from langchain_core.tools import tool
 
@@ -50,13 +51,53 @@ def parse_time_range(text: str) -> TimeRange:
             unit="day"
         )
 
-    # 近7天（默认）
+    # 近7天
     if "近7天" in text or "最近7天" in text or "过去一周" in text:
         start = today - timedelta(days=6)
         return TimeRange(
             start_date=str(start),
             end_date=str(today),
             unit="day"
+        )
+
+    # 本月
+    if "本月" in text:
+        first_day = today.replace(day=1)
+        return TimeRange(
+            start_date=str(first_day),
+            end_date=str(today),
+            unit="day"
+        )
+
+    # 上个月
+    if "上个月" in text:
+        first_day_of_this_month = today.replace(day=1)
+        last_day_of_last_month = first_day_of_this_month - timedelta(days=1)
+        first_day_of_last_month = last_day_of_last_month.replace(day=1)
+        return TimeRange(
+            start_date=str(first_day_of_last_month),
+            end_date=str(last_day_of_last_month),
+            unit="day"
+        )
+
+    # 近3个月 / 最近三个月
+    if "近3个月" in text or "最近三个月" in text or "近三个月" in text or "最近3个月" in text:
+        # 计算三个月范围：从2个月前的第一天到今天（这样是3个完整月份的数据）
+        two_months_ago = today - relativedelta(months=2)
+        start = two_months_ago.replace(day=1)
+        return TimeRange(
+            start_date=str(start),
+            end_date=str(today),
+            unit="month"
+        )
+
+    # 按月细分（不改变时间范围，只改 unit）
+    if "按月" in text or "按月份" in text:
+        start = today - timedelta(days=90)
+        return TimeRange(
+            start_date=str(start),
+            end_date=str(today),
+            unit="month"
         )
 
     # 默认：近7天
