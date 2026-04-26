@@ -214,7 +214,16 @@ async def reporter_agent(
     # 3. 准备表格数据
     if data:
         columns = list(data[0].keys())
-        rows = [list(row.values()) for row in data]
+
+        # 检测是否有实际维度列（如果有，则移除重复的name列）
+        dimension_columns = {"性别", "年龄段", "操作系统", "兴趣标签", "日期", "月份", "周", "小时", "渠道", "计划ID", "广告主ID"}
+        has_actual_dimensions = any(col in dimension_columns for col in columns)
+
+        # 如果有实际维度列，则移除name列（避免重复显示）
+        if has_actual_dimensions and "name" in columns:
+            columns.remove("name")
+
+        rows = [list(row[col] for col in columns) for row in data]
     else:
         columns = []
         rows = []

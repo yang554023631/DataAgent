@@ -45,10 +45,17 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
               <ChartRenderer
                 report={message.finalReport as any}
                 data={message.finalReport.data_table?.rows?.map((row: any[]) => {
-                  const obj: Record<string, any> = { name: row[0] };
+                  const obj: Record<string, any> = {};
                   message.finalReport?.data_table.columns?.forEach((col: string, i: number) => {
                     obj[col] = row[i];
                   });
+                  // 多维度时，name 是所有维度列的组合值（用于图表X轴显示）
+                  const dimensionColumns = Object.keys(obj).filter(col =>
+                    !['impressions', 'clicks', 'cost', 'conversions', 'ctr', 'cvr', 'roi'].includes(col)
+                  );
+                  if (dimensionColumns.length > 0) {
+                    obj.name = dimensionColumns.map(col => obj[col]).join(' / ');
+                  }
                   return obj;
                 }) || []}
                 groupBy={[]}

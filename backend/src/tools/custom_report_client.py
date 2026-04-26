@@ -235,26 +235,38 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
                         # 小时维度显示为 "X点"
                         mapped_path.append(f"{val_str}点")
                     elif dim == "data_month":
-                        # 月份维度：timestamp 毫秒转 YYYY-MM 格式
+                        # 月份维度：支持 timestamp 毫秒 或 YYYY-MM-DD 字符串
                         try:
-                            ts = int(val) / 1000 if isinstance(val, (int, float, str)) and len(str(val)) > 10 else val
-                            dt = datetime.fromtimestamp(float(ts))
+                            val_str = str(val)
+                            if len(val_str) > 10:  # 毫秒时间戳
+                                ts = int(val) / 1000
+                                dt = datetime.fromtimestamp(float(ts))
+                            else:  # YYYY-MM-DD 字符串
+                                dt = datetime.strptime(val_str, "%Y-%m-%d")
                             mapped_path.append(dt.strftime("%Y年%m月"))
                         except (ValueError, TypeError):
                             mapped_path.append(val_str)
                     elif dim == "data_week":
-                        # 周维度：timestamp 毫秒转 第X周 格式
+                        # 周维度：支持 timestamp 毫秒 或 YYYY-MM-DD 字符串
                         try:
-                            ts = int(val) / 1000 if isinstance(val, (int, float, str)) and len(str(val)) > 10 else val
-                            dt = datetime.fromtimestamp(float(ts))
+                            val_str = str(val)
+                            if len(val_str) > 10:  # 毫秒时间戳
+                                ts = int(val) / 1000
+                                dt = datetime.fromtimestamp(float(ts))
+                            else:  # YYYY-MM-DD 字符串
+                                dt = datetime.strptime(val_str, "%Y-%m-%d")
                             mapped_path.append(f"{dt.year}年第{dt.isocalendar()[1]}周")
                         except (ValueError, TypeError):
                             mapped_path.append(val_str)
                     elif dim == "data_date":
-                        # 日期维度：timestamp 毫秒转 YYYY-MM-DD 格式
+                        # 日期维度：支持 timestamp 毫秒 或 YYYY-MM-DD 字符串
                         try:
-                            ts = int(val) / 1000 if isinstance(val, (int, float, str)) and len(str(val)) > 10 else val
-                            dt = datetime.fromtimestamp(float(ts))
+                            val_str = str(val)
+                            if len(val_str) > 10:  # 毫秒时间戳
+                                ts = int(val) / 1000
+                                dt = datetime.fromtimestamp(float(ts))
+                            else:  # YYYY-MM-DD 字符串
+                                dt = datetime.strptime(val_str, "%Y-%m-%d")
                             mapped_path.append(dt.strftime("%Y-%m-%d"))
                         except (ValueError, TypeError):
                             mapped_path.append(val_str)
@@ -294,12 +306,67 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
             row[metric] = int(value) if metric != "ctr" else float(value)
         result.append(row)
 
+    # 按分组维度做二次聚合（ES实际按天返回，需要合并相同维度值的数据）
+    if group_by and len(result) > 1:
+        # 获取所有维度列名（用于聚合key）
+        dim_columns = []
+        for gb in group_by:
+            dim = gb if isinstance(gb, str) else gb.get("field", "")
+            col_name = DIMENSION_NAME_MAP.get(dim, dim)
+            dim_columns.append(col_name)
+
+        # 按维度列值进行聚合（不论维度类型，只要值相同就合并）
+        aggregated = {}
+        for row in result:
+            # 构建聚合key：所有维度列的值组合
+            key_values = [str(row.get(col, "")) for col in dim_columns]
+            key = tuple(key_values)
+
+            if key not in aggregated:
+                aggregated[key] = row.copy()
+            else:
+                # 累加所有数值指标
+                for metric in metrics:
+                    if metric in row:
+                        aggregated[key][metric] = aggregated[key].get(metric, 0) + row[metric]
+
+        result = list(aggregated.values())
+
     # 计算衍生指标 CTR (点击率) = clicks / impressions
     if result and "clicks" in metrics and "impressions" in metrics:
         for row in result:
             impressions = row.get("impressions", 0)
             clicks = row.get("clicks", 0)
             row["ctr"] = clicks / impressions if impressions > 0 else 0
+
+    # 按维度进行自然排序（小时按数字排序，而非字符串排序）
+    if group_by and len(result) > 1:
+        def sort_key(row):
+            keys = []
+            for gb in group_by:
+                dim = gb if isinstance(gb, str) else gb.get("field", "")
+                col_name = DIMENSION_NAME_MAP.get(dim, dim)
+                val = row.get(col_name, "")
+
+                if dim == "data_hour":
+                    # 小时维度：提取数字进行排序
+                    try:
+                        if isinstance(val, str):
+                            hour_num = int(val.replace("点", ""))
+                        else:
+                            hour_num = int(val)
+                        keys.append(hour_num)
+                    except (ValueError, TypeError):
+                        keys.append(val)
+                elif dim in ["data_date", "data_month", "data_week"]:
+                    # 时间维度保持原顺序（ES已按时间排序）
+                    keys.append(val)
+                else:
+                    # 其他维度按字符串排序
+                    keys.append(str(val))
+            return tuple(keys)
+
+        result = sorted(result, key=sort_key)
 
     return result
 

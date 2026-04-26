@@ -406,3 +406,86 @@ class TestEmptyDataValidation:
         # title 应该存在
         assert result["title"] != ""
         assert "广告报表分析" in result["title"]
+
+
+class TestNameColumnFiltering:
+    """测试表格中重复 name 列的过滤
+
+    Bug: 按月份/性别等维度查询时，表格中同时显示维度列（月份、性别）和 name 列，内容重复
+    期望：当有实际维度列时，从表格列中移除 name
+    """
+
+    @pytest.mark.asyncio
+    async def test_month_dimension_filters_name_column(self):
+        """测试按月份维度查询时，表格列应该只显示'月份'，不显示'name'"""
+        query_intent = {}
+        query_request = {
+            "metrics": ["clicks"],
+            "group_by": ["data_month"],
+            "time_range": {"start_date": "2026-02-01", "end_date": "2026-03-15"}
+        }
+        query_result = {
+            "data": [
+                {"月份": "2026年02月", "name": "2026年02月", "clicks": 6000},
+                {"月份": "2026年03月", "name": "2026年03月", "clicks": 9000},
+            ]
+        }
+        analysis_result = {"anomalies": [], "insights": [], "recommendations": [], "rankings": {}}
+
+        result = await reporter_agent(query_intent, query_request, query_result, analysis_result)
+
+        columns = result["data_table"]["columns"]
+        # 应该有'月份'列
+        assert "月份" in columns
+        # 不应该有'name'列（重复）
+        assert "name" not in columns, f"'name'列应该被过滤，当前列: {columns}"
+
+    @pytest.mark.asyncio
+    async def test_multiple_dimensions_filter_name_column(self):
+        """测试多维度（月份+性别）查询时，表格列应该只显示'月份'和'性别'，不显示'name'"""
+        query_intent = {}
+        query_request = {
+            "metrics": ["clicks"],
+            "group_by": ["data_month", "audience_gender"],
+            "time_range": {"start_date": "2026-02-01", "end_date": "2026-03-15"}
+        }
+        query_result = {
+            "data": [
+                {"月份": "2026年02月", "性别": "男性", "name": "2026年02月 / 男性", "clicks": 3000},
+                {"月份": "2026年02月", "性别": "女性", "name": "2026年02月 / 女性", "clicks": 4000},
+                {"月份": "2026年03月", "性别": "男性", "name": "2026年03月 / 男性", "clicks": 3000},
+                {"月份": "2026年03月", "性别": "女性", "name": "2026年03月 / 女性", "clicks": 3500},
+            ]
+        }
+        analysis_result = {"anomalies": [], "insights": [], "recommendations": [], "rankings": {}}
+
+        result = await reporter_agent(query_intent, query_request, query_result, analysis_result)
+
+        columns = result["data_table"]["columns"]
+        # 应该有'月份'和'性别'列
+        assert "月份" in columns
+        assert "性别" in columns
+        # 不应该有'name'列（重复）
+        assert "name" not in columns, f"'name'列应该被过滤，当前列: {columns}"
+
+    @pytest.mark.asyncio
+    async def test_no_dimension_preserves_name_column(self):
+        """测试无维度分组时，应该保留'name'列（因为这是唯一的维度显示）"""
+        query_intent = {}
+        query_request = {
+            "metrics": ["clicks"],
+            "group_by": [],
+            "time_range": {"start_date": "2026-02-01", "end_date": "2026-03-15"}
+        }
+        query_result = {
+            "data": [
+                {"name": "总计", "clicks": 13500},
+            ]
+        }
+        analysis_result = {"anomalies": [], "insights": [], "recommendations": [], "rankings": {}}
+
+        result = await reporter_agent(query_intent, query_request, query_result, analysis_result)
+
+        columns = result["data_table"]["columns"]
+        # 没有其他维度列时，应该保留'name'列
+        assert "name" in columns, "没有其他维度列时应该保留name列"

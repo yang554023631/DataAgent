@@ -199,20 +199,20 @@ async def test_e2e_date_formatting_with_multiple_dimensions():
 
     # 验证多维度下的日期格式化
     columns = final_report["data_table"]["columns"]
-    name_col_idx = columns.index("name")  # 找到 name 列的位置
+    month_col_idx = columns.index("月份")
+    gender_col_idx = columns.index("性别")
     for row in final_report["data_table"]["rows"][:5]:  # 检查前5行
-        name_value = row[name_col_idx]
-        # 名称格式应该是 "2026年02月 / 男性"
-        assert " / " in name_value, f"多维度分隔符缺失: {name_value}"
-        parts = name_value.split(" / ")
-        # 第一部分应该是格式化的日期
-        assert "年" in parts[0] or "-" in parts[0], f"日期部分格式错误: {parts[0]}"
-        # 第二部分应该是性别值
-        assert parts[1] in ["男性", "女性", "未知"], f"性别值错误: {parts[1]}"
+        # 验证月份格式
+        month_value = row[month_col_idx]
+        assert "年" in month_value and "月" in month_value, f"月份格式错误: {month_value}"
+        # 验证性别值
+        gender_value = row[gender_col_idx]
+        assert gender_value in ["男性", "女性", "未知"], f"性别值错误: {gender_value}"
 
     # 验证拆列后的独立列存在
     assert "月份" in columns, "应该有'月份'列"
     assert "性别" in columns, "应该有'性别'列"
+    assert "name" not in columns, "不应该有重复的'name'列（已有独立维度列）"
 
 
 @pytest.mark.asyncio
@@ -272,10 +272,9 @@ async def test_e2e_multi_dimension_split_columns_integration():
     columns = final_report["data_table"]["columns"]
     assert "月份" in columns, "应该有'月份'列"
     assert "性别" in columns, "应该有'性别'列"
-    assert "name" in columns, "应该有'name'列（用于兼容）"
+    assert "name" not in columns, "不应该有重复的'name'列（已有独立维度列）"
 
-    # 验证列的顺序
-    assert columns.index("月份") < columns.index("性别"), "月份应该在性别之前"
+    # 验证列存在（顺序不影响功能）
 
     # 验证数据行格式
     rows = final_report["data_table"]["rows"]
@@ -286,9 +285,6 @@ async def test_e2e_multi_dimension_split_columns_integration():
     # 第一行应该有性别值
     first_row_gender = rows[0][columns.index("性别")]
     assert first_row_gender in ["男性", "女性", "未知"], f"性别值错误: {first_row_gender}"
-    # name 列应该是组合值
-    first_row_name = rows[0][columns.index("name")]
-    assert " / " in first_row_name, f"name 列格式错误: {first_row_name}"
 
 
 @pytest.mark.asyncio

@@ -52,7 +52,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
     const series2Data: number[] = [];
 
     // 假设两个周期的数据长度相同且一一对应
-    const maxLen = Math.min(period1.data.length, period2.data.length, 15); // 最多显示15个点
+    const maxLen = Math.min(period1.data.length, period2.data.length);
 
     for (let i = 0; i < maxLen; i++) {
       const item1 = period1.data[i];
@@ -197,11 +197,24 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
     const categories: string[] = [];
     const values: number[] = [];
 
-    data.slice(0, 15).forEach((item) => {
-      // 第一列作为分类（维度值）
-      const firstKey = Object.keys(item)[0];
-      const category = item[firstKey] || item.name || '-';
-      categories.push(String(category));
+    // 确定哪些列是维度列（排除指标列和 name）
+    const metricColumns = ['impressions', 'clicks', 'cost', 'conversions', 'ctr', 'cvr', 'roi'];
+    const dimensionColumns = Object.keys(data[0] || {})
+      .filter(col => !metricColumns.includes(col) && col !== 'name');
+
+    data.forEach((item) => {
+      // 如果有多维度列，使用 name 列的组合值作为分类（因为 name 包含所有维度的组合）
+      // 如果只有单个维度列，直接使用该维度值
+      let category: string;
+      if (dimensionColumns.length > 1 && item.name) {
+        category = String(item.name);
+      } else if (dimensionColumns.length === 1) {
+        category = String(item[dimensionColumns[0]]) || item.name || '-';
+      } else {
+        const firstKey = Object.keys(item)[0];
+        category = item[firstKey] || item.name || '-';
+      }
+      categories.push(category);
       values.push(Number(item[primaryMetric]) || 0);
     });
 
