@@ -189,13 +189,34 @@ async def reporter_agent(
     highlights = []
     for anomaly in anomalies:
         change_percent = anomaly.get("change_percent", 0) or 0
-        emoji = "🟢" if change_percent > 0 else "🔴"
-        metric_name = get_metric_display_name.func(anomaly.get("metric", ""))
-        change_str = format_change.func(change_percent) if change_percent != 0 else ""
-        highlights.append({
-            "type": "positive" if change_percent > 0 else "negative",
-            "text": f"{emoji} {anomaly.get('dimension_value', '')} {metric_name} 异常：{change_str}"
-        })
+        metric = anomaly.get("metric", "")
+        metric_name = get_metric_display_name.func(metric)
+        dimension_value = anomaly.get('dimension_value', '')
+        current_value = anomaly.get('current_value', 0)
+
+        # 格式化当前值
+        if metric in ["ctr", "cvr"]:
+            formatted_value = format_percent.func(current_value)
+        elif metric == "cost":
+            formatted_value = format_currency.func(current_value)
+        else:
+            formatted_value = format_number.func(current_value)
+
+        # 根据异常类型显示不同信息
+        if anomaly.get("type") == "outlier":
+            emoji = "⚠️"
+            z_score = anomaly.get('z_score', 0)
+            highlights.append({
+                "type": "negative",
+                "text": f"{emoji} {dimension_value} {metric_name} 数值异常：{formatted_value}（偏离均值{abs(z_score):.1f}倍标准差）"
+            })
+        else:  # sudden_change
+            emoji = "🟢" if change_percent > 0 else "🔴"
+            change_str = format_change.func(change_percent) if change_percent != 0 else "变化量为0"
+            highlights.append({
+                "type": "positive" if change_percent > 0 else "negative",
+                "text": f"{emoji} {dimension_value} {metric_name} 环比突变：{change_str}（当前值 {formatted_value}）"
+            })
 
     # 加入洞察
     for insight in analysis_result.get("insights", []):

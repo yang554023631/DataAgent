@@ -1,0 +1,145 @@
+# ============================================
+# 洞察规则配置文件
+# 所有阈值基于ES全量数据百分位计算（最近1年，196个素材）
+# 如需重新计算，运行: python tools/calc_percentile_thresholds.py --days 365
+# ============================================
+
+# 亮点规则配置 (A系列)
+highlight_rules:
+  A01_high_ctr:
+    enabled: true
+    name: "CTR表现优异"
+    threshold: 0.0235        # CTR >= 2.35% (P85阈值，下限)
+    upper_threshold: 0.0255  # CTR <= 2.55% (P99阈值，上限)
+    min_hits: 1              # 至少1个素材命中才算
+    description: "CTR在2.35%~2.55%之间的优质素材（P85~P99区间）"
+
+  A02_high_cvr:
+    enabled: true
+    name: "CVR表现优异"
+    threshold: 0.0310     # CVR >= 3.10% (P85阈值)
+    min_hits: 1           # 至少1个素材命中才算
+    description: "CVR >= 3.10% 的高转化素材（优于85%素材）"
+
+  A03_low_cpc:
+    enabled: true
+    name: "CPC成本优势显著"
+    threshold: 0.0410      # CPC <= 0.0410元 (P15阈值)
+    min_hits: 1            # 至少1个素材命中才算
+    description: "CPC <= 0.0410元 的低成本素材（优于85%素材）"
+
+  A07_cvr_contrast:
+    enabled: true
+    name: "CVR反差亮点"
+    threshold: 0.0315     # CVR >= 3.15% (P90阈值)
+    min_hits: 1           # 至少1个素材命中才算
+    description: "CVR >= 3.15% 的顶级优质素材（优于90%素材）"
+
+  A09_ctr_low_cvr_high:
+    enabled: true
+    name: "精准定向潜力股"
+    ctr_threshold: 0.0215  # CTR <= 2.15% (P10阈值)
+    cvr_threshold: 0.0305  # CVR >= 3.05% (P80阈值)
+    min_hits: 1            # 至少1个素材命中才算
+    description: "CTR低但CVR高的精准定向素材"
+
+# 问题规则配置 (P系列)
+problem_rules:
+  P01_low_cvr:
+    enabled: true
+    name: "CVR转化低下"
+    threshold: 0.0285     # CVR <= 2.85% (P15阈值)
+    min_hits: 1           # 至少1个素材命中才算
+    description: "CVR <= 2.85% 的低效素材（比85%素材差）"
+
+  P03_high_cpa:
+    enabled: true
+    name: "CPA转化成本过高"
+    threshold: 1.70      # CPA >= 1.70元 (P85阈值)
+    min_hits: 1          # 至少1个素材命中才算
+    description: "CPA >= 1.70元 的高成本素材（比85%素材差）"
+
+  P05_ctr_anomaly:
+    enabled: true
+    name: "CTR异常波动"
+    low_threshold: 0.0205   # CTR <= 2.05% (P3阈值)
+    high_threshold: 0.0255  # CTR >= 2.55% (P99阈值)
+    min_hits: 1             # 异常情况，1个就足够
+    description: "CTR异常（<2.05% 或 >2.55%）的素材"
+
+# 时序规则配置 (P02, P04, P06, P07, P08, P09)
+# 这些规则基于业务逻辑而非百分位数
+timing_rules:
+  P02_creative_fatigue:
+    enabled: true
+    name: "创意疲劳衰减"
+    decline_days: 3         # 连续下降天数
+    decline_threshold: 0.2  # 降幅阈值 (20%)
+    description: "连续{decline_days}天CTR下降且降幅超过{decline_threshold*100}%"
+
+  P04_frequency_control:
+    enabled: true
+    name: "频次失控"
+    threshold: 5.0               # 日均频次阈值（原3.0，现放宽到5.0）
+    description: "日均曝光频次超过阈值，可能对用户造成骚扰"
+
+  P06_bidding_issue:
+    enabled: true
+    name: "出价策略异常"
+    cpc_change_threshold: 2.0   # CPC单日变化阈值（200%，即2倍）
+    description: "CPC单日波动异常剧烈"
+
+  P07_saturation:
+    enabled: true
+    name: "地域投放过于集中"
+    reach_threshold: 0.8    # 单地域覆盖率阈值
+    cpa_ratio_threshold: 1.5 # CPA倍数阈值
+    description: "单地域触达占比过高且CPA显著高于其他地区"
+
+  P08_device_compatibility:
+    enabled: true
+    name: "设备兼容问题"
+    ctr_ratio_threshold: 5.0   # CTR差异倍数（原3倍，现5倍）
+    description: "设备间CTR差异过大，可能存在兼容问题"
+
+  P09_competitor_impact:
+    enabled: true
+    name: "竞品活动冲击"
+    cpc_rise_threshold: 0.8    # CPC上涨阈值（80%）
+    ctr_drop_threshold: 0.4    # CTR下降阈值（40%）
+    description: "CPC大涨同时CTR大跌的典型竞品冲击特征"
+
+  P10_spend_volatility:
+    enabled: true
+    name: "消耗波动异常"
+    change_threshold: 2.0      # 单日变化率阈值（200%，即2倍）
+    description: "单日消耗变化率超过阈值，投放不稳定"
+
+# 基础规则 (A04-A06, A08)
+# 这些规则依赖特定数据字段或特殊逻辑
+special_rules:
+  A04_healthy_spend:
+    enabled: true
+    name: "消耗曲线健康"
+    utilization_threshold: 0.9
+    cv_threshold: 0.2
+    description: "预算利用率高且消耗平稳"
+
+  A05_frequency_control:
+    enabled: true
+    name: "曝光频次控制良好"
+    min_freq: 1.5
+    max_freq: 2.5
+    description: "平均曝光频次处于理想区间"
+
+  A06_conversion_timing:
+    enabled: true
+    name: "转化节奏理想"
+    ratio_threshold: 0.8
+    description: "24小时内完成转化占比高"
+
+  A08_device_cpa_contrast:
+    enabled: true
+    name: "分设备CPA反差亮点"
+    cpa_ratio_threshold: 0.5
+    description: "某设备CPA显著低于其他设备（最好是次好的50%以下）"

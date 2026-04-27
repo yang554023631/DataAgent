@@ -35,7 +35,12 @@ def apply_business_rules(intent: Dict[str, Any]) -> Dict[str, Any]:
         result["warnings"] = warnings
         result["group_by"] = group_by
 
-    has_audience_dim = any(d.startswith("audience_") for d in group_by)
+    # 如果没有指定分组维度，默认按 creative_id 分组，以便洞察分析
+    # 因为规则引擎需要识别单个广告的表现好坏
+    if not group_by:
+        result["group_by"] = ["creative_id"]
+
+    has_audience_dim = any(d.startswith("audience_") for d in result.get("group_by", []))
 
     if has_audience_dim:
         result["index_type"] = "audience"

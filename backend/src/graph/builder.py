@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from .state import AdReportState
-from .nodes import nlu_node, hitl_node, planner_node, executor_node, analyst_node, reporter_node, advertiser_handle_node
+from .nodes import nlu_node, hitl_node, planner_node, executor_node, insight_node, analyst_node, reporter_node, advertiser_handle_node
 
 def build_graph():
     """构建完整的 LangGraph 流程图"""
@@ -12,6 +12,7 @@ def build_graph():
     graph.add_node("advertiser_handle", advertiser_handle_node)
     graph.add_node("planner", planner_node)
     graph.add_node("executor", executor_node)
+    graph.add_node("insight", insight_node)
     graph.add_node("analyst", analyst_node)
     graph.add_node("reporter", reporter_node)
 
@@ -57,8 +58,9 @@ def build_graph():
         {"hitl": "hitl", "executor": "executor"}
     )
 
-    # Executor -> Analyst
-    graph.add_edge("executor", "analyst")
+    # Executor -> Insight -> Analyst
+    graph.add_edge("executor", "insight")
+    graph.add_edge("insight", "analyst")
 
     # Analyst -> 条件判断（是否需要下钻）
     def need_drill_down(state: dict) -> str:

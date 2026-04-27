@@ -8,6 +8,7 @@ from src.agents.nlu_agent import nlu_agent
 from src.agents.planner_agent import planner_agent
 from src.agents.analyst_agent import analyst_agent
 from src.agents.reporter_agent import reporter_agent, format_comparison_report
+from src.agents.insight_agent import insight_agent, insights_to_highlights
 from src.services.advertiser_service import get_all_advertisers
 
 async def nlu_node(state: dict) -> dict:
@@ -228,12 +229,13 @@ async def analyst_node(state: dict) -> dict:
         }
 
 async def reporter_node(state: dict) -> dict:
-    """报告生成节点（支持对比查询）"""
+    """报告生成节点（支持对比查询 + 洞察高亮）"""
     query_intent = state.get("query_intent", {})
     query_request = state.get("query_request", {})
     query_result = state.get("query_result") or {}
     query_results = state.get("query_results", [])
     analysis_result = state.get("analysis_result") or {}
+    insights = state.get("insights")
 
     try:
         # 检查是否为对比查询（有多个查询结果）
@@ -256,6 +258,19 @@ async def reporter_node(state: dict) -> dict:
                 analysis_result
             )
 
+        # 合并洞察结果到 highlights
+        if insights:
+            # 添加完整的洞察对象（用于前端渲染高级可折叠卡片，包含数据证据和建议）
+            final_report["insights"] = {
+                "problems": [p.model_dump() for p in insights.problems],
+                "highlights": [h.model_dump() for h in insights.highlights],
+                "summary": insights.summary
+            }
+            # 同时添加简化的 highlights 文本（向下兼容）
+            insight_highlights = insights_to_highlights(insights)
+            existing_highlights = final_report.get("highlights", [])
+            final_report["highlights"] = insight_highlights + existing_highlights
+
         return {
             "final_report": final_report,
             "error": None
@@ -264,4 +279,29 @@ async def reporter_node(state: dict) -> dict:
         return {
             "final_report": None,
             "error": {"type": "reporter_error", "message": str(e)}
+        }
+
+async def insight_node(state: dict) -> dict:
+    """洞察分析节点：对查询结果进行规则+LLM洞察分析"""
+    query_result = state.get("query_result", {})
+    query_request = state.get("query_request", {})
+
+    try:
+        # 构建查询上下文（基准值、配置等）
+        query_context = {
+            "query_request": query_request,
+            "baseline_values": {}  # 可扩展基准值配置
+        }
+
+        # 调用洞察Agent（暂时不启用LLM深度扫描）
+        insights = await insight_agent(query_result, query_context, enable_llm_scan=False)
+
+        return {
+            "insights": insights,
+            "error": None
+        }
+    except Exception as e:
+        return {
+            "insights": None,
+            "error": {"type": "insight_error", "message": str(e)}
         }

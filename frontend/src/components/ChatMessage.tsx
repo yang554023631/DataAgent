@@ -2,6 +2,7 @@ import { MetricCard } from './MetricCard';
 import { HighlightList } from './HighlightList';
 import { DataTable } from './DataTable';
 import ChartRenderer from './ChartRenderer';
+import { InsightPanel } from './InsightPanel';
 import { FinalReport } from '../services/api';
 
 interface ChatMessageProps {
@@ -63,9 +64,21 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
               />
             )}
 
+            {/* 高级洞察面板 - 可折叠卡片，显示数据证据和优化建议 */}
+            {message.finalReport.insights && (
+              <div>
+                <h4 className="text-sm font-semibold mb-3 text-gray-800">🧠 智能洞察</h4>
+                <InsightPanel
+                  problems={message.finalReport.insights.problems}
+                  highlights={message.finalReport.insights.highlights}
+                  summary={message.finalReport.insights.summary}
+                />
+              </div>
+            )}
+
             {message.finalReport.highlights.length > 0 && (
               <div>
-                <h4 className="text-sm font-medium mb-2">关键洞察</h4>
+                <h4 className="text-sm font-medium mb-2">关键提示</h4>
                 <HighlightList highlights={message.finalReport.highlights} />
               </div>
             )}

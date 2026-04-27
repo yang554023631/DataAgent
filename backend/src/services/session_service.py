@@ -85,7 +85,7 @@ class SessionService:
                 "query_intent": result.get("query_intent"),
                 "query_request": result.get("query_request"),
                 "query_result": result.get("query_result", {}),
-                "analysis": result.get("analysis", {}),
+                "analysis": result.get("analysis_result", {}),
                 "final_report": result.get("final_report"),
                 "warnings": result.get("query_warnings", [])
             }

@@ -7,10 +7,38 @@ const api = axios.create({
   },
 });
 
+export type InsightType = 'problem' | 'highlight' | 'info';
+export type Severity = 'high' | 'medium' | 'low';
+
+export interface Insight {
+  id: string;
+  type: InsightType;
+  name: string;
+  severity: Severity;
+  evidence: string;
+  suggestion: string;
+  source: string;
+}
+
+export interface FinalReport {
+  title: string;
+  time_range?: { start: string; end: string };
+  metrics: Array<{ name: string; value: string | number; trend?: string }>;
+  highlights: Array<{ type: 'positive' | 'negative' | 'info'; text: string }>;
+  insights?: {
+    problems: Insight[];
+    highlights: Insight[];
+    summary?: string;
+  };
+  data_table: { columns: string[]; rows: any[][] };
+  next_queries: string[];
+}
+
 export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: string;
+  finalReport?: FinalReport;
 }
 
 export interface Clarification {
