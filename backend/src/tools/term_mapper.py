@@ -17,6 +17,18 @@ METRIC_MAPPING = {
     "转化数": "conversions",
     "转化量": "conversions",
     "conversion": "conversions",
+    "覆盖": "reach",
+    "覆盖人数": "reach",
+    "覆盖量": "reach",
+    "触达": "reach",
+    "触达人数": "reach",
+    "触达量": "reach",
+    "reach": "reach",
+    "Reach": "reach",
+    "频次": "frequency",
+    "曝光频次": "frequency",
+    "frequency": "frequency",
+    "Frequency": "frequency",
     "点击率": "ctr",
     "CTR": "ctr",
     "转化率": "cvr",
@@ -64,6 +76,18 @@ DIMENSION_MAPPING = {
     "按兴趣": "audience_interest",
     "受众": "audience_gender",  # 默认受众按性别细分
     "分受众": "audience_gender",
+    "系统版本": "audience_os_version",
+    "操作系统版本": "audience_os_version",
+    "版本": "audience_os_version",
+    "国家": "audience_country",
+    "按国家": "audience_country",
+    "国家地区": "audience_country",
+    "城市": "audience_city",
+    "按城市": "audience_city",
+    "地域": "audience_city",
+    "行业": "industry",
+    "按行业": "industry",
+    "行业分类": "industry",
     "地区": "region_id",
     "区域": "region_id",
     "设备": "device_type",
@@ -76,6 +100,24 @@ FILTER_VALUE_MAPPING = {
     "iOS": {"field": "audience_os", "value": 1},
     "男性": {"field": "audience_gender", "value": 1},
     "女性": {"field": "audience_gender", "value": 2},
+    "iOS 15": {"field": "audience_os_version", "value": 11},
+    "iOS 16": {"field": "audience_os_version", "value": 12},
+    "iOS 17": {"field": "audience_os_version", "value": 13},
+    "Android 10": {"field": "audience_os_version", "value": 21},
+    "Android 11": {"field": "audience_os_version", "value": 22},
+    "Android 12": {"field": "audience_os_version", "value": 23},
+    "Android 13": {"field": "audience_os_version", "value": 24},
+    "Android 14": {"field": "audience_os_version", "value": 25},
+    "中国": {"field": "audience_country", "value": 101},
+    "美国": {"field": "audience_country", "value": 102},
+    "日本": {"field": "audience_country", "value": 103},
+    "德国": {"field": "audience_country", "value": 104},
+    "英国": {"field": "audience_country", "value": 105},
+    "北京": {"field": "audience_city", "value": 2001},
+    "上海": {"field": "audience_city", "value": 2002},
+    "广州": {"field": "audience_city", "value": 2003},
+    "深圳": {"field": "audience_city", "value": 2004},
+    "杭州": {"field": "audience_city", "value": 2005},
 }
 
 @tool
@@ -111,6 +153,10 @@ def map_dimensions(text: str) -> List[str]:
         ("按性别", "audience_gender"), ("分性别", "audience_gender"),
         ("按年龄", "audience_age"), ("按年龄段", "audience_age"), ("分年龄", "audience_age"),
         ("按平台", "audience_os"), ("按系统", "audience_os"), ("按操作系统", "audience_os"),
+        ("按系统版本", "audience_os_version"), ("按操作系统版本", "audience_os_version"), ("分版本", "audience_os_version"),
+        ("按国家", "audience_country"), ("分国家", "audience_country"),
+        ("按城市", "audience_city"), ("分城市", "audience_city"), ("分地域", "audience_city"),
+        ("按行业", "industry"), ("分行业", "industry"),
         ("按兴趣", "audience_interest"), ("按兴趣标签", "audience_interest"), ("分兴趣", "audience_interest"),
         ("按受众", "audience_gender"), ("分受众", "audience_gender"),
         ("按地区", "region_id"), ("按区域", "region_id"),
@@ -124,6 +170,10 @@ def map_dimensions(text: str) -> List[str]:
         ("天和", "data_date"), ("和天", "data_date"), ("日期和", "data_date"), ("和日期", "data_date"),
         ("小时和", "data_hour"), ("和小时", "data_hour"), ("时段和", "data_hour"), ("和时段", "data_hour"),
         ("平台和", "audience_os"), ("和平台", "audience_os"), ("系统和", "audience_os"), ("和系统", "audience_os"),
+        ("系统版本和", "audience_os_version"), ("和系统版本", "audience_os_version"),
+        ("国家和", "audience_country"), ("和国家", "audience_country"),
+        ("城市和", "audience_city"), ("和城市", "audience_city"), ("地域和", "audience_city"), ("和地域", "audience_city"),
+        ("行业和", "industry"), ("和行业", "industry"),
         ("兴趣和", "audience_interest"), ("和兴趣", "audience_interest"),
         ("渠道和", "campaign_id"), ("和渠道", "campaign_id"),
         ("广告组和", "adgroup_id"), ("和广告组", "adgroup_id"),
@@ -133,5 +183,10 @@ def map_dimensions(text: str) -> List[str]:
     for pattern, standard in dimension_patterns:
         if pattern in text_no_spaces and standard not in result:
             result.append(standard)
+
+    # 处理维度冲突：更细粒度的维度优先
+    # audience_os_version (系统版本) 比 audience_os (操作系统) 更细，保留前者
+    if 'audience_os_version' in result and 'audience_os' in result:
+        result.remove('audience_os')
 
     return result

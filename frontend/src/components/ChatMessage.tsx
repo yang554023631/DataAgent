@@ -51,7 +51,7 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
                   });
                   // 多维度时，name 是所有维度列的组合值（用于图表X轴显示）
                   const dimensionColumns = Object.keys(obj).filter(col =>
-                    !['impressions', 'clicks', 'cost', 'conversions', 'ctr', 'cvr', 'roi'].includes(col)
+                    !['impressions', 'clicks', 'cost', 'conversions', 'reach', 'frequency', 'ctr', 'cvr', 'roi'].includes(col)
                   );
                   if (dimensionColumns.length > 0) {
                     obj.name = dimensionColumns.map(col => obj[col]).join(' / ');

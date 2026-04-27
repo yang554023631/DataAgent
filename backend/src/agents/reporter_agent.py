@@ -216,7 +216,10 @@ async def reporter_agent(
         columns = list(data[0].keys())
 
         # 检测是否有实际维度列（如果有，则移除重复的name列）
-        dimension_columns = {"性别", "年龄段", "操作系统", "兴趣标签", "日期", "月份", "周", "小时", "渠道", "计划ID", "广告主ID"}
+        dimension_columns = {
+            "性别", "年龄段", "操作系统", "系统版本", "国家", "城市", "行业",
+            "兴趣标签", "日期", "月份", "周", "小时", "渠道", "计划ID", "广告主ID"
+        }
         has_actual_dimensions = any(col in dimension_columns for col in columns)
 
         # 如果有实际维度列，则移除name列（避免重复显示）

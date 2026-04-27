@@ -32,6 +32,8 @@ const getMetricDisplayName = (metric: string): string => {
     clicks: '点击量',
     cost: '花费',
     conversions: '转化数',
+    reach: '覆盖人数',
+    frequency: '频次',
     ctr: '点击率',
     cvr: '转化率',
     roi: 'ROI',
@@ -198,7 +200,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
     const values: number[] = [];
 
     // 确定哪些列是维度列（排除指标列和 name）
-    const metricColumns = ['impressions', 'clicks', 'cost', 'conversions', 'ctr', 'cvr', 'roi'];
+    const metricColumns = ['impressions', 'clicks', 'cost', 'conversions', 'reach', 'frequency', 'ctr', 'cvr', 'roi'];
     const dimensionColumns = Object.keys(data[0] || {})
       .filter(col => !metricColumns.includes(col) && col !== 'name');
 

@@ -284,6 +284,49 @@ files = [
 ]
 
 [[package]]
+name = "elastic-transport"
+version = "8.17.1"
+description = "Transport classes and utilities shared among Python Elastic client libraries"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "elastic_transport-8.17.1-py3-none-any.whl", hash = "sha256:192718f498f1d10c5e9aa8b9cf32aed405e469a7f0e9d6a8923431dbb2c59fb8"},
+    {file = "elastic_transport-8.17.1.tar.gz", hash = "sha256:5edef32ac864dca8e2f0a613ef63491ee8d6b8cfb52881fa7313ba9290cac6d2"},
+]
+
+[package.dependencies]
+certifi = "*"
+urllib3 = ">=1.26.2,<3"
+
+[package.extras]
+develop = ["aiohttp", "furo", "httpx", "opentelemetry-api", "opentelemetry-sdk", "orjson", "pytest", "pytest-asyncio", "pytest-cov", "pytest-httpserver", "pytest-mock", "requests", "respx", "sphinx (>2)", "sphinx-autodoc-typehints", "trustme"]
+
+[[package]]
+name = "elasticsearch"
+version = "8.17.0"
+description = "Python client for Elasticsearch"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "elasticsearch-8.17.0-py3-none-any.whl", hash = "sha256:15965240fe297279f0e68b260936d9ced9606aa7ef8910b9b56727f96ef00d5b"},
+    {file = "elasticsearch-8.17.0.tar.gz", hash = "sha256:c1069bf2204ba8fab29ff00b2ce6b37324b2cc6ff593283b97df43426ec13053"},
+]
+
+[package.dependencies]
+elastic-transport = ">=8.15.1,<9"
+
+[package.extras]
+async = ["aiohttp (>=3,<4)"]
+dev = ["aiohttp", "black", "build", "coverage", "isort", "jinja2", "mapbox-vector-tile", "nox", "numpy", "orjson", "pandas", "pyarrow", "pytest", "pytest-asyncio", "pytest-cov", "python-dateutil", "pyyaml (>=5.4)", "requests (>=2,<3)", "simsimd", "twine", "unasync"]
+docs = ["sphinx", "sphinx-autodoc-typehints", "sphinx-rtd-theme (>=2.0)"]
+orjson = ["orjson (>=3)"]
+pyarrow = ["pyarrow (>=1)"]
+requests = ["requests (>=2.4.0,!=2.32.2,<3.0.0)"]
+vectorstore-mmr = ["numpy (>=1)", "simsimd (>=3)"]
+
+[[package]]
 name = "fastapi"
 version = "0.109.2"
 description = "FastAPI framework, high performance, easy to learn, fast to code, ready for production"
@@ -2717,4 +2760,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.13"
-content-hash = "c77632ecb9b1658fda4204f4253028a67deeaa9ebbc6dc50232a4528058837c4"
+content-hash = "1f019098e6c7f01b1815d135c28e3b7d98f6e721715a1442a33a63c9aeebe2e4"

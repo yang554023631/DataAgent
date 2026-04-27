@@ -13,6 +13,8 @@ DATA_TYPE_MAP = {
     "clicks": 2,
     "cost": 3,
     "conversions": 4,
+    "reach": 5,
+    "frequency": 6,
 }
 
 FACT_INDEX = "ad_stat_data"
@@ -23,6 +25,9 @@ DIMENSION_NAME_MAP = {
     "audience_gender": "性别",
     "audience_age": "年龄段",
     "audience_os": "操作系统",
+    "audience_os_version": "系统版本",
+    "audience_country": "国家",
+    "audience_city": "城市",
     "audience_interest": "兴趣标签",
     "data_date": "日期",
     "data_month": "月份",
@@ -31,6 +36,7 @@ DIMENSION_NAME_MAP = {
     "channel": "渠道",
     "campaign_id": "计划ID",
     "advertiser_id": "广告主ID",
+    "industry": "行业",
 }
 
 # 受众维度值映射（数字 → 中文）
@@ -68,6 +74,58 @@ AUDIENCE_VALUE_MAPS = {
         "6": "生活服务",
         "7": "资讯阅读",
         "8": "旅游出行",
+    },
+    "audience_os_version": {
+        "11": "iOS 15",
+        "12": "iOS 16",
+        "13": "iOS 17",
+        "21": "Android 10",
+        "22": "Android 11",
+        "23": "Android 12",
+        "24": "Android 13",
+        "25": "Android 14",
+        "11.0": "iOS 15",
+        "12.0": "iOS 16",
+        "13.0": "iOS 17",
+        "21.0": "Android 10",
+        "22.0": "Android 11",
+        "23.0": "Android 12",
+        "24.0": "Android 13",
+        "25.0": "Android 14",
+    },
+    "audience_country": {
+        "101": "中国",
+        "102": "美国",
+        "103": "日本",
+        "104": "德国",
+        "105": "英国",
+        "101.0": "中国",
+        "102.0": "美国",
+        "103.0": "日本",
+        "104.0": "德国",
+        "105.0": "英国",
+    },
+    "audience_city": {
+        "2001": "北京",
+        "2002": "上海",
+        "2003": "广州",
+        "2004": "深圳",
+        "2005": "杭州",
+        "2006": "成都",
+        "2007": "武汉",
+        "2008": "重庆",
+        "2009": "南京",
+        "2010": "西安",
+        "2011": "天津",
+        "2012": "苏州",
+        "2013": "长沙",
+        "2014": "郑州",
+        "2015": "青岛",
+        "3001": "纽约",
+        "3002": "洛杉矶",
+        "3003": "旧金山",
+        "3004": "芝加哥",
+        "3005": "休斯顿",
     },
 }
 
@@ -147,6 +205,12 @@ def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
                 bool_must.append({"term": {"audience_type": 3}})
             elif field == "audience_interest":
                 bool_must.append({"term": {"audience_type": 4}})
+            elif field == "audience_os_version":
+                bool_must.append({"term": {"audience_type": 5}})
+            elif field == "audience_country":
+                bool_must.append({"term": {"audience_type": 6}})
+            elif field == "audience_city":
+                bool_must.append({"term": {"audience_type": 7}})
 
     query = {"bool": {"must": bool_must}} if bool_must else {"match_all": {}}
 
@@ -286,7 +350,13 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
                 for metric in metrics:
                     agg_key = f"sum_{metric}"
                     value = current_agg.get(agg_key, {}).get("value", {}).get("value", 0) or 0
-                    row[metric] = int(value) if metric != "ctr" else float(value)
+                    if metric == "frequency":
+                        # 频次存储值 = 实际值 × 100，需要还原
+                        row[metric] = round(value / 100.0, 2) if value else 0
+                    elif metric == "ctr":
+                        row[metric] = float(value)
+                    else:
+                        row[metric] = int(value)
                 result.append(row)
                 return
 
@@ -303,7 +373,12 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
         for metric in metrics:
             agg_key = f"sum_{metric}"
             value = aggregations.get(agg_key, {}).get("value", {}).get("value", 0) or 0
-            row[metric] = int(value) if metric != "ctr" else float(value)
+            if metric == "frequency":
+                row[metric] = round(value / 100.0, 2) if value else 0
+            elif metric == "ctr":
+                row[metric] = float(value)
+            else:
+                row[metric] = int(value)
         result.append(row)
 
     # 按分组维度做二次聚合（ES实际按天返回，需要合并相同维度值的数据）

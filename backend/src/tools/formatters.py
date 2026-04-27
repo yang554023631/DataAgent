@@ -45,6 +45,8 @@ METRIC_NAMES = {
     "impressions": "曝光量",
     "clicks": "点击量",
     "cost": "花费",
+    "reach": "触达人数",
+    "frequency": "频次",
     "ctr": "CTR",
     "cvr": "CVR",
     "roi": "ROI",
