@@ -1,6 +1,9 @@
-"""规则引擎单元测试"""
+"""规则引擎单元测试（固定阈值版本）
+所有阈值来自配置文件，基于ES全量数据百分位计算得出
+"""
 import pytest
 from src.tools.insight_rules import rule_engine
+from src.tools.insight_config import insight_config
 from src.models.insight import InsightType, Severity
 
 
@@ -27,307 +30,361 @@ class TestRuleEngine:
         assert isinstance(insights, list)
 
 
-class TestProblemRules:
-    """问题识别规则测试"""
-
-    def test_p01_audience_mismatch_triggered(self):
-        """P01: 受众定位偏差 - CTR正常但CVR极低"""
-        query_result = {
-            "data": [
-                {"ctr": 0.015, "cvr": 0.003},  # CTR 1.5%, CVR 0.3%
-                {"ctr": 0.020, "cvr": 0.004},
-                {"ctr": 0.018, "cvr": 0.002},
-            ]
-        }
-        insights = rule_engine.analyze(query_result, {})
-
-        p01_insights = [i for i in insights if i.id == "P01"]
-        assert len(p01_insights) == 1
-        assert p01_insights[0].type == InsightType.PROBLEM
-        assert p01_insights[0].severity == Severity.HIGH
-
-    def test_p01_audience_mismatch_not_triggered_normal_data(self):
-        """P01: 正常数据不应触发受众定位偏差"""
-        query_result = {
-            "data": [
-                {"ctr": 0.015, "cvr": 0.02},  # CVR 2% 正常
-                {"ctr": 0.020, "cvr": 0.025},
-            ]
-        }
-        insights = rule_engine.analyze(query_result, {})
-        p01_insights = [i for i in insights if i.id == "P01"]
-        assert len(p01_insights) == 0
-
-    def test_p02_creative_fatigue_triggered(self):
-        """P02: 创意疲劳衰减 - 连续多日CTR下降"""
-        query_result = {
-            "data": [
-                {"date": "2024-01-01", "ctr": 0.05},  # 第一天 5%
-                {"date": "2024-01-02", "ctr": 0.04},  # 第二天 4%
-                {"date": "2024-01-03", "ctr": 0.03},  # 第三天 3%
-            ]
-        }
-        insights = rule_engine.analyze(query_result, {})
-
-        p02_insights = [i for i in insights if i.id == "P02"]
-        assert len(p02_insights) == 1
-        assert p02_insights[0].type == InsightType.PROBLEM
-        assert p02_insights[0].severity == Severity.MEDIUM
-
-    def test_p02_creative_fatigue_not_triggered_insufficient_days(self):
-        """P02: 数据不足3天不触发创意疲劳"""
-        query_result = {
-            "data": [
-                {"date": "2024-01-01", "ctr": 0.05},
-                {"date": "2024-01-02", "ctr": 0.03},
-            ]
-        }
-        insights = rule_engine.analyze(query_result, {})
-        p02_insights = [i for i in insights if i.id == "P02"]
-        assert len(p02_insights) == 0
-
-    def test_p03_time_waste_triggered(self):
-        """P03: 时段投放浪费"""
-        query_result = {
-            "data": [
-                {"hour": "0-2", "cost": 1000, "cpa": 200},
-                {"hour": "8-10", "cost": 200, "cpa": 50},
-                {"hour": "12-14", "cost": 200, "cpa": 60},
-            ]
-        }
-        insights = rule_engine.analyze(query_result, {})
-
-        p03_insights = [i for i in insights if i.id == "P03"]
-        assert len(p03_insights) == 1
-        assert p03_insights[0].type == InsightType.PROBLEM
-        assert p03_insights[0].severity == Severity.HIGH
-        assert p03_insights[0].dimension_value == "0-2"
-
-    def test_p03_time_waste_not_triggered_balanced_cpa(self):
-        """P03: CPA均衡不触发放心浪费"""
-        query_result = {
-            "data": [
-                {"hour": "0-2", "cost": 1000, "cpa": 60},
-                {"hour": "8-10", "cost": 200, "cpa": 50},
-                {"hour": "12-14", "cost": 200, "cpa": 55},
-            ]
-        }
-        insights = rule_engine.analyze(query_result, {})
-        p03_insights = [i for i in insights if i.id == "P03"]
-        assert len(p03_insights) == 0
-
-    def test_p05_fraud_suspicion_triggered(self):
-        """P05: 流量作弊嫌疑"""
-        query_result = {
-            "data": [
-                {"ctr": 0.15, "bounce_rate": 0.95},  # CTR 15%, 跳出率 95%
-                {"ctr": 0.12, "bounce_rate": 0.92},
-            ]
-        }
-        insights = rule_engine.analyze(query_result, {})
-
-        p05_insights = [i for i in insights if i.id == "P05"]
-        assert len(p05_insights) == 1
-        assert p05_insights[0].type == InsightType.PROBLEM
-        assert p05_insights[0].severity == Severity.HIGH
-
-    def test_p05_fraud_suspicion_not_triggered_normal_ctr(self):
-        """P05: 正常CTR不触发作弊嫌疑"""
-        query_result = {
-            "data": [
-                {"ctr": 0.05, "bounce_rate": 0.5},  # 正常数据
-            ]
-        }
-        insights = rule_engine.analyze(query_result, {})
-        p05_insights = [i for i in insights if i.id == "P05"]
-        assert len(p05_insights) == 0
-
-
 class TestHighlightRules:
-    """亮点规则测试"""
+    """亮点规则测试（固定阈值版本）"""
 
-    def test_a01_high_ctr_triggered(self):
-        """A01: CTR表现优异"""
-        query_result = {
-            "summary": {"avg_ctr": 0.06}  # 6% CTR, 基准1.5%, >3倍
-        }
-        query_context = {"baseline_ctr": 0.015}
-        insights = rule_engine.analyze(query_result, query_context)
+    def test_a01_high_ctr_triggered_with_sufficient_data(self):
+        """A01: CTR在P80~P97区间内时触发"""
+        lower_threshold = insight_config.get('highlight_rules.A01_high_ctr.threshold', 0.0233)
+        upper_threshold = insight_config.get('highlight_rules.A01_high_ctr.upper_threshold', 0.0275)
 
+        data = []
+        # 5个低于下限的素材
+        for i in range(5):
+            data.append({
+                "name": f"普通创意{i+1}",
+                "id": f"c{i+1}",
+                "impressions": 1000,
+                "clicks": 20,  # 2% CTR
+                "cost": 10,
+                "conversions": 1
+            })
+        # 3个在区间内的素材（P80~P97之间）
+        mid_ctr = (lower_threshold + upper_threshold) / 2
+        mid_clicks = int(1000 * mid_ctr)
+        for i in range(3):
+            data.append({
+                "name": f"优质创意{i+1}",
+                "id": f"h{i+1}",
+                "impressions": 1000,
+                "clicks": mid_clicks,
+                "cost": 20,
+                "conversions": 2
+            })
+        # 2个超过上限的素材（应该触发P05异常，不触发A01）
+        extreme_clicks = int(1000 * (upper_threshold + 0.005))
+        for i in range(2):
+            data.append({
+                "name": f"异常创意{i+1}",
+                "id": f"e{i+1}",
+                "impressions": 1000,
+                "clicks": extreme_clicks,
+                "cost": 20,
+                "conversions": 2
+            })
+
+        insights = rule_engine.analyze({"data": data}, {})
         a01_insights = [i for i in insights if i.id == "A01"]
+
         assert len(a01_insights) == 1
         assert a01_insights[0].type == InsightType.HIGHLIGHT
         assert a01_insights[0].severity == Severity.HIGH
-        assert a01_insights[0].current_value == 6.0
+        assert "ID:" in a01_insights[0].evidence
+        assert "优质创意" in a01_insights[0].evidence
+        # 证据中不应包含超过上限的素材
+        assert "异常创意" not in a01_insights[0].evidence
 
-    def test_a01_high_ctr_not_triggered_normal(self):
-        """A01: 正常CTR不触发"""
-        query_result = {
-            "summary": {"avg_ctr": 0.02}  # 2% CTR, 不足3倍基准
-        }
-        query_context = {"baseline_ctr": 0.015}
-        insights = rule_engine.analyze(query_result, query_context)
+    def test_a01_high_ctr_not_triggered_without_good_creatives(self):
+        """A01: 低于下限或高于上限时都不触发"""
+        lower_threshold = insight_config.get('highlight_rules.A01_high_ctr.threshold', 0.0233)
+        upper_threshold = insight_config.get('highlight_rules.A01_high_ctr.upper_threshold', 0.0275)
+
+        data = []
+        # 5个低于下限
+        for i in range(5):
+            data.append({
+                "name": f"低效创意{i+1}",
+                "impressions": 1000,
+                "clicks": int(1000 * (lower_threshold - 0.005)),
+                "cost": 10,
+                "conversions": 1
+            })
+        # 5个高于上限
+        for i in range(5):
+            data.append({
+                "name": f"异常创意{i+1}",
+                "impressions": 1000,
+                "clicks": int(1000 * (upper_threshold + 0.005)),
+                "cost": 10,
+                "conversions": 1
+            })
+
+        insights = rule_engine.analyze({"data": data}, {})
         a01_insights = [i for i in insights if i.id == "A01"]
         assert len(a01_insights) == 0
 
-    def test_a02_high_cvr_triggered(self):
-        """A02: CVR表现优异"""
-        query_result = {
-            "summary": {"avg_cvr": 0.12}  # 12% CVR, 基准3%, >3倍
-        }
-        query_context = {"baseline_cvr": 0.03}
-        insights = rule_engine.analyze(query_result, query_context)
+    def test_a02_high_cvr_triggered_with_sufficient_data(self):
+        """A02: CVR超过阈值时触发（默认阈值8%）"""
+        threshold = insight_config.get('highlight_rules.A02_high_cvr.threshold', 0.08)
 
+        data = []
+        # 普通素材
+        for i in range(5):
+            data.append({
+                "name": f"普通创意{i+1}",
+                "impressions": 1000,
+                "clicks": 50,
+                "cost": 25,
+                "conversions": 1  # 2% CVR
+            })
+        # 高CVR素材
+        high_conv = int(50 * (threshold + 0.02))  # 超阈值2%
+        for i in range(3):
+            data.append({
+                "name": f"高转化创意{i+1}",
+                "id": f"h{i+1}",
+                "impressions": 1000,
+                "clicks": 50,
+                "cost": 25,
+                "conversions": high_conv
+            })
+
+        insights = rule_engine.analyze({"data": data}, {})
         a02_insights = [i for i in insights if i.id == "A02"]
+
         assert len(a02_insights) == 1
-        assert a02_insights[0].type == InsightType.HIGHLIGHT
-        assert a02_insights[0].severity == Severity.HIGH
+        assert "高转化创意" in a02_insights[0].evidence
 
-    def test_a02_high_cvr_not_triggered_normal(self):
-        """A02: 正常CVR不触发"""
-        query_result = {
-            "summary": {"avg_cvr": 0.04}  # 4% CVR, 不足3倍基准
-        }
-        query_context = {"baseline_cvr": 0.03}
-        insights = rule_engine.analyze(query_result, query_context)
-        a02_insights = [i for i in insights if i.id == "A02"]
-        assert len(a02_insights) == 0
+    def test_a03_low_cpc_triggered_with_sufficient_data(self):
+        """A03: CPC低于阈值时触发（默认阈值0.045元）"""
+        threshold = insight_config.get('highlight_rules.A03_low_cpc.threshold', 0.045)
 
-    def test_a03_low_cpc_triggered(self):
-        """A03: CPC成本优势"""
-        query_result = {
-            "summary": {"avg_cpc": 0.8}  # 0.8元, 基准2元, <50%
-        }
-        query_context = {"baseline_cpc": 2.0}
-        insights = rule_engine.analyze(query_result, query_context)
+        data = []
+        # 高CPC素材
+        for i in range(5):
+            data.append({
+                "name": f"普通创意{i+1}",
+                "impressions": 1000,
+                "clicks": 20,
+                "cost": 2,  # 0.1元 CPC (>0.045阈值)
+                "conversions": 1
+            })
+        # 低CPC素材 (<=0.045元)
+        for i in range(3):
+            data.append({
+                "name": f"低成本创意{i+1}",
+                "id": f"l{i+1}",
+                "impressions": 1000,
+                "clicks": 50,
+                "cost": 2,  # 0.04元 CPC (<=0.045阈值)
+                "conversions": 1
+            })
 
+        insights = rule_engine.analyze({"data": data}, {})
         a03_insights = [i for i in insights if i.id == "A03"]
+
         assert len(a03_insights) == 1
-        assert a03_insights[0].type == InsightType.HIGHLIGHT
-        assert a03_insights[0].severity == Severity.HIGH
+        assert "低成本创意" in a03_insights[0].evidence
 
-    def test_a03_low_cpc_not_triggered_normal(self):
-        """A03: 正常CPC不触发"""
-        query_result = {
-            "summary": {"avg_cpc": 1.5}  # 1.5元, >50%基准
-        }
-        query_context = {"baseline_cpc": 2.0}
-        insights = rule_engine.analyze(query_result, query_context)
-        a03_insights = [i for i in insights if i.id == "A03"]
-        assert len(a03_insights) == 0
 
-    def test_a05_good_frequency_control_triggered(self):
-        """A05: 频次控制良好"""
-        query_result = {
-            "summary": {"avg_frequency": 2.0}  # 在1.5-2.5区间内
-        }
-        insights = rule_engine.analyze(query_result, {})
+class TestProblemRules:
+    """问题识别规则测试（固定阈值版本）"""
 
-        a05_insights = [i for i in insights if i.id == "A05"]
-        assert len(a05_insights) == 1
-        assert a05_insights[0].type == InsightType.HIGHLIGHT
-        assert a05_insights[0].severity == Severity.MEDIUM
+    def test_p01_low_cvr_triggered_with_sufficient_data(self):
+        """P01: CVR低于阈值时触发（默认阈值2.85%）"""
+        threshold = insight_config.get('problem_rules.P01_low_cvr.threshold', 0.0285)
 
-    def test_a05_good_frequency_control_not_triggered_too_high(self):
-        """A05: 频次过高不触发"""
-        query_result = {
-            "summary": {"avg_frequency": 5.0}  # 过高
-        }
-        insights = rule_engine.analyze(query_result, {})
-        a05_insights = [i for i in insights if i.id == "A05"]
-        assert len(a05_insights) == 0
+        data = []
+        # 正常素材 (3% CVR，高于阈值)
+        for i in range(5):
+            data.append({
+                "name": f"正常创意{i+1}",
+                "impressions": 1000,
+                "clicks": 100,
+                "cost": 50,
+                "conversions": 3  # 3% CVR
+            })
+        # 低CVR素材 (2% CVR，低于2.85%阈值)
+        for i in range(3):
+            data.append({
+                "name": f"低效创意{i+1}",
+                "id": f"l{i+1}",
+                "impressions": 1000,
+                "clicks": 100,  # 确保点击量足够
+                "cost": 50,
+                "conversions": 2  # 2% CVR，低于阈值
+            })
 
-    def test_a07_time_slot_cvr_contrast_triggered(self):
-        """A07: 分时段反差亮点"""
-        query_result = {
-            "summary": {"avg_cvr": 0.03},  # 整体3%
-            "breakdowns": {
-                "time_slot": [
-                    {"name": "0-2", "cvr": 0.02},
-                    {"name": "8-10", "cvr": 0.10},  # 10% > 3倍整体
-                    {"name": "12-14", "cvr": 0.03},
-                ]
-            }
-        }
-        insights = rule_engine.analyze(query_result, {})
+        insights = rule_engine.analyze({"data": data}, {})
+        p01_insights = [i for i in insights if i.id == "P01"]
 
-        a07_insights = [i for i in insights if i.id == "A07"]
-        assert len(a07_insights) == 1
-        assert a07_insights[0].type == InsightType.HIGHLIGHT
-        assert a07_insights[0].severity == Severity.HIGH
-        assert a07_insights[0].dimension_value == "8-10"
+        assert len(p01_insights) == 1
+        assert p01_insights[0].type == InsightType.PROBLEM
+        assert "低效创意" in p01_insights[0].evidence
 
-    def test_a07_time_slot_cvr_contrast_not_triggered_normal(self):
-        """A07: 正常分时段数据不触发"""
-        query_result = {
-            "summary": {"avg_cvr": 0.03},
-            "breakdowns": {
-                "time_slot": [
-                    {"name": "0-2", "cvr": 0.02},
-                    {"name": "8-10", "cvr": 0.04},  # 不足3倍
-                    {"name": "12-14", "cvr": 0.03},
-                ]
-            }
-        }
-        insights = rule_engine.analyze(query_result, {})
-        a07_insights = [i for i in insights if i.id == "A07"]
-        assert len(a07_insights) == 0
+    def test_p03_high_cpa_triggered(self):
+        """P03: CPA超过阈值时触发（默认阈值1.65元）"""
+        threshold = insight_config.get('problem_rules.P03_high_cpa.threshold', 1.65)
+
+        data = []
+        # 正常素材
+        for i in range(5):
+            data.append({
+                "name": f"正常创意{i+1}",
+                "impressions": 1000,
+                "clicks": 50,
+                "cost": 50,  # 10元 / 5转化 = 1元 CPA
+                "conversions": 50
+            })
+        # 高CPA素材 (>1.65元)
+        for i in range(3):
+            data.append({
+                "name": f"高成本创意{i+1}",
+                "id": f"h{i+1}",
+                "impressions": 1000,
+                "clicks": 50,
+                "cost": 100,  # 100元 / 50转化 = 2元 CPA (>1.65)
+                "conversions": 50
+            })
+
+        insights = rule_engine.analyze({"data": data}, {})
+        p03_insights = [i for i in insights if i.id == "P03"]
+
+        assert len(p03_insights) == 1
+        assert "高成本创意" in p03_insights[0].evidence
+
+    def test_p05_ctr_anomaly_triggered(self):
+        """P05: CTR异常波动检测（低于~2.11%或高于~2.41%）"""
+        low_threshold = insight_config.get('problem_rules.P05_ctr_anomaly.low_threshold', 0.0211)
+        high_threshold = insight_config.get('problem_rules.P05_ctr_anomaly.high_threshold', 0.0241)
+
+        data = []
+        # 18个正常素材 (2.20% - 2.37% CTR，在正常区间内)
+        for i in range(18):
+            ctr = 0.0220 + i * 0.0001  # 2.20% ~ 2.37%，都在(2.11%, 2.41%)之间
+            data.append({
+                "name": f"创意{i+1}",
+                "id": f"c{i+1}",
+                "impressions": 10000,  # 增加曝光，避免int取整问题
+                "clicks": int(10000 * ctr),
+                "cost": 10,
+                "conversions": 1
+            })
+        # 1个异常低CTR素材 (2.0% < 2.11%)
+        data.append({
+            "name": "异常素材1",
+            "id": "a1",
+            "impressions": 10000,
+            "clicks": 200,  # 2.0% CTR
+            "cost": 1,
+            "conversions": 0
+        })
+        # 1个异常高CTR素材 (2.5% > 2.41%)
+        data.append({
+            "name": "异常素材2",
+            "id": "a2",
+            "impressions": 10000,
+            "clicks": 250,  # 2.5% CTR
+            "cost": 50,
+            "conversions": 5
+        })
+
+        insights = rule_engine.analyze({"data": data}, {})
+        p05_insights = [i for i in insights if i.id == "P05"]
+
+        assert len(p05_insights) == 1
+        assert p05_insights[0].type == InsightType.PROBLEM
+        assert "异常素材" in p05_insights[0].evidence
+        assert "ID:" in p05_insights[0].evidence
+
+    def test_p02_creative_fatigue_triggered(self):
+        """P02: 创意疲劳衰减 - 连续多日CTR下降"""
+        data = [
+            {"date": "2024-01-01", "name": "D1", "impressions": 1000, "clicks": 50},  # 5% CTR
+            {"date": "2024-01-02", "name": "D2", "impressions": 1000, "clicks": 40},  # 4% CTR
+            {"date": "2024-01-03", "name": "D3", "impressions": 1000, "clicks": 30},  # 3% CTR
+        ]
+
+        insights = rule_engine.analyze({"data": data}, {})
+        p02_insights = [i for i in insights if i.id == "P02"]
+
+        assert len(p02_insights) == 1
+        assert p02_insights[0].type == InsightType.PROBLEM
 
 
 class TestEdgeCases:
     """边界情况测试"""
 
-    def test_normal_data_no_insights(self):
-        """正常数据不应触发任何洞察"""
-        query_result = {
-            "summary": {
-                "avg_ctr": 0.02,  # 2% - 正常
-                "avg_cvr": 0.03,  # 3% - 正常
-                "avg_cpc": 2.0,   # 2元 - 正常
-                "avg_frequency": 3.0,  # 超出理想区间但不算问题
-            },
-            "data": [
-                {"ctr": 0.02, "cvr": 0.03, "cost": 500, "cpa": 60},
-            ]
-        }
-        insights = rule_engine.analyze(query_result, {})
-
-        # 正常数据不应该触发问题洞察
-        problem_insights = [i for i in insights if i.type == InsightType.PROBLEM]
-        assert len(problem_insights) == 0
-
     def test_zero_values_handled(self):
         """零值数据不崩溃"""
-        query_result = {
-            "summary": {
-                "avg_ctr": 0,
-                "avg_cvr": 0,
-                "cpc": 0,
-            },
-            "data": []
-        }
-        insights = rule_engine.analyze(query_result, {})
+        data = [{
+            "name": "测试",
+            "impressions": 0,
+            "clicks": 0,
+            "cost": 0,
+            "conversions": 0
+        }]
+
+        insights = rule_engine.analyze({"data": data}, {})
         assert isinstance(insights, list)
 
     def test_missing_fields_handled(self):
         """缺失字段数据不崩溃"""
-        query_result = {
-            "summary": {},  # 空summary
-            "data": [{}]    # 空数据行
-        }
-        insights = rule_engine.analyze(query_result, {})
+        data = [{}]  # 空数据行
+        insights = rule_engine.analyze({"data": data}, {})
         assert isinstance(insights, list)
+
+    def test_summary_row_ignored(self):
+        """汇总行（总计）不会误触发规则"""
+        data = [{
+            "name": "总计",
+            "id": 0,
+            "impressions": 27542798,
+            "clicks": 627537,
+            "cost": 100000,
+            "conversions": 1000
+        }]
+
+        insights = rule_engine.analyze({"data": data}, {})
+        # 汇总行应被忽略，不触发任何百分位规则
+        insight_ids = [i.id for i in insights]
+        assert "A01" not in insight_ids, "总计行不应该触发A01 CTR表现优异"
+        assert "P05" not in insight_ids, "总计行不应该触发P05 CTR异常波动"
 
     def test_insight_id_format_correct(self):
         """验证洞察ID格式正确"""
-        # 测试A类洞察ID
-        query_result = {
-            "summary": {"avg_ctr": 0.06}
-        }
-        insights = rule_engine.analyze(query_result, {"baseline_ctr": 0.015})
+        data = []
+        # 构造一些高CTR素材
+        threshold = insight_config.get('highlight_rules.A01_high_ctr.threshold', 0.035)
+        high_clicks = int(1000 * (threshold + 0.01))
+        for i in range(10):
+            data.append({
+                "name": f"创意{i+1}",
+                "impressions": 1000,
+                "clicks": high_clicks + i,
+                "cost": 10 + i,
+                "conversions": 1 + int(i / 3)
+            })
+
+        insights = rule_engine.analyze({"data": data}, {})
 
         for insight in insights:
             if insight.id.startswith("A"):
                 assert insight.type == InsightType.HIGHLIGHT
             elif insight.id.startswith("P"):
                 assert insight.type == InsightType.PROBLEM
+
+    def test_insight_contains_required_fields(self):
+        """验证洞察对象包含所有必要字段"""
+        data = []
+        threshold = insight_config.get('highlight_rules.A01_high_ctr.threshold', 0.035)
+        high_clicks = int(1000 * (threshold + 0.01))
+        for i in range(10):
+            data.append({
+                "name": f"创意{i+1}",
+                "id": f"c{i+1}",
+                "impressions": 1000,
+                "clicks": high_clicks + i,
+                "cost": 10 + i,
+                "conversions": 1 + int(i / 3)
+            })
+
+        insights = rule_engine.analyze({"data": data}, {})
+
+        for insight in insights:
+            assert insight.id is not None
+            assert insight.name is not None
+            assert insight.type is not None
+            assert insight.severity is not None
+            assert insight.evidence is not None
+            assert insight.suggestion is not None

@@ -1,6 +1,7 @@
 from typing import TypedDict, Optional, List, Dict, Annotated
 from datetime import datetime
 from langgraph.graph import add_messages
+from src.models.insight import InsightResult
 
 def append_history(left: List[Dict], right: List[Dict]) -> List[Dict]:
     """追加历史记录，最多保留20条"""
@@ -43,6 +44,9 @@ class AdReportState(TypedDict):
     analysis_result: Optional[Dict]
     drill_down_level: int
     needs_drill_down: bool
+
+    # 洞察分析输出
+    insights: Optional[InsightResult]
 
     # 报告生成输出
     final_report: Optional[Dict]

@@ -15,17 +15,8 @@ def apply_business_rules(intent: Dict[str, Any]) -> Dict[str, Any]:
     filters = intent.get("filters", [])
     advertiser_ids = intent.get("advertiser_ids", [])
 
-    # 把广告主 ID 转换为过滤条件
-    for adv_id in advertiser_ids:
-        # 检查是否已存在相同的广告主过滤
-        exists = any(
-            f.get("field") == "advertiser_id" and str(f.get("value")) == str(adv_id)
-            for f in filters
-        )
-        if not exists:
-            filters.append({"field": "advertiser_id", "op": "eq", "value": int(adv_id)})
-
     result["filters"] = filters
+    result["advertiser_ids"] = advertiser_ids
 
     # 维度去重：date 和 month 同时出现时，保留 date，移除 month
     if "data_date" in group_by and "data_month" in group_by:
@@ -35,7 +26,12 @@ def apply_business_rules(intent: Dict[str, Any]) -> Dict[str, Any]:
         result["warnings"] = warnings
         result["group_by"] = group_by
 
-    has_audience_dim = any(d.startswith("audience_") for d in group_by)
+    # 如果没有指定分组维度，默认按 creative_id 分组，以便洞察分析
+    # 因为规则引擎需要识别单个广告的表现好坏
+    if not group_by:
+        result["group_by"] = ["creative_id"]
+
+    has_audience_dim = any(d.startswith("audience_") for d in result.get("group_by", []))
 
     if has_audience_dim:
         result["index_type"] = "audience"

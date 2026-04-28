@@ -30,9 +30,38 @@ async def insight_agent(
     """
     logger.info("开始执行洞察分析...")
 
-    # 1. 调用规则引擎
-    rule_insights = rule_engine.analyze(query_result, query_context)
-    logger.info(f"规则引擎发现 {len(rule_insights)} 个洞察")
+    data = query_result.get("data", []) or []
+    total_impressions = sum(row.get("impressions", 0) for row in data)
+
+    # 先执行广告主层级规则检查（即使没有数据也要检查，比如欠费/惩罚）
+    # 单独调用 P11 和 P12 规则（因为它们不依赖 query_result）
+    from src.tools.insight_rules import check_p11_advertiser_punished, check_p12_advertiser_arrears
+    advertiser_level_insights = []
+
+    p11 = check_p11_advertiser_punished(query_result, query_context)
+    if p11:
+        advertiser_level_insights.append(p11)
+
+    p12 = check_p12_advertiser_arrears(query_result, query_context)
+    if p12:
+        advertiser_level_insights.append(p12)
+
+    # 处理特殊情况：无数据或曝光为0
+    no_data = not data or total_impressions == 0
+    if no_data and not advertiser_level_insights:
+        logger.info("查询结果为空或无曝光数据，返回空洞察")
+        result = InsightResult(problems=[], highlights=[], summary="", llm_insights=[])
+        result.meta = {"no_data": True}
+        return result
+
+    # 1. 调用规则引擎执行其他规则
+    rule_insights = []
+    if not no_data:
+        rule_insights = rule_engine.analyze(query_result, query_context)
+        logger.info(f"规则引擎发现 {len(rule_insights)} 个洞察")
+
+    # 合并广告主层级洞察和其他洞察
+    all_rule_insights = advertiser_level_insights + rule_insights
 
     # 2. LLM深度扫描（可选）
     llm_insights: List[Insight] = []
@@ -44,10 +73,10 @@ async def insight_agent(
             logger.error(f"LLM扫描失败: {str(e)}", exc_info=True)
 
     # 3. 聚合洞察结果
-    result = aggregate_insights(rule_insights, llm_insights)
+    result = aggregate_insights(all_rule_insights, llm_insights)
 
     # 4. 生成自然语言解释（更新summary字段）
-    all_insights = rule_insights + llm_insights
+    all_insights = all_rule_insights + llm_insights
     result.summary = generate_natural_language_interpretation(all_insights, query_result)
 
     logger.info(f"洞察分析完成: {len(result.problems)}个问题, {len(result.highlights)}个亮点")
@@ -70,6 +99,14 @@ def insights_to_highlights(insight_result: InsightResult) -> List[Dict[str, str]
         List[Dict[str, str]]: 前端 highlights 格式列表，每项包含 type 和 text
     """
     highlights: List[Dict[str, str]] = []
+
+    # 处理无数据情况
+    if hasattr(insight_result, 'meta') and insight_result.meta.get('no_data'):
+        highlights.append({
+            "type": "info",
+            "text": "⚪ 暂无数据，请检查查询条件或时间范围"
+        })
+        return highlights
 
     # 处理问题（优先级高，先显示）
     for problem in insight_result.problems:

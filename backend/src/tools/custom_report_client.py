@@ -141,6 +141,7 @@ def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
     group_by = model_dict.get("group_by", [])
     filters = model_dict.get("filters", [])
     time_range = model_dict.get("time_range", {})
+    advertiser_ids = model_dict.get("advertiser_ids", [])
 
     # 选择索引
     use_audience_index = False
@@ -172,6 +173,10 @@ def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
                     }
                 }
             })
+
+    # 广告主ID过滤（转换为整数，因为 NLU 返回的是字符串）
+    if advertiser_ids:
+        bool_must.append({"terms": {"advertiser_id": [int(adv_id) for adv_id in advertiser_ids]}})
 
     # 其他过滤条件
     for f in filters:

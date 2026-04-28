@@ -21,12 +21,18 @@ async def planner_agent(query_intent: Dict[str, Any], user_feedback: Dict[str, A
     # Step 2: 自动选择图表类型
     metrics = intent_with_rules.get("metrics", [])
     dimensions = intent_with_rules.get("group_by", [])
+
+    # 当没有指定维度时，默认按 creative_id 分组，方便洞察规则发现问题和亮点
+    if not dimensions:
+        dimensions = ["creative_id"]
+
     chart_config = auto_select_chart_type.func(metrics, dimensions)
 
     # Step 3: 构建 QueryRequest
     query_request = {
         "index_type": intent_with_rules.get("index_type", "general"),
         "time_range": intent_with_rules.get("time_range", {}),
+        "advertiser_ids": intent_with_rules.get("advertiser_ids", []),
         "metrics": metrics,
         "group_by": dimensions,
         "filters": intent_with_rules.get("filters", []),

@@ -65,9 +65,23 @@ class SessionService:
         ambiguity = result.get("ambiguity", {})
         if ambiguity and ambiguity.get("has_ambiguity", False):
             from src.tools.clarification_generator import generate_clarification_options
+            # context 需要是 dict，options 是 list，需要包装一下
+            options = ambiguity.get("options", [])
+            # 把广告主选项转换成澄清问题的格式
+            formatted_options = []
+            for opt in options:
+                if isinstance(opt, dict) and "name" in opt and "id" in opt:
+                    formatted_options.append({
+                        "value": f"查看 {opt['name']} 的数据",
+                        "label": opt["name"]
+                    })
+            context = {
+                "question": ambiguity.get("reason", "未找到匹配的广告主"),
+                "options": formatted_options
+            }
             clarification = generate_clarification_options.func(
                 ambiguity_type=ambiguity.get("type", "time"),
-                context=ambiguity.get("options", {})
+                context=context
             )
             return {
                 "status": "waiting_for_clarification",
@@ -85,7 +99,7 @@ class SessionService:
                 "query_intent": result.get("query_intent"),
                 "query_request": result.get("query_request"),
                 "query_result": result.get("query_result", {}),
-                "analysis": result.get("analysis", {}),
+                "analysis": result.get("analysis_result", {}),
                 "final_report": result.get("final_report"),
                 "warnings": result.get("query_warnings", [])
             }

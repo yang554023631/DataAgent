@@ -14,6 +14,7 @@ class QueryRequest(BaseModel):
     time_range: dict
     metrics: List[str]
     group_by: List[str] = Field(default_factory=list)
+    advertiser_ids: List[int] = Field(default_factory=list)
     filters: List[Filter] = Field(default_factory=list)
     chart_config: Optional[ChartConfig] = None
 

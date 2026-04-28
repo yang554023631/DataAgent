@@ -1,6 +1,6 @@
 from langgraph.graph import StateGraph, END
 from .state import AdReportState
-from .nodes import nlu_node, hitl_node, planner_node, executor_node, analyst_node, reporter_node, advertiser_handle_node
+from .nodes import nlu_node, hitl_node, planner_node, executor_node, insight_node, analyst_node, reporter_node, advertiser_handle_node
 
 def build_graph():
     """构建完整的 LangGraph 流程图"""
@@ -12,6 +12,7 @@ def build_graph():
     graph.add_node("advertiser_handle", advertiser_handle_node)
     graph.add_node("planner", planner_node)
     graph.add_node("executor", executor_node)
+    graph.add_node("insight", insight_node)
     graph.add_node("analyst", analyst_node)
     graph.add_node("reporter", reporter_node)
 
@@ -21,10 +22,15 @@ def build_graph():
     # NLU -> 条件判断：广告主处理 / 澄清 / Planner
     def route_after_nlu(state: dict) -> str:
         ambiguity = state.get("ambiguity", {})
+        query_intent = state.get("query_intent", {})
+
+        # 广告主相关的歧义（未找到匹配的广告主）路由到 advertiser_handle，直接给出友好提示
         if ambiguity and ambiguity.get("has_ambiguity", False):
+            if ambiguity.get("type") == "advertiser_not_found":
+                return "advertiser_handle"
+            # 其他类型的歧义需要人机交互
             return "hitl"
 
-        query_intent = state.get("query_intent", {})
         if query_intent.get("show_advertiser_list", False) or query_intent.get("need_advertiser_selection", False):
             return "advertiser_handle"
 
@@ -57,8 +63,9 @@ def build_graph():
         {"hitl": "hitl", "executor": "executor"}
     )
 
-    # Executor -> Analyst
-    graph.add_edge("executor", "analyst")
+    # Executor -> Insight -> Analyst
+    graph.add_edge("executor", "insight")
+    graph.add_edge("insight", "analyst")
 
     # Analyst -> 条件判断（是否需要下钻）
     def need_drill_down(state: dict) -> str:
