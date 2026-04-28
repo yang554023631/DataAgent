@@ -28,13 +28,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const session = await apiService.createSession();
       set({ sessionId: session.session_id });
 
-      // Add welcome message
-      set(state => ({
-        messages: [...state.messages, {
-          role: 'assistant',
-          content: '你好！我是广告报表智能助手。你可以问我：\n\n- "看上周的曝光点击"\n- "按渠道看 CTR"\n- "安卓端的花费"\n\n或者其他关于广告报表的问题。',
-        }]
-      }));
+      // Add welcome message（只在没有消息时添加，避免重复）
+      set(state => {
+        if (state.messages.length > 0) return state;
+        return {
+          messages: [...state.messages, {
+            role: 'assistant',
+            content: '你好！我是广告报表智能助手。你可以问我：\n\n- "都有哪些广告主？"\n- "mini_6_autumn 最近三个月哪些广告表现好？哪些广告表现不好？"\n- "mini_6_autumn 最近三个月的点击量按性别和月细分"\n- "mini_6_autumn 最近三个月 CTR 表现最好和最差的广告分别是哪些？"\n\n或者其他关于广告报表的问题。',
+          }]
+        };
+      });
     } catch (error) {
       set({ error: 'Failed to create session' });
     }

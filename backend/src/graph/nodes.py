@@ -11,6 +11,16 @@ from src.agents.reporter_agent import reporter_agent, format_comparison_report
 from src.agents.insight_agent import insight_agent, insights_to_highlights
 from src.services.advertiser_service import get_all_advertisers
 
+
+def _generate_suggested_queries(advertiser_name: str) -> list:
+    """为广告主生成多样化的推荐查询"""
+    templates = [
+        "{name} 最近三个月哪些广告表现好？哪些广告表现不好？",
+        "{name} 最近三个月的点击量按性别和月细分",
+        "{name} 最近三个月 CTR 表现最好和最差的广告分别是哪些？",
+    ]
+    return [t.format(name=advertiser_name) for t in templates]
+
 async def nlu_node(state: dict) -> dict:
     """意图理解节点"""
     user_input = state.get("user_input", "")
@@ -86,7 +96,7 @@ async def advertiser_handle_node(state: dict) -> dict:
                 "columns": ["广告主ID", "广告主名称"],
                 "rows": [[adv["id"], adv["name"]] for adv in advertisers]
             },
-            "next_queries": [f"查看 {adv['name']} 的数据" for adv in advertisers[:3]]
+            "next_queries": _generate_suggested_queries(advertisers[0]['name']) if advertisers else []
         }
         return {
             "final_report": final_report,
@@ -113,7 +123,7 @@ async def advertiser_handle_node(state: dict) -> dict:
                 "time_range": {"start": "", "end": ""},
                 "metrics": [],
                 "highlights": highlights,
-                "next_queries": [f"查看 {adv['name']} 的曝光点击数据" for adv in similar_advertisers[:3]]
+                "next_queries": _generate_suggested_queries(similar_advertisers[0]['name']) if similar_advertisers else []
             }
         else:
             # 没有相似建议，展示所有广告主列表
@@ -129,7 +139,7 @@ async def advertiser_handle_node(state: dict) -> dict:
                     "columns": ["广告主ID", "广告主名称"],
                     "rows": [[adv["id"], adv["name"]] for adv in advertisers]
                 },
-                "next_queries": [f"查看 {adv['name']} 的曝光点击数据" for adv in advertisers[:3]]
+                "next_queries": _generate_suggested_queries(advertisers[0]['name']) if advertisers else []
             }
         return {
             "final_report": final_report,
@@ -152,7 +162,7 @@ async def advertiser_handle_node(state: dict) -> dict:
                 "columns": ["广告主ID", "广告主名称"],
                 "rows": [[adv["id"], adv["name"]] for adv in advertisers]
             },
-            "next_queries": [f"查看 {adv['name']} 的曝光点击数据" for adv in advertisers[:3]]
+            "next_queries": _generate_suggested_queries(advertisers[0]['name']) if advertisers else []
         }
         return {
             "final_report": final_report,
@@ -190,6 +200,7 @@ async def planner_node(state: dict) -> dict:
             "query_request": result["query_request"],  # 向后兼容
             "query_requests": query_requests,
             "query_warnings": result["query_warnings"],
+            "insight_queries": result.get("insight_queries", {}),
             "error": None
         }
     except Exception as e:
@@ -337,9 +348,25 @@ async def reporter_node(state: dict) -> dict:
         }
 
 async def insight_node(state: dict) -> dict:
-    """洞察分析节点：对查询结果进行规则+LLM洞察分析"""
-    query_result = state.get("query_result", {})
+    """洞察分析节点：对 Creative 和 Ad Group 两个维度分别执行规则+LLM洞察分析"""
+    from src.tools.executor import execute_ad_report_query
+    from src.models.insight import InsightResult
+
     query_request = state.get("query_request", {})
+
+    # 生成两个维度的洞察查询（直接生成，不依赖传递）
+    base_query = {
+        "index_type": query_request.get("index_type", "general"),
+        "time_range": query_request.get("time_range", {}),
+        "advertiser_ids": query_request.get("advertiser_ids", []),
+        "metrics": query_request.get("metrics", ["impressions", "clicks", "cost", "conversions"]),
+        "filters": query_request.get("filters", []),
+    }
+
+    insight_queries = {
+        "creative": {**base_query, "group_by": ["creative_id"]},
+        "ad_group": {**base_query, "group_by": ["ad_group_id"]}
+    }
 
     try:
         # 构建查询上下文（基准值、配置等）
@@ -350,11 +377,62 @@ async def insight_node(state: dict) -> dict:
             "baseline_values": {}  # 可扩展基准值配置
         }
 
-        # 调用洞察Agent（暂时不启用LLM深度扫描）
-        insights = await insight_agent(query_result, query_context, enable_llm_scan=False)
+        # 并行执行两个维度的查询并跑规则
+        dimension_insights = {}
+
+        for dimension, query in insight_queries.items():
+            # 执行该维度的 ES 查询
+            query_result = await execute_ad_report_query.ainvoke({"query_request": query})
+
+            # 调用洞察Agent分析该维度
+            context = query_context.copy()
+            context["dimension"] = dimension
+            insights = await insight_agent(query_result, context, enable_llm_scan=False)
+            dimension_insights[dimension] = insights
+
+        # 合并两个维度的洞察结果
+        all_problems = []
+        all_highlights = []
+
+        # 素材维度（优先显示）
+        creative_insights = dimension_insights.get("creative", InsightResult(problems=[], highlights=[], summary="", llm_insights=[]))
+        for p in creative_insights.problems:
+            p.dimension = "creative"
+            p.name = f"[素材] {p.name}"
+        for h in creative_insights.highlights:
+            h.dimension = "creative"
+            h.name = f"[素材] {h.name}"
+        all_problems.extend(creative_insights.problems)
+        all_highlights.extend(creative_insights.highlights)
+
+        # 广告组维度
+        adgroup_insights = dimension_insights.get("ad_group", InsightResult(problems=[], highlights=[], summary="", llm_insights=[]))
+        for p in adgroup_insights.problems:
+            p.dimension = "ad_group"
+            p.name = f"[广告组] {p.name}"
+        for h in adgroup_insights.highlights:
+            h.dimension = "ad_group"
+            h.name = f"[广告组] {h.name}"
+        all_problems.extend(adgroup_insights.problems)
+        all_highlights.extend(adgroup_insights.highlights)
+
+        # 构建最终的 InsightResult
+        summary_parts = []
+        if all_problems:
+            summary_parts.append(f"发现 {len(all_problems)} 个需关注的问题")
+        if all_highlights:
+            summary_parts.append(f"发现 {len(all_highlights)} 个数据亮点")
+
+        merged_result = InsightResult(
+            problems=all_problems,
+            highlights=all_highlights,
+            summary="，".join(summary_parts) if summary_parts else "",
+            llm_insights=[]
+        )
+        merged_result.dimension_insights = dimension_insights
 
         return {
-            "insights": insights,
+            "insights": merged_result,
             "error": None
         }
     except Exception as e:

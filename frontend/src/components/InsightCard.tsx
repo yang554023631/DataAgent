@@ -13,11 +13,13 @@ export interface Insight {
   evidence: string;
   suggestion: string;
   source: string;
+  dimension?: string;
 }
 
 export interface InsightCardProps {
   insight: Insight;
   defaultExpanded?: boolean;
+  compact?: boolean;
 }
 
 const severityStyles: Record<Severity, { border: string; bg: string; text: string; badge: string }> = {
@@ -59,10 +61,51 @@ const severityLabels: Record<Severity, string> = {
   low: '低',
 };
 
-export function InsightCard({ insight, defaultExpanded = false }: InsightCardProps) {
+export function InsightCard({ insight, defaultExpanded = false, compact = false }: InsightCardProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const styles = severityStyles[insight.severity];
   const Icon = typeIcons[insight.type];
+
+  // 紧凑模式：简化的卡片样式
+  if (compact) {
+    return (
+      <div
+        className={clsx(
+          'border-l-2 rounded shadow-sm overflow-hidden cursor-pointer transition-all duration-200 hover:shadow',
+          styles.border,
+          isExpanded ? 'bg-white' : styles.bg
+        )}
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="px-3 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Icon className={clsx('w-4 h-4 flex-shrink-0', styles.text)} />
+            <span className="text-sm font-medium text-gray-800 truncate">{insight.name}</span>
+          </div>
+          {isExpanded ? (
+            <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          ) : (
+            <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+          )}
+        </div>
+
+        {isExpanded && (
+          <div className="px-3 pb-3 space-y-2 border-t border-gray-100 bg-white">
+            <div className="pt-2">
+              <p className="text-xs text-gray-600 bg-gray-50 rounded p-2">
+                📊 {insight.evidence}
+              </p>
+            </div>
+            {insight.suggestion && (
+              <p className="text-xs text-gray-600 bg-green-50 rounded p-2">
+                💡 {insight.suggestion}
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

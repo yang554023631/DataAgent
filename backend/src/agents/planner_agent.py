@@ -22,13 +22,13 @@ async def planner_agent(query_intent: Dict[str, Any], user_feedback: Dict[str, A
     metrics = intent_with_rules.get("metrics", [])
     dimensions = intent_with_rules.get("group_by", [])
 
-    # 当没有指定维度时，默认按 creative_id 分组，方便洞察规则发现问题和亮点
+    # 当没有指定维度时，默认按 creative_id 分组，同时准备 ad_group 维度用于洞察
     if not dimensions:
         dimensions = ["creative_id"]
 
     chart_config = auto_select_chart_type.func(metrics, dimensions)
 
-    # Step 3: 构建 QueryRequest
+    # Step 3: 构建 QueryRequest（主查询，用于报表展示）
     query_request = {
         "index_type": intent_with_rules.get("index_type", "general"),
         "time_range": intent_with_rules.get("time_range", {}),
@@ -39,6 +39,10 @@ async def planner_agent(query_intent: Dict[str, Any], user_feedback: Dict[str, A
         "chart_config": chart_config
     }
 
+    # Step 3.1: 洞察查询由 insight_node 直接生成，无需传递
+    # 这样设计避免了在 state 传递中丢失字段的问题
+    insight_queries = {}
+
     # Step 4: 校验参数生成警告
     validation_warnings = validate_and_warn.func(query_request)
 
@@ -47,5 +51,6 @@ async def planner_agent(query_intent: Dict[str, Any], user_feedback: Dict[str, A
 
     return {
         "query_request": query_request,
-        "query_warnings": query_warnings
+        "query_warnings": query_warnings,
+        "insight_queries": insight_queries
     }

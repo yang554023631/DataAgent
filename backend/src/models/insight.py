@@ -31,6 +31,7 @@ class Insight(BaseModel):
     metric: str = Field(description="关联指标")
     dimension_key: Optional[str] = Field(default=None, description="维度键")
     dimension_value: Optional[str] = Field(default=None, description="维度值")
+    dimension: Optional[str] = Field(default=None, description="分析维度: creative/ad_group")
     current_value: Optional[float] = Field(default=None, description="当前值")
     baseline_value: Optional[float] = Field(default=None, description="基线值")
     evidence: str = Field(description="证据描述")
@@ -44,6 +45,7 @@ class InsightResult(BaseModel):
     summary: Optional[str] = Field(default=None, description="洞察摘要")
     llm_insights: List[Insight] = Field(default_factory=list, description="LLM 生成的洞察")
     meta: Dict[str, Any] = Field(default_factory=dict, description="元数据（无数据标记等）")
+    dimension_insights: Dict[str, Any] = Field(default_factory=dict, description="各维度的原始洞察结果")
 
     def has_insights(self) -> bool:
         """检查是否有任何洞察"""

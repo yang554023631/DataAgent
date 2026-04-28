@@ -108,27 +108,69 @@ def insights_to_highlights(insight_result: InsightResult) -> List[Dict[str, str]
         })
         return highlights
 
-    # 处理问题（优先级高，先显示）
-    for problem in insight_result.problems:
+    # 按维度分组处理问题（优先级高，先显示）
+    creative_problems = [p for p in insight_result.problems if p.dimension == "creative"]
+    adgroup_problems = [p for p in insight_result.problems if p.dimension == "ad_group"]
+    other_problems = [p for p in insight_result.problems if p.dimension not in ["creative", "ad_group"]]
+
+    if creative_problems:
+        highlights.append({"type": "info", "text": "📋 ===== 素材维度问题 ====="})
+    for problem in creative_problems:
+        name_clean = problem.name.replace("[素材] ", "")
+        text_parts = [f"🔴 【{name_clean}】"]
+        text_parts.append(f"证据：{problem.evidence}")
+        if problem.suggestion:
+            text_parts.append(f"建议：{problem.suggestion}")
+        highlights.append({"type": "negative", "text": "｜".join(text_parts)})
+
+    if adgroup_problems:
+        highlights.append({"type": "info", "text": "📊 ===== 广告组维度问题 ====="})
+    for problem in adgroup_problems:
+        name_clean = problem.name.replace("[广告组] ", "")
+        text_parts = [f"🔴 【{name_clean}】"]
+        text_parts.append(f"证据：{problem.evidence}")
+        if problem.suggestion:
+            text_parts.append(f"建议：{problem.suggestion}")
+        highlights.append({"type": "negative", "text": "｜".join(text_parts)})
+
+    for problem in other_problems:
         text_parts = [f"🔴 【{problem.name}】"]
         text_parts.append(f"证据：{problem.evidence}")
         if problem.suggestion:
             text_parts.append(f"建议：{problem.suggestion}")
-        highlights.append({
-            "type": "negative",
-            "text": "｜".join(text_parts)
-        })
+        highlights.append({"type": "negative", "text": "｜".join(text_parts)})
 
-    # 处理亮点
-    for highlight in insight_result.highlights:
+    # 按维度分组处理亮点
+    creative_highlights = [h for h in insight_result.highlights if h.dimension == "creative"]
+    adgroup_highlights = [h for h in insight_result.highlights if h.dimension == "ad_group"]
+    other_highlights = [h for h in insight_result.highlights if h.dimension not in ["creative", "ad_group"]]
+
+    if creative_highlights:
+        highlights.append({"type": "info", "text": "⭐ ===== 素材维度亮点 ====="})
+    for highlight in creative_highlights:
+        name_clean = highlight.name.replace("[素材] ", "")
+        text_parts = [f"🟢 【{name_clean}】"]
+        text_parts.append(f"证据：{highlight.evidence}")
+        if highlight.suggestion:
+            text_parts.append(f"建议：{highlight.suggestion}")
+        highlights.append({"type": "positive", "text": "｜".join(text_parts)})
+
+    if adgroup_highlights:
+        highlights.append({"type": "info", "text": "✨ ===== 广告组维度亮点 ====="})
+    for highlight in adgroup_highlights:
+        name_clean = highlight.name.replace("[广告组] ", "")
+        text_parts = [f"🟢 【{name_clean}】"]
+        text_parts.append(f"证据：{highlight.evidence}")
+        if highlight.suggestion:
+            text_parts.append(f"建议：{highlight.suggestion}")
+        highlights.append({"type": "positive", "text": "｜".join(text_parts)})
+
+    for highlight in other_highlights:
         text_parts = [f"🟢 【{highlight.name}】"]
         text_parts.append(f"证据：{highlight.evidence}")
         if highlight.suggestion:
             text_parts.append(f"建议：{highlight.suggestion}")
-        highlights.append({
-            "type": "positive",
-            "text": "｜".join(text_parts)
-        })
+        highlights.append({"type": "positive", "text": "｜".join(text_parts)})
 
     # 处理LLM洞察
     for llm_insight in insight_result.llm_insights:
