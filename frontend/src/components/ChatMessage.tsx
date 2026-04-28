@@ -76,21 +76,21 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
               </div>
             )}
 
-            {message.finalReport.highlights.length > 0 && (
+            {message.finalReport.highlights?.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium mb-2">关键提示</h4>
                 <HighlightList highlights={message.finalReport.highlights} />
               </div>
             )}
 
-            {message.finalReport.data_table.columns.length > 0 && (
+            {message.finalReport.data_table?.columns?.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium mb-2">数据详情</h4>
                 <DataTable {...message.finalReport.data_table} />
               </div>
             )}
 
-            {message.finalReport.next_queries.length > 0 && (
+            {message.finalReport.next_queries?.length > 0 && (
               <div className="bg-gray-50 rounded-lg p-3">
                 <h4 className="text-sm font-medium mb-2">推荐查询</h4>
                 <ul className="space-y-1">

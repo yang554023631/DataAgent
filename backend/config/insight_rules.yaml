@@ -115,6 +115,23 @@ timing_rules:
     change_threshold: 2.0      # 单日变化率阈值（200%，即2倍）
     description: "单日消耗变化率超过阈值，投放不稳定"
 
+  P11_advertiser_punished:
+    enabled: true
+    name: "广告主合规惩罚"
+    severity: "critical"
+    description: "广告主因合规问题被平台惩罚，投放可能受限"
+
+  P12_advertiser_arrears:
+    enabled: true
+    name: "广告主账号欠费"
+    severity: "critical"
+    description: "广告主账号欠费，需要立即充值否则可能停投"
+
+# 广告主层级规则
+advertiser_rules:
+  enabled: true
+  description: "广告主账号状态检查规则"
+
 # 基础规则 (A04-A06, A08)
 # 这些规则依赖特定数据字段或特殊逻辑
 special_rules:

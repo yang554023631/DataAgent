@@ -65,10 +65,12 @@ async def hitl_node(state: dict) -> dict:
 
 
 async def advertiser_handle_node(state: dict) -> dict:
-    """广告主处理节点：展示列表或提示选择"""
+    """广告主处理节点：展示列表、提示选择、或给出相似名称建议"""
     query_intent = state.get("query_intent", {})
     show_advertiser_list = query_intent.get("show_advertiser_list", False)
     need_advertiser_selection = query_intent.get("need_advertiser_selection", False)
+    ambiguity = query_intent.get("ambiguity", {})
+    has_ambiguous_advertiser = ambiguity and ambiguity.get("has_ambiguity") and ambiguity.get("type") == "advertiser_not_found"
 
     if show_advertiser_list:
         # 展示广告主列表
@@ -86,7 +88,55 @@ async def advertiser_handle_node(state: dict) -> dict:
             },
             "next_queries": [f"查看 {adv['name']} 的数据" for adv in advertisers[:3]]
         }
-        return {"final_report": final_report, "error": None}
+        return {
+            "final_report": final_report,
+            "error": None,
+            "ambiguity": None,
+            "need_advertiser_selection": False
+        }
+
+    if has_ambiguous_advertiser:
+        # 广告主未找到，给出相似名称建议
+        similar_advertisers = ambiguity.get("options", [])
+        reason = ambiguity.get("reason", "未找到匹配的广告主")
+
+        if similar_advertisers:
+            # 有相似建议
+            highlights = [
+                {"type": "warning", "text": f"⚠️ {reason} 您可能想选择："},
+            ]
+            for adv in similar_advertisers:
+                highlights.append({"type": "info", "text": f"• {adv['name']} (ID: {adv['id']})"})
+
+            final_report = {
+                "title": "未找到匹配的广告主",
+                "time_range": {"start": "", "end": ""},
+                "metrics": [],
+                "highlights": highlights,
+                "next_queries": [f"查看 {adv['name']} 的曝光点击数据" for adv in similar_advertisers[:3]]
+            }
+        else:
+            # 没有相似建议，展示所有广告主列表
+            advertisers = get_all_advertisers()
+            final_report = {
+                "title": "未找到匹配的广告主，请选择正确的名称",
+                "time_range": {"start": "", "end": ""},
+                "metrics": [],
+                "highlights": [
+                    {"type": "warning", "text": "⚠️ 未找到匹配的广告主，请从以下列表中选择："}
+                ],
+                "data_table": {
+                    "columns": ["广告主ID", "广告主名称"],
+                    "rows": [[adv["id"], adv["name"]] for adv in advertisers]
+                },
+                "next_queries": [f"查看 {adv['name']} 的曝光点击数据" for adv in advertisers[:3]]
+            }
+        return {
+            "final_report": final_report,
+            "error": None,
+            "ambiguity": None,
+            "need_advertiser_selection": False
+        }
 
     if need_advertiser_selection:
         # 提示用户选择广告主
@@ -104,7 +154,12 @@ async def advertiser_handle_node(state: dict) -> dict:
             },
             "next_queries": [f"查看 {adv['name']} 的曝光点击数据" for adv in advertisers[:3]]
         }
-        return {"final_report": final_report, "error": None}
+        return {
+            "final_report": final_report,
+            "error": None,
+            "ambiguity": None,
+            "need_advertiser_selection": False
+        }
 
     # 不需要处理，继续往下走
     return {}
@@ -290,6 +345,8 @@ async def insight_node(state: dict) -> dict:
         # 构建查询上下文（基准值、配置等）
         query_context = {
             "query_request": query_request,
+            "advertiser_ids": query_request.get("advertiser_ids", []),
+            "time_range": query_request.get("time_range", {}),
             "baseline_values": {}  # 可扩展基准值配置
         }
 

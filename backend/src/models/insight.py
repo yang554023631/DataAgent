@@ -10,6 +10,7 @@ class InsightType(str, Enum):
 
 
 class Severity(str, Enum):
+    CRITICAL = "critical"
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
@@ -42,6 +43,7 @@ class InsightResult(BaseModel):
     highlights: List[Insight] = Field(default_factory=list, description="亮点列表")
     summary: Optional[str] = Field(default=None, description="洞察摘要")
     llm_insights: List[Insight] = Field(default_factory=list, description="LLM 生成的洞察")
+    meta: Dict[str, Any] = Field(default_factory=dict, description="元数据（无数据标记等）")
 
     def has_insights(self) -> bool:
         """检查是否有任何洞察"""

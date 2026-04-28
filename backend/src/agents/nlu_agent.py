@@ -5,7 +5,8 @@ from src.tools.filter_parser import parse_filters
 from src.prompts.nlu_prompt import NLU_PROMPT
 from src.services.advertiser_service import (
     is_advertiser_list_query,
-    extract_advertiser_from_input
+    extract_advertiser_from_input,
+    get_similar_advertiser_names
 )
 
 
@@ -99,6 +100,16 @@ async def nlu_agent(user_input: str, conversation_history: list = None, existing
     # 如果没有现有广告主，也没有在新输入中指定，且不是查询列表，标记需要选择广告主
     need_advertiser_selection = not has_existing_advertiser and not advertiser_ids and not show_advertiser_list
 
+    # 检测：用户可能想指定某个广告主，但匹配失败（用于给出名称建议）
+    has_ambiguous_advertiser_name = False
+    similar_advertisers = []
+    if not advertiser_ids and not show_advertiser_list and user_input.strip():
+        # 检查是否有类似名称的广告主（用户可能拼写错了或只打了部分）
+        similar = get_similar_advertiser_names(user_input)
+        # 只要用户有输入且没有匹配到广告主，就标记为 ambiguous（即使没有相似名称）
+        has_ambiguous_advertiser_name = True
+        similar_advertisers = similar
+
     # Step 4: 构建结果
     result = {
         "time_range": {
@@ -122,10 +133,10 @@ async def nlu_agent(user_input: str, conversation_history: list = None, existing
             "unit": compare_range2.unit
         } if is_comparison and compare_range2 else None,
         "ambiguity": {
-            "has_ambiguity": False,
-            "type": None,
-            "reason": None,
-            "options": []
+            "has_ambiguity": has_ambiguous_advertiser_name,
+            "type": "advertiser_not_found" if has_ambiguous_advertiser_name else None,
+            "reason": "未找到匹配的广告主" if has_ambiguous_advertiser_name else None,
+            "options": similar_advertisers
         }
     }
 

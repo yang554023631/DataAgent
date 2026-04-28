@@ -4,6 +4,7 @@ from datetime import datetime
 from src.models.insight import Insight, InsightType, Severity, InsightSource
 from src.tools.insight_config import insight_config
 from src.tools.custom_report_client import es_client
+from src.tools.hierarchy_utils import get_advertiser_status
 import logging
 
 logger = logging.getLogger(__name__)
@@ -271,9 +272,9 @@ def a01_high_ctr(query_result: Dict[str, Any], query_context: Dict[str, Any]) ->
         return None
 
     # 从配置读取固定阈值和最小命中数
-    lower_threshold = insight_config.get('highlight_rules.A01_high_ctr.threshold', 0.0240)
-    upper_threshold = insight_config.get('highlight_rules.A01_high_ctr.upper_threshold', 0.0250)
-    min_hits = insight_config.get('highlight_rules.A01_high_ctr.min_hits', 2)
+    lower_threshold = insight_config.get('highlight_rules.A01_high_ctr.threshold', 0.0230)
+    upper_threshold = insight_config.get('highlight_rules.A01_high_ctr.upper_threshold', 0.0260)
+    min_hits = insight_config.get('highlight_rules.A01_high_ctr.min_hits', 1)
     rule_name = insight_config.get('highlight_rules.A01_high_ctr.name', 'CTR表现优异')
 
     data = query_result.get("data", [])
@@ -316,8 +317,8 @@ def a02_high_cvr(query_result: Dict[str, Any], query_context: Dict[str, Any]) ->
     if not insight_config.is_rule_enabled('A02_high_cvr'):
         return None
 
-    threshold = insight_config.get('highlight_rules.A02_high_cvr.threshold', 0.0320)
-    min_hits = insight_config.get('highlight_rules.A02_high_cvr.min_hits', 2)
+    threshold = insight_config.get('highlight_rules.A02_high_cvr.threshold', 0.0300)
+    min_hits = insight_config.get('highlight_rules.A02_high_cvr.min_hits', 1)
     rule_name = insight_config.get('highlight_rules.A02_high_cvr.name', 'CVR表现优异')
 
     data = query_result.get("data", [])
@@ -360,8 +361,8 @@ def a03_low_cpc(query_result: Dict[str, Any], query_context: Dict[str, Any]) -> 
     if not insight_config.is_rule_enabled('A03_low_cpc'):
         return None
 
-    threshold = insight_config.get('highlight_rules.A03_low_cpc.threshold', 0.0390)
-    min_hits = insight_config.get('highlight_rules.A03_low_cpc.min_hits', 2)
+    threshold = insight_config.get('highlight_rules.A03_low_cpc.threshold', 0.0420)
+    min_hits = insight_config.get('highlight_rules.A03_low_cpc.min_hits', 1)
     rule_name = insight_config.get('highlight_rules.A03_low_cpc.name', 'CPC成本优势显著')
 
     data = query_result.get("data", [])
@@ -541,7 +542,7 @@ def a07_high_cvr_contrast(query_result: Dict[str, Any], query_context: Dict[str,
     if not insight_config.is_rule_enabled('A07_cvr_contrast'):
         return None
 
-    threshold = insight_config.get('highlight_rules.A07_cvr_contrast.threshold', 0.0325)
+    threshold = insight_config.get('highlight_rules.A07_cvr_contrast.threshold', 0.0310)
     min_hits = insight_config.get('highlight_rules.A07_cvr_contrast.min_hits', 1)
     rule_name = insight_config.get('highlight_rules.A07_cvr_contrast.name', 'CVR反差亮点')
 
@@ -636,8 +637,8 @@ def a09_ctr_low_cvr_high(query_result: Dict[str, Any], query_context: Dict[str, 
     if not insight_config.is_rule_enabled('A09_ctr_low_cvr_high'):
         return None
 
-    threshold_ctr = insight_config.get('highlight_rules.A09_ctr_low_cvr_high.ctr_threshold', 0.0210)
-    threshold_cvr = insight_config.get('highlight_rules.A09_ctr_low_cvr_high.cvr_threshold', 0.0320)
+    threshold_ctr = insight_config.get('highlight_rules.A09_ctr_low_cvr_high.ctr_threshold', 0.0220)
+    threshold_cvr = insight_config.get('highlight_rules.A09_ctr_low_cvr_high.cvr_threshold', 0.0300)
     min_hits = insight_config.get('highlight_rules.A09_ctr_low_cvr_high.min_hits', 1)
     rule_name = insight_config.get('highlight_rules.A09_ctr_low_cvr_high.name', '精准定向潜力股')
 
@@ -682,8 +683,8 @@ def check_p01_low_cvr(query_result: Dict[str, Any], context: Dict[str, Any]) -> 
     if not insight_config.is_rule_enabled('P01_low_cvr'):
         return None
 
-    threshold = insight_config.get('problem_rules.P01_low_cvr.threshold', 0.0275)
-    min_hits = insight_config.get('problem_rules.P01_low_cvr.min_hits', 2)
+    threshold = insight_config.get('problem_rules.P01_low_cvr.threshold', 0.0285)
+    min_hits = insight_config.get('problem_rules.P01_low_cvr.min_hits', 1)
     rule_name = insight_config.get('problem_rules.P01_low_cvr.name', 'CVR转化低下')
 
     data = query_result.get("data", [])
@@ -774,8 +775,8 @@ def check_p03_high_cpa(query_result: Dict[str, Any], context: Dict[str, Any]) ->
     if not insight_config.is_rule_enabled('P03_high_cpa'):
         return None
 
-    threshold = insight_config.get('problem_rules.P03_high_cpa.threshold', 1.85)
-    min_hits = insight_config.get('problem_rules.P03_high_cpa.min_hits', 2)
+    threshold = insight_config.get('problem_rules.P03_high_cpa.threshold', 1.70)
+    min_hits = insight_config.get('problem_rules.P03_high_cpa.min_hits', 1)
     rule_name = insight_config.get('problem_rules.P03_high_cpa.name', 'CPA转化成本过高')
 
     data = query_result.get("data", [])
@@ -865,8 +866,8 @@ def check_p05_fraud_suspicion(query_result: Dict[str, Any], context: Dict[str, A
     if not insight_config.is_rule_enabled('P05_ctr_anomaly'):
         return None
 
-    threshold_low = insight_config.get('problem_rules.P05_ctr_anomaly.low_threshold', 0.0200)
-    threshold_high = insight_config.get('problem_rules.P05_ctr_anomaly.high_threshold', 0.0260)
+    threshold_low = insight_config.get('problem_rules.P05_ctr_anomaly.low_threshold', 0.0210)
+    threshold_high = insight_config.get('problem_rules.P05_ctr_anomaly.high_threshold', 0.0250)
     min_hits = insight_config.get('problem_rules.P05_ctr_anomaly.min_hits', 1)
     rule_name = insight_config.get('problem_rules.P05_ctr_anomaly.name', 'CTR异常波动')
 
@@ -1157,6 +1158,76 @@ def check_p10_spend_volatility(query_result: Dict[str, Any], context: Dict[str, 
     return None
 
 
+def check_p11_advertiser_punished(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
+    """P11: 广告主合规惩罚检测"""
+    if not insight_config.is_rule_enabled('P11_advertiser_punished'):
+        return None
+
+    advertiser_ids = context.get("advertiser_ids", [])
+    if not advertiser_ids:
+        return None
+
+    status_map = get_advertiser_status(advertiser_ids)
+    punished_advertisers = [
+        (adv_id, info)
+        for adv_id, info in status_map.items()
+        if info["is_punished"]
+    ]
+
+    if not punished_advertisers:
+        return None
+
+    adv_names = ", ".join([info["advertiser_name"] for _, info in punished_advertisers])
+
+    return Insight(
+        id="P11",
+        type=InsightType.PROBLEM,
+        name="广告主合规惩罚",
+        severity=Severity.CRITICAL,
+        confidence=1.0,
+        source=InsightSource.RULE_ENGINE,
+        metric="compliance_status",
+        evidence=f"发现 {len(punished_advertisers)} 个广告主处于合规惩罚状态：{adv_names}，投放可能受限",
+        suggestion="建议立即检查广告主账号的合规状态，处理违规内容并提交申诉，恢复正常投放",
+        metadata={"punished_advertisers": punished_advertisers}
+    )
+
+
+def check_p12_advertiser_arrears(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
+    """P12: 广告主欠费检测"""
+    if not insight_config.is_rule_enabled('P12_advertiser_arrears'):
+        return None
+
+    advertiser_ids = context.get("advertiser_ids", [])
+    if not advertiser_ids:
+        return None
+
+    status_map = get_advertiser_status(advertiser_ids)
+    arrears_advertisers = [
+        (adv_id, info)
+        for adv_id, info in status_map.items()
+        if info["is_arrears"]
+    ]
+
+    if not arrears_advertisers:
+        return None
+
+    adv_names = ", ".join([info["advertiser_name"] for _, info in arrears_advertisers])
+
+    return Insight(
+        id="P12",
+        type=InsightType.PROBLEM,
+        name="广告主账号欠费",
+        severity=Severity.CRITICAL,
+        confidence=1.0,
+        source=InsightSource.RULE_ENGINE,
+        metric="account_balance",
+        evidence=f"发现 {len(arrears_advertisers)} 个广告主处于欠费状态：{adv_names}，可能随时停投",
+        suggestion="建议立即充值缴费，避免因欠费导致投放中断影响业务收入",
+        metadata={"arrears_advertisers": arrears_advertisers}
+    )
+
+
 # ==================== 规则注册 ====================
 
 # 亮点规则 A01-A09
@@ -1170,7 +1241,7 @@ rule_engine.register(Rule("A07", "CVR反差亮点", InsightType.HIGHLIGHT, Sever
 rule_engine.register(Rule("A08", "分设备CPA反差亮点", InsightType.HIGHLIGHT, Severity.HIGH, a08_device_cpa_contrast))
 rule_engine.register(Rule("A09", "精准定向潜力股", InsightType.HIGHLIGHT, Severity.HIGH, a09_ctr_low_cvr_high))
 
-# 问题规则 P01-P10
+# 问题规则 P01-P12
 rule_engine.register(Rule("P01", "CVR转化低下", InsightType.PROBLEM, Severity.HIGH, check_p01_low_cvr))
 rule_engine.register(Rule("P02", "创意疲劳衰减", InsightType.PROBLEM, Severity.MEDIUM, check_p02_creative_fatigue))
 rule_engine.register(Rule("P03", "CPA转化成本过高", InsightType.PROBLEM, Severity.HIGH, check_p03_high_cpa))
@@ -1181,3 +1252,5 @@ rule_engine.register(Rule("P07", "地域投放过于集中", InsightType.PROBLEM
 rule_engine.register(Rule("P08", "设备兼容问题", InsightType.PROBLEM, Severity.MEDIUM, check_p08_device_compatibility))
 rule_engine.register(Rule("P09", "竞品活动冲击", InsightType.PROBLEM, Severity.MEDIUM, check_p09_competitor_impact))
 rule_engine.register(Rule("P10", "消耗波动异常", InsightType.PROBLEM, Severity.MEDIUM, check_p10_spend_volatility))
+rule_engine.register(Rule("P11", "广告主合规惩罚", InsightType.PROBLEM, Severity.CRITICAL, check_p11_advertiser_punished))
+rule_engine.register(Rule("P12", "广告主账号欠费", InsightType.PROBLEM, Severity.CRITICAL, check_p12_advertiser_arrears))

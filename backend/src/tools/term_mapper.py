@@ -128,8 +128,8 @@ def map_metrics(text: str) -> List[str]:
         # 支持中英文关键词匹配
         if term.lower() in text.lower() and standard not in result:
             result.append(standard)
-    # 如果没有识别到任何指标，默认返回曝光和点击
-    return result if result else ["impressions", "clicks"]
+    # 如果没有识别到任何指标，默认返回所有核心指标，用于洞察规则分析
+    return result if result else ["impressions", "clicks", "cost", "conversions"]
 
 @tool
 def map_dimensions(text: str) -> List[str]:

@@ -22,10 +22,15 @@ def build_graph():
     # NLU -> 条件判断：广告主处理 / 澄清 / Planner
     def route_after_nlu(state: dict) -> str:
         ambiguity = state.get("ambiguity", {})
+        query_intent = state.get("query_intent", {})
+
+        # 广告主相关的歧义（未找到匹配的广告主）路由到 advertiser_handle，直接给出友好提示
         if ambiguity and ambiguity.get("has_ambiguity", False):
+            if ambiguity.get("type") == "advertiser_not_found":
+                return "advertiser_handle"
+            # 其他类型的歧义需要人机交互
             return "hitl"
 
-        query_intent = state.get("query_intent", {})
         if query_intent.get("show_advertiser_list", False) or query_intent.get("need_advertiser_selection", False):
             return "advertiser_handle"
 
