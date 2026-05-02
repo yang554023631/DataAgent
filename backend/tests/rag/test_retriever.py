@@ -1,9 +1,9 @@
 import pytest
 from sqlalchemy import text
 
-from rag.database import init_db, get_db_session
-from rag.models import RagDocument, RagChunk
-from rag.retriever import VectorRetriever, Reranker
+from src.rag.database import init_db, get_db_session
+from src.rag.models import RagDocument, RagChunk
+from src.rag.retriever import VectorRetriever, Reranker
 
 
 @pytest.fixture(scope="module")

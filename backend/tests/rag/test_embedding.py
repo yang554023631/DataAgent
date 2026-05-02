@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 from unittest.mock import Mock, patch
 
-from rag.embedding import get_embedding_provider, OpenAIEmbeddingProvider, EmbeddingProvider
+from src.rag.embedding import get_embedding_provider, OpenAIEmbeddingProvider, EmbeddingProvider
 
 
 def test_embedding_provider_abc():
@@ -13,7 +13,7 @@ def test_embedding_provider_abc():
 
 def test_embedding_provider_factory():
     """测试 embedding provider 工厂函数"""
-    with patch("rag.embedding.OpenAIEmbeddings"), patch("rag.embedding.OPENAI_API_KEY", "test-key"):
+    with patch("src.rag.embedding.OpenAIEmbeddings"), patch("src.rag.embedding.OPENAI_API_KEY", "test-key"):
         provider = get_embedding_provider()
         assert provider is not None
         assert isinstance(provider, OpenAIEmbeddingProvider)
@@ -21,7 +21,7 @@ def test_embedding_provider_factory():
 
 def test_openai_provider_initialization():
     """测试 OpenAI provider 初始化"""
-    with patch("rag.embedding.OpenAIEmbeddings") as mock_embeddings, patch("rag.embedding.OPENAI_API_KEY", "test-key"):
+    with patch("src.rag.embedding.OpenAIEmbeddings") as mock_embeddings, patch("src.rag.embedding.OPENAI_API_KEY", "test-key"):
         provider = OpenAIEmbeddingProvider()
         mock_embeddings.assert_called_once()
         call_kwargs = mock_embeddings.call_args[1]
@@ -30,7 +30,7 @@ def test_openai_provider_initialization():
 
 def test_embedding_dimensions():
     """测试向量维度返回（使用mock）"""
-    with patch("rag.embedding.OpenAIEmbeddings") as mock_embeddings_class, patch("rag.embedding.OPENAI_API_KEY", "test-key"):
+    with patch("src.rag.embedding.OpenAIEmbeddings") as mock_embeddings_class, patch("src.rag.embedding.OPENAI_API_KEY", "test-key"):
         mock_instance = Mock()
         mock_instance.embed_query.return_value = [0.1] * 1536
         mock_embeddings_class.return_value = mock_instance
@@ -47,7 +47,7 @@ def test_embedding_dimensions():
 
 def test_batch_embedding():
     """测试批量生成向量（使用mock）"""
-    with patch("rag.embedding.OpenAIEmbeddings") as mock_embeddings_class, patch("rag.embedding.OPENAI_API_KEY", "test-key"):
+    with patch("src.rag.embedding.OpenAIEmbeddings") as mock_embeddings_class, patch("src.rag.embedding.OPENAI_API_KEY", "test-key"):
         mock_instance = Mock()
         mock_instance.embed_documents.return_value = [[0.1] * 1536, [0.2] * 1536, [0.3] * 1536]
         mock_embeddings_class.return_value = mock_instance
@@ -62,7 +62,7 @@ def test_batch_embedding():
 
 def test_embedding_consistency():
     """测试相同输入生成相同向量（使用mock）"""
-    with patch("rag.embedding.OpenAIEmbeddings") as mock_embeddings_class, patch("rag.embedding.OPENAI_API_KEY", "test-key"):
+    with patch("src.rag.embedding.OpenAIEmbeddings") as mock_embeddings_class, patch("src.rag.embedding.OPENAI_API_KEY", "test-key"):
         mock_instance = Mock()
         mock_instance.embed_query.return_value = [0.12345] * 1536
         mock_embeddings_class.return_value = mock_instance
@@ -77,6 +77,6 @@ def test_embedding_consistency():
 
 def test_missing_api_key():
     """测试未设置 API key 时抛出错误"""
-    with patch("rag.embedding.OPENAI_API_KEY", ""):
+    with patch("src.rag.embedding.OPENAI_API_KEY", ""):
         with pytest.raises(ValueError, match="OPENAI_API_KEY 未设置"):
             OpenAIEmbeddingProvider()

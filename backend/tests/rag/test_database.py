@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import text
 
-from rag.database import init_db, get_db_session, engine
+from src.rag.database import init_db, get_db_session, engine
 
 
 @pytest.fixture(scope="module")
