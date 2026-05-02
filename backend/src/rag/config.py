@@ -31,9 +31,9 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 EMBEDDING_DIMENSIONS = int(os.getenv("EMBEDDING_DIMENSIONS", "1536"))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
-# 火山引擎 Ark 配置（复用 ANTHROPIC 环境变量）
-ARK_BASE_URL = os.getenv("ANTHROPIC_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
-ARK_API_KEY = os.getenv("ANTHROPIC_AUTH_TOKEN", os.getenv("ANTHROPIC_API_KEY", ""))
+# 火山引擎 Ark 配置
+ARK_BASE_URL = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+ARK_API_KEY = os.getenv("ARK_API_KEY", "")
 ARK_EMBEDDING_MODEL = os.getenv("ARK_EMBEDDING_MODEL", "doubao-embedding-v1")
 ARK_LLM_MODEL = os.getenv("ARK_LLM_MODEL", "")
 

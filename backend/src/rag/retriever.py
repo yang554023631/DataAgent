@@ -149,11 +149,11 @@ class Reranker:
 
 
 class RagRetriever:
-    """RAG 检索器 - 向量检索 + 重排序完整流程"""
+    """RAG 检索器 - 向量检索（跳过重排序以优化性能）"""
 
     def __init__(self, retrieve_top_k: int = None, rerank_top_n: int = None):
-        self.vector_retriever = VectorRetriever(top_k=retrieve_top_k)
-        self.reranker = Reranker(top_n=rerank_top_n)
+        # 默认只取 Top 5，足够回答问题且速度快
+        self.vector_retriever = VectorRetriever(top_k=retrieve_top_k or 5)
 
     def search(
         self,
@@ -162,7 +162,7 @@ class RagRetriever:
         doc_type: Optional[str] = None,
     ) -> List[RetrievalResult]:
         """
-        完整检索流程：向量召回 + 重排序
+        向量检索（跳过 CrossEncoder 重排序以优化性能）
 
         Args:
             query: 查询问题
@@ -170,15 +170,8 @@ class RagRetriever:
             doc_type: 可选，按文档类型过滤
 
         Returns:
-            重排序后的检索结果
+            按相似度排序的检索结果
         """
-        # 第一步：向量召回
-        initial_results = self.vector_retriever.retrieve(query, db_session, doc_type)
-
-        if not initial_results:
-            return []
-
-        # 第二步：重排序
-        reranked_results = self.reranker.rerank(query, initial_results)
-
-        return reranked_results
+        # 直接向量检索，跳过耗时的 CrossEncoder 重排序
+        results = self.vector_retriever.retrieve(query, db_session, doc_type)
+        return results

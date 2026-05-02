@@ -94,12 +94,20 @@ class HuggingFaceEmbeddingProvider(EmbeddingProvider):
         return self.client.embed_documents(texts)
 
 
+# 单例缓存
+_embedding_provider_instance: EmbeddingProvider = None
+
+
 def get_embedding_provider() -> EmbeddingProvider:
-    """获取 embedding provider 实例"""
-    if EMBEDDING_PROVIDER == "openai":
-        return OpenAIEmbeddingProvider()
-    elif EMBEDDING_PROVIDER == "ark":
-        return ArkEmbeddingProvider()
-    elif EMBEDDING_PROVIDER == "local":
-        return HuggingFaceEmbeddingProvider()
-    raise ValueError(f"不支持的 embedding provider: {EMBEDDING_PROVIDER}")
+    """获取 embedding provider 实例（单例模式，避免重复加载模型）"""
+    global _embedding_provider_instance
+    if _embedding_provider_instance is None:
+        if EMBEDDING_PROVIDER == "openai":
+            _embedding_provider_instance = OpenAIEmbeddingProvider()
+        elif EMBEDDING_PROVIDER == "ark":
+            _embedding_provider_instance = ArkEmbeddingProvider()
+        elif EMBEDDING_PROVIDER == "local":
+            _embedding_provider_instance = HuggingFaceEmbeddingProvider()
+        else:
+            raise ValueError(f"不支持的 embedding provider: {EMBEDDING_PROVIDER}")
+    return _embedding_provider_instance

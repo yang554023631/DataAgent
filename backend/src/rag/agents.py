@@ -7,64 +7,67 @@ from .database import get_db_session
 from .retriever import RagRetriever, RetrievalResult
 
 
+# 单例缓存
+_llm_instance: ChatOpenAI = None
+_rag_generator_instance: 'RagAnswerGenerator' = None
+
+
 def _get_llm():
-    """获取 LLM 实例 - 优先使用火山引擎 Ark"""
-    if ARK_LLM_MODEL and ARK_API_KEY:
-        return ChatOpenAI(
-            model=ARK_LLM_MODEL,
-            api_key=ARK_API_KEY,
-            base_url=ARK_BASE_URL,
-            temperature=0,
-        )
-    return ChatOpenAI(
-        model="gpt-3.5-turbo",
-        api_key=OPENAI_API_KEY,
-        temperature=0,
-    )
+    """获取 LLM 单例 - 优先使用火山引擎 Ark"""
+    global _llm_instance
+    if _llm_instance is None:
+        if ARK_LLM_MODEL and ARK_API_KEY:
+            _llm_instance = ChatOpenAI(
+                model=ARK_LLM_MODEL,
+                api_key=ARK_API_KEY,
+                base_url=ARK_BASE_URL,
+                temperature=0,
+            )
+        else:
+            _llm_instance = ChatOpenAI(
+                model="gpt-3.5-turbo",
+                api_key=OPENAI_API_KEY,
+                temperature=0,
+            )
+    return _llm_instance
+
+
+def get_rag_generator() -> 'RagAnswerGenerator':
+    """获取 RagAnswerGenerator 单例（避免每次重新初始化）"""
+    global _rag_generator_instance
+    if _rag_generator_instance is None:
+        _rag_generator_instance = RagAnswerGenerator()
+    return _rag_generator_instance
+
+
+# 关键词路由：先快速判断，大部分问题不走 LLM
+REPORT_KEYWORDS = ["数据", "报表", "曝光", "点击", "转化", "消耗", "成本",
+                   "趋势", "分析", "对比", "统计", "查询", "多少", "昨日",
+                   "上周", "上月", "今天", "昨天", "本周", "本月", "周", "月", "日"]
 
 
 class IntentRouter:
     """意图路由 - 判断用户问题走报表还是 RAG"""
 
-    SYSTEM_PROMPT = """你是一个智能路由助手，根据用户问题判断应该走哪个分支：
-
-- 如果用户想看数据、报表、图表、趋势、对比、分析某个指标、查某个维度、筛选某个条件 → 返回 "report"
-- 如果用户问概念、术语、使用方法、帮助、说明、定义、解释是什么、方法论、最佳实践 → 返回 "knowledge"
-
-请只返回一个单词：report 或 knowledge，不要返回任何其他内容。"""
-
     def classify(self, user_input: str) -> Literal["report", "knowledge"]:
-        """分类用户意图"""
-        # 每次调用都创建新的 LLM 实例，避免 tokenizers forking 导致的问题
-        llm = _get_llm()
-        messages = [
-            ("system", self.SYSTEM_PROMPT),
-            ("human", f"用户问题: {user_input}"),
-        ]
-        response = llm.invoke(messages)
-        result = response.content.strip().lower()
-
-        # 确保返回值合法
-        if result not in ["report", "knowledge"]:
-            # 默认走 knowledge
-            return "knowledge"
-        return result
+        """分类用户意图 - 纯关键词匹配，极速响应"""
+        if any(k in user_input for k in REPORT_KEYWORDS):
+            return "report"
+        return "knowledge"
 
 
 class RagAnswerGenerator:
     """RAG 回答生成器"""
 
-    SYSTEM_PROMPT = """你是一个广告行业的专业知识助手。请基于提供的参考文档，用简洁、专业、易懂的语言回答用户问题。
+    SYSTEM_PROMPT = """You are a professional advertising knowledge assistant. Answer user questions based on the provided reference documents clearly and professionally.
 
-回答要求：
-1. 基于参考文档中的内容回答，不要编造文档中没有的信息
-2. 如果参考文档中有相关内容，请完整、准确地回答问题
-3. 只有当参考文档中完全没有相关内容时，才说明"抱歉，目前的知识库中没有相关信息"
-4. 回答要条理清晰，重点突出
-5. 专业术语可以适当解释
-6. 用中文回答
+Rules:
+1. Answer based only on the content in the reference documents
+2. If the reference documents have relevant content, summarize and answer directly in Chinese
+3. Only say "Sorry, no relevant information" if documents have ZERO related content
+4. Be concise, structured, and easy to understand
 
-参考文档：
+Reference documents:
 {context}"""
 
     # 兜底回答模板
@@ -84,7 +87,8 @@ class RagAnswerGenerator:
     ]
 
     def __init__(self):
-        self.retriever = RagRetriever()
+        # Top 3 足够回答，检索更快
+        self.retriever = RagRetriever(retrieve_top_k=3)
 
     def _build_context(self, retrieval_results: List[RetrievalResult]) -> str:
         """构建上下文字符串"""
@@ -104,35 +108,8 @@ class RagAnswerGenerator:
         return titles
 
     def _generate_query_suggestions(self, query: str, results: List[RetrievalResult]) -> List[str]:
-        """基于检索结果生成相关问题建议"""
-        # 如果有相关结果，从文档标题中提取建议
-        if results:
-            # 简单的基于检索结果的建议
-            sources = self._extract_sources(results)
-            suggestions = []
-            for source in sources[:3]:
-                # 从文档标题生成建议问题
-                if "CTR" in source or "点击率" in source:
-                    suggestions.append("怎么提升 CTR？")
-                elif "CPA" in source or "转化成本" in source:
-                    suggestions.append("怎么降低 CPA？")
-                elif "冷启动" in source:
-                    suggestions.append("冷启动需要多久？")
-                elif "A/B" in source or "测试" in source:
-                    suggestions.append("A/B测试需要注意什么？")
-                elif "素材" in source:
-                    suggestions.append("素材怎么优化？")
-                elif "落地页" in source:
-                    suggestions.append("落地页有什么优化技巧？")
-                elif "定向" in source:
-                    suggestions.append("广告怎么定向？")
-
-            # 补充通用建议
-            suggestions.extend(self.COMMON_SUGGESTIONS[:2])
-            return suggestions[:4]
-
-        # 没有结果时返回通用建议
-        return self.COMMON_SUGGESTIONS
+        """快速生成相关问题（直接取通用建议，性能优先）"""
+        return self.COMMON_SUGGESTIONS[:3]
 
     def _format_answer(self, answer: str, sources: List[str], suggestions: List[str], show_sources: bool = True) -> str:
         """格式化回答，添加来源和建议"""
@@ -210,22 +187,26 @@ class RagAnswerGenerator:
         # 构建上下文
         context_str = self._build_context(results)
 
-        # 注意：检索过程中 CrossEncoder 的 forking 行为可能影响 self.llm 的状态
-        # 所以每次调用 LLM 前都创建一个新的 LLM 实例
-        llm = _get_llm()
+        try:
+            # 创建新的 LLM 实例并调用
+            llm = _get_llm()
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", self.SYSTEM_PROMPT.format(context=context_str)),
+                ("human", f"用户问题: {query}"),
+            ])
 
-        # 调用 LLM 生成回答
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", self.SYSTEM_PROMPT.format(context=context_str)),
-            ("human", f"用户问题: {query}"),
-        ])
+            chain = prompt | llm
+            response = chain.invoke({"query": query})
+            answer = response.content.strip()
 
-        chain = prompt | llm
-        response = chain.invoke({"query": query})
-        answer = response.content.strip()
-
-        # 检测 LLM 是否自己返回了兜底回答
-        llm_fallback = "抱歉，目前的知识库中没有" in answer
+            # 检测 LLM 是否自己返回了兜底回答
+            llm_fallback = "抱歉，目前的知识库中没有" in answer
+        except Exception:
+            # LLM 调用失败时直接返回检索到的文档摘要
+            answer = ""
+            for i, r in enumerate(results[:3], 1):
+                answer += f"### {r.title}\n{r.content}\n\n"
+            llm_fallback = False
 
         # 提取来源和建议
         sources = self._extract_sources(results)
