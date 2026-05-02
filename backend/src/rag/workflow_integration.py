@@ -23,11 +23,13 @@ class RAGEnabledState(TypedDict, total=False):
     rag_answer: str
 
 
-def route_based_on_intent(state: RAGEnabledState) -> str:
+def route_based_on_intent(state: dict) -> str:
     """根据意图类型路由"""
-    if state.get("query_type") == "knowledge":
+    query_type = state.get("query_type", "report")
+    if query_type == "knowledge":
         return "rag_retrieve"
-    return "intent_classification"  # 原有报表流程入口
+    # 报表查询走原有流程
+    return "intent_classification"
 
 
 def build_rag_enabled_workflow(base_workflow_builder=None):
