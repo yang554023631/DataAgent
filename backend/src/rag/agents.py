@@ -126,11 +126,33 @@ Reference documents:
 
         return "\n".join(result_parts)
 
+    # 英文缩写 -> 中文含义映射，用于查询增强
+    KEYWORD_ENHANCE = {
+        'ctr': '点击率',
+        'cpa': '转化成本',
+        'cpc': '点击成本',
+        'cpm': '千次展示成本',
+        'roi': '投资回报率',
+        'ltv': '生命周期价值',
+        'arpu': '每用户平均收入',
+    }
+
+    def _enhance_query(self, query: str) -> str:
+        """查询增强：给英文缩写补充中文含义，提高检索准确率"""
+        query_lower = query.lower()
+        enhanced = [query]
+        for eng, cn in self.KEYWORD_ENHANCE.items():
+            if eng in query_lower:
+                enhanced.append(cn)
+        return ' '.join(enhanced)
+
     def retrieve_with_results(self, query: str) -> List[RetrievalResult]:
         """检索并返回完整的结果对象"""
+        # 查询增强，提高准确率
+        enhanced_query = self._enhance_query(query)
         db_session = get_db_session()
         try:
-            return self.retriever.search(query, db_session)
+            return self.retriever.search(enhanced_query, db_session)
         finally:
             db_session.close()
 
@@ -158,12 +180,11 @@ Reference documents:
             ]
 
         # 相关性阈值：向量相似度 + 关键词匹配双重判断
-        # 本地 embedding 对无意义查询的分数判断不够准确，需要更严格
-        VECTOR_THRESHOLD = 0.80  # 向量相似度阈值，提高到0.8
+        VECTOR_THRESHOLD = 0.75  # 降低阈值适配本地 embedding 对英文缩写的处理
         has_relevant = False
         if results:
             top_score = results[0].score
-            # 严格的关键词匹配：查询中必须包含关键词
+            # 只要有关键词匹配就认为相关（解决英文缩写检索问题）
             keywords = ['CTR', 'CPA', 'CPC', 'CPM', 'ROI', 'ARPU',
                        '点击率', '转化率', '点击成本', '千次展示',
                        '冷启动', '素材', '创意', '落地页', '定向',
