@@ -1,4 +1,4 @@
-from rag.splitter import MarkdownSplitter, Chunk
+from src.rag.splitter import MarkdownSplitter, Chunk
 
 
 def test_splitter_initialization():
