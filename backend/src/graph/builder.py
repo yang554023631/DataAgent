@@ -1,12 +1,16 @@
 from langgraph.graph import StateGraph, END
 from .state import AdReportState
 from .nodes import nlu_node, hitl_node, planner_node, executor_node, insight_node, analyst_node, reporter_node, advertiser_handle_node
+from src.rag.agents import intent_router_node, rag_retrieve_node, rag_answer_node
 
 def build_graph():
     """构建完整的 LangGraph 流程图"""
     graph = StateGraph(AdReportState)
 
     # 添加节点
+    graph.add_node("intent_router", intent_router_node)
+    graph.add_node("rag_retrieve", rag_retrieve_node)
+    graph.add_node("rag_answer", rag_answer_node)
     graph.add_node("nlu", nlu_node)
     graph.add_node("hitl", hitl_node)
     graph.add_node("advertiser_handle", advertiser_handle_node)
@@ -17,7 +21,24 @@ def build_graph():
     graph.add_node("reporter", reporter_node)
 
     # 设置入口
-    graph.set_entry_point("nlu")
+    graph.set_entry_point("intent_router")
+
+    # Intent Router -> 条件分支：RAG 流程 / 报表流程
+    def route_after_intent(state: dict) -> str:
+        query_type = state.get("query_type", "report")
+        if query_type == "knowledge":
+            return "rag_retrieve"
+        return "nlu"
+
+    graph.add_conditional_edges(
+        "intent_router",
+        route_after_intent,
+        {"rag_retrieve": "rag_retrieve", "nlu": "nlu"}
+    )
+
+    # RAG 流程：检索 -> 回答生成 -> 结束
+    graph.add_edge("rag_retrieve", "rag_answer")
+    graph.add_edge("rag_answer", END)
 
     # NLU -> 条件判断：广告主处理 / 澄清 / Planner
     def route_after_nlu(state: dict) -> str:
