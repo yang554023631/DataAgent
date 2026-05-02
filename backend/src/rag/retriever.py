@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 
 from .config import RETRIEVE_TOP_K, RERANKER_MODEL, RERANKER_TOP_N
 from .embedding import get_embedding_provider
@@ -66,7 +67,7 @@ class VectorRetriever:
             q = q.filter(RagDocument.doc_type == doc_type)
 
         # 按相似度排序，取 top_k
-        results = q.order_by(RagChunk.embedding.cosine_distance(query_embedding)) \
+        results = q.order_by(desc("score")) \
                     .limit(self.top_k) \
                     .all()
 
