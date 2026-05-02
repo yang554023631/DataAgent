@@ -21,6 +21,11 @@ class AdReportState(TypedDict):
     user_input: str
     conversation_history: Annotated[List[Dict], append_history]
 
+    # RAG 相关字段
+    query_type: Optional[str]  # "report" 或 "knowledge"
+    rag_context: List[str]
+    rag_answer: Optional[str]
+
     # 意图理解输出
     query_intent: Optional[Dict]
 
