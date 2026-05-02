@@ -65,65 +65,69 @@ class DocumentSyncer:
 
         content = file_path.read_text(encoding="utf-8")
 
-        # 预先计算分片（避免重复计算）
-        new_chunks = self.splitter.split(content)
-        new_hashes = set(c.content_hash for c in new_chunks)
+        try:
+            # 预先计算分片（避免重复计算）
+            new_chunks = self.splitter.split(content)
+            new_hashes = set(c.content_hash for c in new_chunks)
 
-        # 检查是否已存在且未修改
-        existing_doc = db_session.query(RagDocument).filter_by(file_path=str(file_path)).first()
+            # 检查是否已存在且未修改
+            existing_doc = db_session.query(RagDocument).filter_by(file_path=str(file_path)).first()
 
-        if existing_doc:
-            # 比较所有分片的 hash 总和，判断是否需要重新同步
-            existing_hashes = set(c.content_hash for c in existing_doc.chunks)
+            if existing_doc:
+                # 比较所有分片的 hash 总和，判断是否需要重新同步
+                existing_hashes = set(c.content_hash for c in existing_doc.chunks)
 
-            if existing_hashes == new_hashes:
-                # 内容未变化，只更新同步时间
-                existing_doc.last_synced_at = datetime.now()
-                db_session.commit()
-                return existing_doc
+                if existing_hashes == new_hashes:
+                    # 内容未变化，只更新同步时间
+                    existing_doc.last_synced_at = datetime.now()
+                    db_session.commit()
+                    return existing_doc
 
-            # 内容变化，删除旧分片
-            for chunk in existing_doc.chunks:
-                db_session.delete(chunk)
+                # 内容变化，删除旧分片
+                for chunk in existing_doc.chunks:
+                    db_session.delete(chunk)
 
-        # 提取元数据
-        title = self._extract_title(content, file_path)
-        doc_type = self._extract_doc_type(file_path)
+            # 提取元数据
+            title = self._extract_title(content, file_path)
+            doc_type = self._extract_doc_type(file_path)
 
-        # 创建/更新文档
-        if existing_doc:
-            doc = existing_doc
-            doc.title = title
-            doc.doc_type = doc_type
-            doc.updated_at = datetime.now()
-            doc.last_synced_at = datetime.now()
-        else:
-            doc = RagDocument(
-                title=title,
-                file_path=str(file_path),
-                doc_type=doc_type,
-                last_synced_at=datetime.now(),
-            )
-            db_session.add(doc)
-            db_session.flush()  # 获取 doc.id
+            # 创建/更新文档
+            if existing_doc:
+                doc = existing_doc
+                doc.title = title
+                doc.doc_type = doc_type
+                doc.updated_at = datetime.now()
+                doc.last_synced_at = datetime.now()
+            else:
+                doc = RagDocument(
+                    title=title,
+                    file_path=str(file_path),
+                    doc_type=doc_type,
+                    last_synced_at=datetime.now(),
+                )
+                db_session.add(doc)
+                db_session.flush()  # 获取 doc.id
 
-        # 批量生成向量（重用预先计算的分片）
-        chunk_contents = [c.content for c in new_chunks]
-        embeddings = self.embedding_provider.embed_batch(chunk_contents)
+            # 批量生成向量（重用预先计算的分片）
+            chunk_contents = [c.content for c in new_chunks]
+            embeddings = self.embedding_provider.embed_batch(chunk_contents)
 
-        # 创建分片记录（重用预先计算的分片）
-        for chunk, embedding in zip(new_chunks, embeddings):
-            db_chunk = RagChunk(
-                doc_id=doc.id,
-                chunk_index=chunk.index,
-                content=chunk.content,
-                content_hash=chunk.content_hash,
-                embedding=embedding,
-            )
-            db_session.add(db_chunk)
+            # 创建分片记录（重用预先计算的分片）
+            for chunk, embedding in zip(new_chunks, embeddings):
+                db_chunk = RagChunk(
+                    doc_id=doc.id,
+                    chunk_index=chunk.index,
+                    content=chunk.content,
+                    content_hash=chunk.content_hash,
+                    embedding=embedding,
+                )
+                db_session.add(db_chunk)
 
-        db_session.commit()
-        return doc
+            db_session.commit()
+            return doc
+        except Exception as e:
+            db_session.rollback()
+            raise
 
     def sync_all(self, db_session: Session, incremental: bool = True) -> int:
         """
@@ -139,12 +143,17 @@ class DocumentSyncer:
         md_files = self.scan_directory()
         synced_count = 0
 
-        for file_path in md_files:
-            doc = self.sync_single(file_path, db_session)
-            if doc:
-                synced_count += 1
+        try:
+            for file_path in md_files:
+                doc = self.sync_single(file_path, db_session)
+                if doc:
+                    synced_count += 1
 
-        return synced_count
+            db_session.commit()
+            return synced_count
+        except Exception as e:
+            db_session.rollback()
+            raise
 
 
 def sync_documents(incremental: bool = True) -> int:
