@@ -1,3 +1,10 @@
+import os
+# 禁用 tokenizers 的并行性，避免 forking 导致的 LLM API 调用问题
+os.environ['TOKENIZERS_PARALLELISM'] = 'false'
+
+# 强制 CrossEncoder 使用 CPU，避免 MPS 显存溢出
+os.environ['CUDA_VISIBLE_DEVICES'] = ''
+
 from dataclasses import dataclass
 from typing import List, Optional
 from sqlalchemy.orm import Session
@@ -6,6 +13,24 @@ from sqlalchemy import desc
 from .config import RETRIEVE_TOP_K, RERANKER_MODEL, RERANKER_TOP_N
 from .embedding import get_embedding_provider
 from .models import RagChunk, RagDocument
+
+# CrossEncoder 单例 - 只初始化一次，避免显存泄漏
+_reranker_instance = None
+
+def get_reranker_instance(model_name: str = None):
+    """获取 CrossEncoder 单例（避免重复初始化导致显存泄漏）"""
+    global _reranker_instance
+    if _reranker_instance is None:
+        if not HAS_SENTENCE_TRANSFORMERS:
+            raise ImportError(
+                "sentence-transformers is required for Reranker. "
+                "Install with: pip install sentence-transformers"
+            )
+        _reranker_instance = CrossEncoder(
+            model_name or RERANKER_MODEL,
+            device='cpu'  # 强制使用 CPU，避免 MPS 显存问题
+        )
+    return _reranker_instance
 
 try:
     from sentence_transformers import CrossEncoder
@@ -89,41 +114,38 @@ class Reranker:
     """重排序器 - 使用 CrossEncoder 精排"""
 
     def __init__(self, model_name: str = None, top_n: int = None):
-        if not HAS_SENTENCE_TRANSFORMERS:
-            raise ImportError(
-                "sentence-transformers is required for Reranker. "
-                "Install with: pip install sentence-transformers"
-            )
         self.model_name = model_name or RERANKER_MODEL
         self.top_n = top_n or RERANKER_TOP_N
-        self.model = CrossEncoder(self.model_name)
+        # 使用单例获取模型，避免重复初始化
+        self.model = get_reranker_instance(self.model_name)
 
-    def rerank(self, query: str, documents: List[str]) -> List[str]:
+    def rerank(self, query: str, results: List[RetrievalResult]) -> List[RetrievalResult]:
         """
         对检索结果进行重排序
 
         Args:
             query: 查询问题
-            documents: 待排序的文档列表
+            results: 待排序的检索结果列表
 
         Returns:
-            重排序后的文档列表（前 top_n 个）
+            重排序后的检索结果列表（前 top_n 个）
         """
-        if not documents:
+        if not results:
             return []
 
         # 构造 (query, document) 对
-        pairs = [[query, doc] for doc in documents]
+        contents = [r.content for r in results]
+        pairs = [[query, content] for content in contents]
 
         # 计算相关性分数
         scores = self.model.predict(pairs)
 
         # 按分数降序排序，取 top_n
-        scored_docs = list(zip(documents, scores))
-        scored_docs.sort(key=lambda x: x[1], reverse=True)
+        scored_results = list(zip(results, scores))
+        scored_results.sort(key=lambda x: x[1], reverse=True)
 
-        # 返回排序后的文档内容
-        return [doc for doc, score in scored_docs[:self.top_n]]
+        # 返回排序后的完整结果对象
+        return [result for result, score in scored_results[:self.top_n]]
 
 
 class RagRetriever:
@@ -157,14 +179,6 @@ class RagRetriever:
             return []
 
         # 第二步：重排序
-        contents = [r.content for r in initial_results]
-        reranked_contents = self.reranker.rerank(query, contents)
-
-        # 根据重排序结果重新排列
-        content_to_result = {r.content: r for r in initial_results}
-        reranked_results = []
-        for content in reranked_contents:
-            if content in content_to_result:
-                reranked_results.append(content_to_result[content])
+        reranked_results = self.reranker.rerank(query, initial_results)
 
         return reranked_results

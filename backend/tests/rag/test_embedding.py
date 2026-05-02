@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 from unittest.mock import Mock, patch
 
-from src.rag.embedding import get_embedding_provider, OpenAIEmbeddingProvider, EmbeddingProvider
+from src.rag.embedding import get_embedding_provider, OpenAIEmbeddingProvider, ArkEmbeddingProvider, EmbeddingProvider
 
 
 def test_embedding_provider_abc():
@@ -80,3 +80,58 @@ def test_missing_api_key():
     with patch("src.rag.embedding.OPENAI_API_KEY", ""):
         with pytest.raises(ValueError, match="OPENAI_API_KEY 未设置"):
             OpenAIEmbeddingProvider()
+
+
+def test_ark_provider_factory():
+    """测试 Ark embedding provider 工厂函数"""
+    with patch("src.rag.embedding.OpenAIEmbeddings"), \
+         patch("src.rag.embedding.ARK_API_KEY", "test-ark-key"), \
+         patch("src.rag.embedding.EMBEDDING_PROVIDER", "ark"):
+        provider = get_embedding_provider()
+        assert provider is not None
+        assert isinstance(provider, ArkEmbeddingProvider)
+
+
+def test_ark_provider_initialization():
+    """测试 Ark provider 初始化 - 复用 ANTHROPIC 配置"""
+    with patch("src.rag.embedding.OpenAIEmbeddings") as mock_embeddings, \
+         patch("src.rag.embedding.ARK_API_KEY", "test-ark-key"), \
+         patch("src.rag.embedding.ARK_BASE_URL", "https://ark.test.com/api/v3"), \
+         patch("src.rag.embedding.ARK_EMBEDDING_MODEL", "doubao-embedding-v1"):
+        provider = ArkEmbeddingProvider()
+        mock_embeddings.assert_called_once()
+        call_kwargs = mock_embeddings.call_args[1]
+        assert call_kwargs["api_key"] == "test-ark-key"
+        assert call_kwargs["base_url"] == "https://ark.test.com/api/v3"
+        assert call_kwargs["model"] == "doubao-embedding-v1"
+
+
+def test_ark_missing_api_key():
+    """测试 Ark 未设置 API key 时抛出错误"""
+    with patch("src.rag.embedding.ARK_API_KEY", ""):
+        with pytest.raises(ValueError, match="ANTHROPIC_AUTH_TOKEN 或 ANTHROPIC_API_KEY 未设置"):
+            ArkEmbeddingProvider()
+
+
+def test_ark_embedding_dimensions():
+    """测试 Ark 向量维度返回（使用mock）"""
+    with patch("src.rag.embedding.OpenAIEmbeddings") as mock_embeddings_class, \
+         patch("src.rag.embedding.ARK_API_KEY", "test-ark-key"):
+        mock_instance = Mock()
+        mock_instance.embed_query.return_value = [0.1] * 2048  # doubao 模型是 2048 维
+        mock_embeddings_class.return_value = mock_instance
+
+        provider = ArkEmbeddingProvider()
+        text = "这是一个测试文本"
+        embedding = provider.embed(text)
+
+        assert embedding is not None
+        assert len(embedding) == 2048
+        assert isinstance(embedding, list)
+
+
+def test_invalid_provider():
+    """测试无效 provider 抛出错误"""
+    with patch("src.rag.embedding.EMBEDDING_PROVIDER", "invalid"):
+        with pytest.raises(ValueError, match="不支持的 embedding provider: invalid"):
+            get_embedding_provider()
