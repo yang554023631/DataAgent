@@ -65,14 +65,16 @@ class DocumentSyncer:
 
         content = file_path.read_text(encoding="utf-8")
 
+        # 预先计算分片（避免重复计算）
+        new_chunks = self.splitter.split(content)
+        new_hashes = set(c.content_hash for c in new_chunks)
+
         # 检查是否已存在且未修改
         existing_doc = db_session.query(RagDocument).filter_by(file_path=str(file_path)).first()
 
         if existing_doc:
             # 比较所有分片的 hash 总和，判断是否需要重新同步
             existing_hashes = set(c.content_hash for c in existing_doc.chunks)
-            new_chunks = self.splitter.split(content)
-            new_hashes = set(c.content_hash for c in new_chunks)
 
             if existing_hashes == new_hashes:
                 # 内容未变化，只更新同步时间
@@ -105,15 +107,12 @@ class DocumentSyncer:
             db_session.add(doc)
             db_session.flush()  # 获取 doc.id
 
-        # 分片
-        chunks = self.splitter.split(content)
-
-        # 批量生成向量
-        chunk_contents = [c.content for c in chunks]
+        # 批量生成向量（重用预先计算的分片）
+        chunk_contents = [c.content for c in new_chunks]
         embeddings = self.embedding_provider.embed_batch(chunk_contents)
 
-        # 创建分片记录
-        for chunk, embedding in zip(chunks, embeddings):
+        # 创建分片记录（重用预先计算的分片）
+        for chunk, embedding in zip(new_chunks, embeddings):
             db_chunk = RagChunk(
                 doc_id=doc.id,
                 chunk_index=chunk.index,
