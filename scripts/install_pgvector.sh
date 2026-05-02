@@ -26,7 +26,7 @@ echo "编译 PostgreSQL..."
 tar -xzf "postgresql-$PG_VERSION.tar.gz"
 cd "postgresql-$PG_VERSION"
 ./configure --prefix="$INSTALL_DIR" --without-readline --without-zlib
-make -j$(nproc)
+make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 make install
 
 # 配置环境变量
