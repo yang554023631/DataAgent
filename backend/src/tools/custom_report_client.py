@@ -35,7 +35,9 @@ DIMENSION_NAME_MAP = {
     "data_hour": "小时",
     "channel": "渠道",
     "campaign_id": "计划ID",
+    "adgroup_id": "广告组ID",
     "advertiser_id": "广告主ID",
+    "creative_id": "创意ID",
     "industry": "行业",
 }
 

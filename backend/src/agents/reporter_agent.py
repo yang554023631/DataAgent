@@ -202,15 +202,9 @@ async def reporter_agent(
         else:
             formatted_value = format_number.func(current_value)
 
-        # 根据异常类型显示不同信息
-        if anomaly.get("type") == "outlier":
-            emoji = "⚠️"
-            z_score = anomaly.get('z_score', 0)
-            highlights.append({
-                "type": "negative",
-                "text": f"{emoji} {dimension_value} {metric_name} 数值异常：{formatted_value}（偏离均值{abs(z_score):.1f}倍标准差）"
-            })
-        else:  # sudden_change
+        # 只显示环比突变类型的异常（数值异常检测噪音太大）
+        if anomaly.get("type") == "sudden_change":
+            emoji = "🟢" if change_percent > 0 else "🔴"
             emoji = "🟢" if change_percent > 0 else "🔴"
             change_str = format_change.func(change_percent) if change_percent != 0 else "变化量为0"
             highlights.append({
@@ -239,9 +233,10 @@ async def reporter_agent(
         # 检测是否有实际维度列（如果有，则移除重复的name列）
         dimension_columns = {
             "性别", "年龄段", "操作系统", "系统版本", "国家", "城市", "行业",
-            "兴趣标签", "日期", "月份", "周", "小时", "渠道", "计划ID", "广告主ID"
+            "兴趣标签", "日期", "月份", "周", "小时", "渠道", "计划ID", "广告组ID", "创意ID", "广告主ID",
+            "campaign_id", "adgroup_id", "creative_id", "advertiser_id"
         }
-        has_actual_dimensions = any(col in dimension_columns for col in columns)
+        has_actual_dimensions = any(col.lower() in {d.lower() for d in dimension_columns} for col in columns)
 
         # 如果有实际维度列，则移除name列（避免重复显示）
         if has_actual_dimensions and "name" in columns:
