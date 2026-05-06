@@ -10,7 +10,7 @@ def build_graph():
     # 添加节点
     graph.add_node("intent_router", intent_router_node)
     graph.add_node("rag_retrieve", rag_retrieve_node)
-    graph.add_node("rag_answer", rag_answer_node)
+    graph.add_node("rag_generate_answer", rag_answer_node)
     graph.add_node("nlu", nlu_node)
     graph.add_node("hitl", hitl_node)
     graph.add_node("advertiser_handle", advertiser_handle_node)
@@ -37,8 +37,8 @@ def build_graph():
     )
 
     # RAG 流程：检索 -> 回答生成 -> 结束
-    graph.add_edge("rag_retrieve", "rag_answer")
-    graph.add_edge("rag_answer", END)
+    graph.add_edge("rag_retrieve", "rag_generate_answer")
+    graph.add_edge("rag_generate_answer", END)
 
     # NLU -> 条件判断：广告主处理 / 澄清 / Planner
     def route_after_nlu(state: dict) -> str:

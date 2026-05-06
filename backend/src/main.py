@@ -2,8 +2,8 @@ import sys
 import os
 from pathlib import Path
 
-# Add src directory to path for direct running
-sys.path.insert(0, str(Path(__file__).parent))
+# Add project root to path for direct running
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware

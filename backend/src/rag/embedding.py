@@ -71,8 +71,29 @@ class ArkEmbeddingProvider(EmbeddingProvider):
         return resp.data[0].embedding
 
     def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        resp = self.client.embeddings.create(input=texts, model=self.model)
-        return [r.embedding for r in resp.data]
+        import time
+
+        # 火山引擎 API 限制每次最多 10 个输入，分批处理
+        batch_size = 10
+        all_embeddings = []
+
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i+batch_size]
+            # 简单重试机制：最多重试 3 次
+            for retry in range(3):
+                try:
+                    resp = self.client.embeddings.create(input=batch, model=self.model)
+                    all_embeddings.extend([r.embedding for r in resp.data])
+                    break
+                except Exception as e:
+                    if retry < 2:
+                        time.sleep(1)  # 重试前等待 1 秒
+                    else:
+                        raise
+            # 增加请求间隔，避免触发频率限制
+            time.sleep(0.5)
+
+        return all_embeddings
 
 
 class HuggingFaceEmbeddingProvider(EmbeddingProvider):
