@@ -12,7 +12,7 @@ from .config import (
     EMBEDDING_MODEL,
     EMBEDDING_DIMENSIONS,
     OPENAI_API_KEY,
-    ARK_BASE_URL,
+    ARK_EMBEDDING_BASE_URL,
     ARK_API_KEY,
     ARK_EMBEDDING_MODEL,
 )
@@ -63,7 +63,7 @@ class ArkEmbeddingProvider(EmbeddingProvider):
 
         # 直接使用 OpenAI SDK 避免 LangChain 的 tokenization 问题
         from openai import OpenAI
-        self.client = OpenAI(api_key=ARK_API_KEY, base_url=ARK_BASE_URL)
+        self.client = OpenAI(api_key=ARK_API_KEY, base_url=ARK_EMBEDDING_BASE_URL)
         self.model = ARK_EMBEDDING_MODEL
 
     def embed(self, text: str) -> List[float]:

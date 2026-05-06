@@ -33,6 +33,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # 火山引擎 Ark 配置
 ARK_BASE_URL = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
+ARK_EMBEDDING_BASE_URL = os.getenv("ARK_EMBEDDING_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
 ARK_API_KEY = os.getenv("ARK_API_KEY", "")
 ARK_EMBEDDING_MODEL = os.getenv("ARK_EMBEDDING_MODEL", "doubao-embedding-v1")
 ARK_LLM_MODEL = os.getenv("ARK_LLM_MODEL", "")
