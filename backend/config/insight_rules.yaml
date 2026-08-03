@@ -80,7 +80,7 @@ timing_rules:
   P04_frequency_control:
     enabled: true
     name: "频次失控"
-    threshold: 5.0               # 日均频次阈值（原3.0，现放宽到5.0）
+    threshold: 4.5               # 日均频次阈值
     description: "日均曝光频次超过阈值，可能对用户造成骚扰"
 
   P06_bidding_issue:
@@ -138,25 +138,18 @@ special_rules:
   A04_healthy_spend:
     enabled: true
     name: "消耗曲线健康"
-    utilization_threshold: 0.9
-    cv_threshold: 0.2
-    description: "预算利用率高且消耗平稳"
+    change_threshold: 1.0    # 单日消耗变化率阈值（100%，即翻倍/腰斩以内算健康）
+    description: "单日消耗波动在阈值内，投放节奏平稳"
 
   A05_frequency_control:
     enabled: true
     name: "曝光频次控制良好"
-    min_freq: 1.5
-    max_freq: 2.5
-    description: "平均曝光频次处于理想区间"
+    max_freq: 4.0         # 日均频次上限
+    description: "平均曝光频次处于健康区间"
 
-  A06_conversion_timing:
-    enabled: true
-    name: "转化节奏理想"
-    ratio_threshold: 0.8
-    description: "24小时内完成转化占比高"
 
   A08_device_cpa_contrast:
     enabled: true
     name: "分设备CPA反差亮点"
-    cpa_ratio_threshold: 0.5
-    description: "某设备CPA显著低于其他设备（最好是次好的50%以下）"
+    cpa_ratio_threshold: 0.8
+    description: "某设备CPA显著低于其他设备（最优是次优的80%以下）"

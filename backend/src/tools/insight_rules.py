@@ -418,6 +418,8 @@ def a04_healthy_spend_curve(query_result: Dict[str, Any], query_context: Dict[st
     if len(daily_data) < 3:
         return None
 
+    change_threshold = insight_config.get('special_rules.A04_healthy_spend.change_threshold', 1.0)
+
     all_healthy = True
     max_change_rate = 0
     for i in range(1, len(daily_data)):
@@ -425,7 +427,7 @@ def a04_healthy_spend_curve(query_result: Dict[str, Any], query_context: Dict[st
         curr_cost = daily_data[i].get("cost", 0)
         if prev_cost > 0:
             change_rate = abs(curr_cost - prev_cost) / prev_cost
-            if change_rate > 0.5:
+            if change_rate > change_threshold:
                 all_healthy = False
                 max_change_rate = max(max_change_rate, change_rate)
 
@@ -476,8 +478,9 @@ def a05_good_frequency_control(query_result: Dict[str, Any], query_context: Dict
         return None
 
     avg_freq = sum(daily_freqs) / len(daily_freqs)
+    max_freq = insight_config.get('special_rules.A05_frequency_control.max_freq', 4.0)
 
-    if avg_freq <= 2.0:
+    if avg_freq <= max_freq:
         return Insight(
             id="A05",
             type=InsightType.HIGHLIGHT,
@@ -487,52 +490,10 @@ def a05_good_frequency_control(query_result: Dict[str, Any], query_context: Dict
             source=InsightSource.RULE_ENGINE,
             metric="frequency",
             current_value=round(avg_freq, 2),
-            baseline_value=2.0,
-            evidence=f"日均曝光频次为{round(avg_freq, 2)}次，控制在健康水平",
+            baseline_value=round(max_freq, 1),
+            evidence=f"日均曝光频次为{round(avg_freq, 2)}次，控制在健康水平（≤{round(max_freq, 1)}次）",
             suggestion="频次控制合理，既保证有效触达又避免过度曝光",
             metadata={"avg_frequency": avg_freq, "days": len(daily_freqs)}
-        )
-    return None
-
-
-def a06_ideal_conversion_timing(query_result: Dict[str, Any], query_context: Dict[str, Any]) -> Optional[Insight]:
-    """A06: 转化节奏理想（首日转化占总转化>=80%）"""
-    if not insight_config.is_rule_enabled('A06_conversion_timing'):
-        return None
-
-    ad_group_id = query_context.get("ad_group_id")
-    creative_id = query_context.get("creative_id")
-
-    daily_data = query_result.get("daily_data")
-    if not daily_data:
-        start_time, end_time = None, None
-        if ad_group_id:
-            start_time, end_time = _get_ad_group_time_range(ad_group_id)
-        daily_data = _query_daily_metrics(ad_group_id, creative_id, start_time, end_time)
-
-    if len(daily_data) < 3:  # 至少需要3天数据才判断
-        return None
-
-    total_conv = sum(d.get("conversions", 0) for d in daily_data)
-    if total_conv <= 0:
-        return None
-
-    first_day_ratio = daily_data[0].get("conversions", 0) / total_conv
-
-    if first_day_ratio >= 0.8:
-        return Insight(
-            id="A06",
-            type=InsightType.HIGHLIGHT,
-            name="转化节奏理想",
-            severity=Severity.MEDIUM,
-            confidence=0.85,
-            source=InsightSource.RULE_ENGINE,
-            metric="conversion_timing",
-            current_value=round(first_day_ratio * 100, 1),
-            baseline_value=80,
-            evidence=f"首日转化占比达{round(first_day_ratio * 100, 1)}%，用户转化决策链路短",
-            suggestion="用户决策意愿强，可加大首日投放力度",
-            metadata={"first_day_ratio": first_day_ratio, "total_conversions": total_conv}
         )
     return None
 
@@ -1236,7 +1197,6 @@ rule_engine.register(Rule("A02", "CVR表现优异", InsightType.HIGHLIGHT, Sever
 rule_engine.register(Rule("A03", "CPC成本优势", InsightType.HIGHLIGHT, Severity.HIGH, a03_low_cpc))
 rule_engine.register(Rule("A04", "消耗曲线健康", InsightType.HIGHLIGHT, Severity.MEDIUM, a04_healthy_spend_curve))
 rule_engine.register(Rule("A05", "频次控制良好", InsightType.HIGHLIGHT, Severity.MEDIUM, a05_good_frequency_control))
-rule_engine.register(Rule("A06", "转化节奏理想", InsightType.HIGHLIGHT, Severity.MEDIUM, a06_ideal_conversion_timing))
 rule_engine.register(Rule("A07", "CVR反差亮点", InsightType.HIGHLIGHT, Severity.HIGH, a07_high_cvr_contrast))
 rule_engine.register(Rule("A08", "分设备CPA反差亮点", InsightType.HIGHLIGHT, Severity.HIGH, a08_device_cpa_contrast))
 rule_engine.register(Rule("A09", "精准定向潜力股", InsightType.HIGHLIGHT, Severity.HIGH, a09_ctr_low_cvr_high))
