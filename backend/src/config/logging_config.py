@@ -6,7 +6,6 @@
 - 控制台输出
 - 错误日志单独文件
 """
-import os
 import logging
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
