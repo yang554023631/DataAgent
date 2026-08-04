@@ -212,6 +212,13 @@ async def planner_node(state: dict) -> dict:
             compare_query["time_range"] = compare_time_range
             query_requests.append(compare_query)
 
+        # 日志：规划结果摘要
+        logger.info(
+            f"查询规划完成: 指标={result['query_request'].get('metrics')}, "
+            f"维度={result['query_request'].get('group_by')}, "
+            f"警告数={len(result['query_warnings'])}"
+        )
+
         return {
             "query_request": result["query_request"],  # 向后兼容
             "query_requests": query_requests,
@@ -220,6 +227,7 @@ async def planner_node(state: dict) -> dict:
             "error": None
         }
     except Exception as e:
+        logger.error(f"查询规划失败: {e}")
         return {
             "query_request": None,
             "query_requests": [],
@@ -308,6 +316,9 @@ async def analyst_node(state: dict) -> dict:
     try:
         result = await analyst_agent(query_result, query_request)
 
+        # 日志：分析完成摘要
+        logger.info(f"分析完成: needs_drill_down={False}")
+
         return {
             "analysis_result": result,
             "drill_down_level": state.get("drill_down_level", 0),
@@ -315,6 +326,7 @@ async def analyst_node(state: dict) -> dict:
             "error": None
         }
     except Exception as e:
+        logger.exception(f"分析异常: error={e}")
         return {
             "analysis_result": None,
             "drill_down_level": state.get("drill_down_level", 0),
@@ -365,11 +377,20 @@ async def reporter_node(state: dict) -> dict:
             existing_highlights = final_report.get("highlights", [])
             final_report["highlights"] = insight_highlights + existing_highlights
 
+        # 日志：报告生成完成摘要
+        title = final_report.get("title", "")
+        metric_count = len(final_report.get("metrics", []))
+        highlight_count = len(final_report.get("highlights", []))
+        logger.info(
+            f"报告生成完成: 标题='{title}', 指标数={metric_count}, 亮点数={highlight_count}"
+        )
+
         return {
             "final_report": final_report,
             "error": None
         }
     except Exception as e:
+        logger.exception(f"报告生成异常: error={e}")
         return {
             "final_report": None,
             "error": {"type": "reporter_error", "message": str(e)}
