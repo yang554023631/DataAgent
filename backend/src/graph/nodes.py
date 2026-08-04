@@ -3,6 +3,7 @@
 """
 
 import time
+import logging
 from src.tools.executor import execute_ad_report_query
 from src.agents.nlu_agent import nlu_agent
 from src.agents.planner_agent import planner_agent
@@ -10,6 +11,10 @@ from src.agents.analyst_agent import analyst_agent
 from src.agents.reporter_agent import reporter_agent, format_comparison_report
 from src.agents.insight_agent import insight_agent, insights_to_highlights
 from src.services.advertiser_service import get_all_advertisers
+from src.config.context import truncate_log
+from src.config.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_suggested_queries(advertiser_name: str) -> list:
@@ -50,8 +55,21 @@ async def nlu_node(state: dict) -> dict:
             # 同步更新 query_intent 中的 advertiser_ids
             result["query_intent"]["advertiser_ids"] = existing_advertiser_ids
 
+        # 日志：NLU 解析结果
+        intent_summary = {
+            "query_type": query_intent.get("query_type"),
+            "metrics": query_intent.get("metrics"),
+            "dimensions": query_intent.get("dimensions"),
+            "time_range": query_intent.get("time_range"),
+            "advertiser_ids": query_intent.get("advertiser_ids"),
+            "filters": query_intent.get("filters"),
+            "is_comparison": query_intent.get("is_comparison"),
+        }
+        logger.info(f"NLU解析完成: {intent_summary}")
+
         return result
     except Exception as e:
+        logger.error(f"NLU解析失败: {e}")
         return {
             "query_intent": None,
             "ambiguity": None,
@@ -242,6 +260,13 @@ async def executor_node(state: dict) -> dict:
                 for r in results if not r["success"]
             ), None)
 
+            # 日志：ES 查询结果（对比查询）
+            total_data = sum(
+                len(r.get("data", [])) if r.get("data") else 0
+                for r in results
+            )
+            logger.info(f"ES查询完成(对比查询): 查询数={len(results)}, 总条数={total_data}, 耗时={execution_time}ms")
+
             return {
                 "query_result": results[0] if results else None,  # 向后兼容
                 "query_results": results,
@@ -254,6 +279,10 @@ async def executor_node(state: dict) -> dict:
 
             execution_time = int((time.time() - start_time) * 1000)
 
+            # 日志：ES 查询结果（单个查询）
+            data_count = len(result.get("data", [])) if result.get("data") else 0
+            logger.info(f"ES查询完成: 结果条数={data_count}, 耗时={execution_time}ms")
+
             return {
                 "query_result": result,
                 "query_results": [result] if result else [],
@@ -265,6 +294,7 @@ async def executor_node(state: dict) -> dict:
                 }
             }
     except Exception as e:
+        logger.exception(f"ES查询异常: error={e}")
         return {
             "query_result": None,
             "query_results": [],
@@ -431,11 +461,20 @@ async def insight_node(state: dict) -> dict:
         )
         merged_result.dimension_insights = dimension_insights
 
+        # 日志：洞察命中情况
+        problem_ids = [p.id for p in all_problems]
+        highlight_ids = [h.id for h in all_highlights]
+        logger.info(
+            f"洞察分析完成: 问题命中={problem_ids} ({len(all_problems)}条), "
+            f"亮点命中={highlight_ids} ({len(all_highlights)}条)"
+        )
+
         return {
             "insights": merged_result,
             "error": None
         }
     except Exception as e:
+        logger.exception(f"洞察分析异常: error={e}")
         return {
             "insights": None,
             "error": {"type": "insight_error", "message": str(e)}

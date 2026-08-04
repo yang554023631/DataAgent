@@ -79,6 +79,15 @@ async def insight_agent(
     all_insights = all_rule_insights + llm_insights
     result.summary = generate_natural_language_interpretation(all_insights, query_result)
 
+    # 日志：规则引擎命中统计
+    dimension = query_context.get("dimension", "unknown")
+    problem_ids = [p.id for p in result.problems]
+    highlight_ids = [h.id for h in result.highlights]
+    logger.info(
+        f"规则引擎执行完成[{dimension}]: 亮点={highlight_ids} ({len(result.highlights)}条), "
+        f"问题={problem_ids} ({len(result.problems)}条)"
+    )
+
     logger.info(f"洞察分析完成: {len(result.problems)}个问题, {len(result.highlights)}个亮点")
     return result
 
