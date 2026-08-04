@@ -1,4 +1,5 @@
 import logging
+from src.config.context import truncate_log
 logger = logging.getLogger(__name__)
 from typing import List, Dict, Any, Literal, TypedDict
 from langchain_openai import ChatOpenAI
@@ -64,7 +65,7 @@ class IntentRouter:
             result = "report"
         else:
             result = "knowledge"
-        logger.info(f"意图路由: 用户输入='{user_input[:100]}', 结果={result}")
+        logger.info(f"意图路由: 用户输入='{truncate_log(user_input, 100)}', 结果={result}")
         return result
 
 
@@ -237,6 +238,7 @@ Reference documents:
             llm_fallback = "抱歉，目前的知识库中没有" in answer
         except Exception:
             # LLM 调用失败时直接返回检索到的文档摘要
+            logger.exception("RAG回答生成失败")
             answer = ""
             for i, r in enumerate(results[:3], 1):
                 answer += f"### {r.title}\n{r.content}\n\n"
