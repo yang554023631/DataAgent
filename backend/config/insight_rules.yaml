@@ -92,14 +92,14 @@ timing_rules:
   P07_saturation:
     enabled: true
     name: "地域投放过于集中"
-    reach_threshold: 0.8    # 单地域覆盖率阈值
-    cpa_ratio_threshold: 1.5 # CPA倍数阈值
+    reach_threshold: 0.11   # 单地域覆盖率阈值
+    cpa_ratio_threshold: 1.2 # CPA倍数阈值
     description: "单地域触达占比过高且CPA显著高于其他地区"
 
   P08_device_compatibility:
     enabled: true
     name: "设备兼容问题"
-    ctr_ratio_threshold: 5.0   # CTR差异倍数（原3倍，现5倍）
+    ctr_ratio_threshold: 1.33  # CTR差异倍数（最差CTR < 最好CTR / threshold）
     description: "设备间CTR差异过大，可能存在兼容问题"
 
   P09_competitor_impact:
@@ -151,5 +151,5 @@ special_rules:
   A08_device_cpa_contrast:
     enabled: true
     name: "分设备CPA反差亮点"
-    cpa_ratio_threshold: 0.8
-    description: "某设备CPA显著低于其他设备（最优是次优的80%以下）"
+    cpa_ratio_threshold: 0.9
+    description: "某设备CPA显著低于其他设备（最优是次优的90%以下）"

@@ -140,6 +140,140 @@ def _query_region_metrics(ad_group_id: int = None, creative_id: int = None,
     except:
         return {}
 
+def _batch_query_audience_metrics(
+    ids: List[int],
+    id_field: str = "creative_id",
+    audience_type: int = 3,
+    batch_size: int = 30,
+    start_date: str = None,
+    end_date: str = None,
+) -> Dict[int, Dict[str, Dict[str, Any]]]:
+    """批量查询多个对象的受众维度指标
+
+    Args:
+        ids: 对象 ID 列表（creative_id 或 ad_group_id）
+        id_field: ID 字段名
+        audience_type: 受众类型（3=设备, 7=城市, 1=性别, 2=年龄...）
+        batch_size: 每批 ID 数量
+        start_date: 开始日期
+        end_date: 结束日期
+
+    Returns:
+        {item_id: {tag_value: {impressions, clicks, cost, conversions, reach}}}
+    """
+    if not ids:
+        return {}
+
+    result: Dict[int, Dict[str, Dict[str, Any]]] = {}
+
+    for i in range(0, len(ids), batch_size):
+        batch_ids = ids[i:i + batch_size]
+
+        must_conditions = [
+            {"term": {"audience_type": audience_type}},
+            {"terms": {id_field: batch_ids}},
+        ]
+        if start_date and end_date:
+            must_conditions.append({"range": {"data_date": {"gte": start_date, "lte": end_date}}})
+
+        query = {
+            "size": 0,
+            "query": {"bool": {"must": must_conditions}},
+            "aggs": {
+                "by_id": {
+                    "terms": {"field": id_field, "size": len(batch_ids)},
+                    "aggs": {
+                        "by_tag": {
+                            "terms": {"field": "audience_tag_value", "size": 50},
+                            "aggs": {
+                                "impressions": {"filter": {"term": {"data_type": 1}}, "aggs": {"value": {"sum": {"field": "data_value"}}}},
+                                "clicks": {"filter": {"term": {"data_type": 2}}, "aggs": {"value": {"sum": {"field": "data_value"}}}},
+                                "cost": {"filter": {"term": {"data_type": 3}}, "aggs": {"value": {"sum": {"field": "data_value"}}}},
+                                "conversions": {"filter": {"term": {"data_type": 4}}, "aggs": {"value": {"sum": {"field": "data_value"}}}},
+                                "reach": {"filter": {"term": {"data_type": 5}}, "aggs": {"value": {"sum": {"field": "data_value"}}}},
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        try:
+            response = es_client.search(index="ad_stat_audience", body=query)
+            for id_bucket in response["aggregations"]["by_id"]["buckets"]:
+                item_id = int(id_bucket["key"])
+                tags = {}
+                for tag_bucket in id_bucket["by_tag"]["buckets"]:
+                    tag = tag_bucket["key"]
+                    tags[str(tag)] = {
+                        "impressions": tag_bucket["impressions"]["value"]["value"],
+                        "clicks": tag_bucket["clicks"]["value"]["value"],
+                        "cost": tag_bucket["cost"]["value"]["value"],
+                        "conversions": tag_bucket["conversions"]["value"]["value"],
+                        "reach": tag_bucket["reach"]["value"]["value"],
+                    }
+                result[item_id] = tags
+        except Exception as e:
+            logger.error(f"批量查询受众数据失败 (audience_type={audience_type}, batch_size={len(batch_ids)}): {e}")
+            continue
+
+    return result
+
+
+def _get_audience_data_from_cache(
+    query_result: Dict[str, Any],
+    query_context: Dict[str, Any],
+    audience_type: int,
+) -> Tuple[Dict[int, Dict[str, Dict[str, Any]]], Dict[int, Dict[str, Any]], str]:
+    """统一处理受众维度数据：提取 ID + 缓存读取 + 批量查询回填
+
+    Args:
+        audience_type: 受众类型（3=设备, 7=城市, ...）
+
+    Returns:
+        (audience_data_cache, rows_by_id, id_field)
+    """
+    dimension = query_context.get("dimension", "")
+    data = query_result.get("data", [])
+
+    if not data:
+        return {}, {}, ""
+
+    id_field = "creative_id" if dimension == "creative" else "ad_group_id"
+    cache_key = f"audience_{audience_type}_by_{'creative' if dimension == 'creative' else 'ad_group'}"
+    audience_cache = query_context.get(cache_key, {})
+
+    # 收集需要的 ID
+    item_ids = []
+    rows_by_id = {}
+    for row in data:
+        name = row.get("name", "")
+        if _is_summary_row(name):
+            continue
+        item_id = _get_id_field_and_value(dimension, row)
+        if item_id is not None:
+            item_ids.append(item_id)
+            rows_by_id[item_id] = row
+
+    if not item_ids:
+        return {}, {}, id_field
+
+    # 对缓存中没有的 ID，批量查询
+    missing_ids = [iid for iid in item_ids if iid not in audience_cache]
+    if missing_ids:
+        time_range = query_context.get("time_range", {})
+        start_date = time_range.get("start_date") or time_range.get("start")
+        end_date = time_range.get("end_date") or time_range.get("end")
+        batch_result = _batch_query_audience_metrics(
+            missing_ids, id_field=id_field, audience_type=audience_type,
+            start_date=start_date, end_date=end_date
+        )
+        audience_cache.update(batch_result)
+        query_context[cache_key] = audience_cache
+
+    return audience_cache, rows_by_id, id_field
+
+
 def _get_ad_group_time_range(ad_group_id: int) -> Tuple[Optional[str], Optional[str]]:
     """从adgroup表获取投放时间范围"""
     try:
@@ -154,6 +288,88 @@ def _get_ad_group_time_range(ad_group_id: int) -> Tuple[Optional[str], Optional[
     except:
         pass
     return None, None
+
+
+def _batch_query_daily_metrics(
+    ids: List[int],
+    id_field: str = "creative_id",
+    batch_size: int = 30,
+    start_date: str = None,
+    end_date: str = None,
+) -> Dict[int, List[Dict[str, Any]]]:
+    """批量查询多个对象的日指标数据
+
+    使用 terms 聚合一次性查一批对象的数据，再按 ID 分组返回。
+    当 ID 数量超过 batch_size 时，分批查询。
+
+    Args:
+        ids: 对象 ID 列表（creative_id 或 ad_group_id）
+        id_field: ID 对应的字段名，"creative_id" 或 "ad_group_id"
+        batch_size: 每批查询的 ID 数量
+        start_date: 开始日期（YYYY-MM-DD），可选
+        end_date: 结束日期（YYYY-MM-DD），可选
+
+    Returns:
+        {id: [ {date, impressions, clicks, cost, conversions, reach}, ... ]}
+    """
+    if not ids:
+        return {}
+
+    result: Dict[int, List[Dict[str, Any]]] = {}
+
+    # 分批处理
+    for i in range(0, len(ids), batch_size):
+        batch_ids = ids[i:i + batch_size]
+
+        must_conditions = [
+            {"terms": {id_field: batch_ids}},
+        ]
+        if start_date and end_date:
+            must_conditions.append({"range": {"data_date": {"gte": start_date, "lte": end_date}}})
+
+        query = {
+            "size": 0,
+            "query": {"bool": {"must": must_conditions}},
+            "aggs": {
+                "by_id": {
+                    "terms": {"field": id_field, "size": len(batch_ids)},
+                    "aggs": {
+                        "by_date": {
+                            "terms": {"field": "data_date", "size": 200},
+                            "aggs": {
+                                "impressions": {"filter": {"term": {"data_type": 1}}, "aggs": {"value": {"sum": {"field": "data_value"}}}},
+                                "clicks": {"filter": {"term": {"data_type": 2}}, "aggs": {"value": {"sum": {"field": "data_value"}}}},
+                                "cost": {"filter": {"term": {"data_type": 3}}, "aggs": {"value": {"sum": {"field": "data_value"}}}},
+                                "conversions": {"filter": {"term": {"data_type": 4}}, "aggs": {"value": {"sum": {"field": "data_value"}}}},
+                                "reach": {"filter": {"term": {"data_type": 5}}, "aggs": {"value": {"sum": {"field": "data_value"}}}},
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        try:
+            response = es_client.search(index="ad_stat_data", body=query)
+            for id_bucket in response["aggregations"]["by_id"]["buckets"]:
+                item_id = int(id_bucket["key"])
+                daily = []
+                for date_bucket in id_bucket["by_date"]["buckets"]:
+                    daily.append({
+                        "date": date_bucket["key"],
+                        "impressions": date_bucket["impressions"]["value"]["value"],
+                        "clicks": date_bucket["clicks"]["value"]["value"],
+                        "cost": date_bucket["cost"]["value"]["value"],
+                        "conversions": date_bucket["conversions"]["value"]["value"],
+                        "reach": date_bucket["reach"]["value"]["value"],
+                    })
+                daily.sort(key=lambda x: x["date"])
+                result[item_id] = daily
+        except Exception as e:
+            logger.error(f"批量查询日数据失败 (id_field={id_field}, batch_size={len(batch_ids)}): {e}")
+            continue
+
+    return result
 
 
 @dataclass
@@ -400,102 +616,198 @@ def a03_low_cpc(query_result: Dict[str, Any], query_context: Dict[str, Any]) -> 
     )
 
 
-def a04_healthy_spend_curve(query_result: Dict[str, Any], query_context: Dict[str, Any]) -> Optional[Insight]:
-    """A04: 消耗曲线健康（分天消耗变化率均<50%）"""
-    if not insight_config.is_rule_enabled('A04_healthy_spend'):
+def _get_daily_data_from_cache(
+    query_result: Dict[str, Any],
+    query_context: Dict[str, Any],
+) -> Tuple[Dict[int, List[Dict[str, Any]]], Dict[int, Dict[str, Any]], str]:
+    """统一处理：从 query_result 提取 ID，从 context 缓存取日数据，缺的批量查询
+
+    Returns:
+        (daily_data_cache, rows_by_id, id_field)
+    """
+    dimension = query_context.get("dimension", "")
+    data = query_result.get("data", [])
+
+    if not data:
+        return {}, {}, ""
+
+    # 确定 ID 字段和对应的缓存 key
+    id_field = "creative_id" if dimension == "creative" else "ad_group_id"
+    cache_key = f"daily_data_by_{'creative' if dimension == 'creative' else 'ad_group'}"
+    daily_data_cache = query_context.get(cache_key, {})
+
+    # 收集需要的 ID
+    item_ids = []
+    rows_by_id = {}
+    for row in data:
+        name = row.get("name", "")
+        if _is_summary_row(name):
+            continue
+        item_id = _get_id_field_and_value(dimension, row)
+        if item_id is not None:
+            item_ids.append(item_id)
+            rows_by_id[item_id] = row
+
+    if not item_ids:
+        return {}, {}, id_field
+
+    # 对缓存中没有的 ID，批量查询
+    missing_ids = [iid for iid in item_ids if iid not in daily_data_cache]
+    if missing_ids:
+        time_range = query_context.get("time_range", {})
+        start_date = time_range.get("start_date") or time_range.get("start")
+        end_date = time_range.get("end_date") or time_range.get("end")
+        batch_result = _batch_query_daily_metrics(
+            missing_ids, id_field=id_field,
+            start_date=start_date, end_date=end_date
+        )
+        daily_data_cache.update(batch_result)
+        query_context[cache_key] = daily_data_cache
+
+    return daily_data_cache, rows_by_id, id_field
+
+
+def _get_id_field_and_value(dimension: str, row: Dict[str, Any]) -> Optional[int]:
+    """从数据行中提取ID，根据维度类型选择对应的字段名"""
+    if dimension == "creative":
+        val = row.get("创意ID") or row.get("creative_id") or row.get("id")
+    elif dimension == "ad_group":
+        val = row.get("广告组ID") or row.get("ad_group_id") or row.get("id")
+    else:
+        val = row.get("id")
+    try:
+        return int(val) if val is not None else None
+    except (ValueError, TypeError):
         return None
 
-    ad_group_id = query_context.get("ad_group_id")
-    creative_id = query_context.get("creative_id")
 
-    daily_data = query_result.get("daily_data")
-    if not daily_data:
-        start_time, end_time = None, None
-        if ad_group_id:
-            start_time, end_time = _get_ad_group_time_range(ad_group_id)
-        daily_data = _query_daily_metrics(ad_group_id, creative_id, start_time, end_time)
+def a04_healthy_spend_curve(query_result: Dict[str, Any], query_context: Dict[str, Any]) -> Optional[Insight]:
+    """A04: 消耗曲线健康（分天消耗变化率均在阈值以内）
 
-    if len(daily_data) < 3:
+    遍历 query_result.data 中的每个创意/广告组，逐个查询日消耗数据并判断波动是否平稳。
+    """
+    if not insight_config.is_rule_enabled('A04_healthy_spend'):
         return None
 
     change_threshold = insight_config.get('special_rules.A04_healthy_spend.change_threshold', 1.0)
 
-    all_healthy = True
-    max_change_rate = 0
-    for i in range(1, len(daily_data)):
-        prev_cost = daily_data[i-1].get("cost", 0)
-        curr_cost = daily_data[i].get("cost", 0)
-        if prev_cost > 0:
-            change_rate = abs(curr_cost - prev_cost) / prev_cost
-            if change_rate > change_threshold:
-                all_healthy = False
-                max_change_rate = max(max_change_rate, change_rate)
+    daily_data_cache, rows_by_id, _ = _get_daily_data_from_cache(query_result, query_context)
+    if not rows_by_id:
+        return None
 
-    if all_healthy:
-        return Insight(
-            id="A04",
-            type=InsightType.HIGHLIGHT,
-            name="消耗曲线健康",
-            severity=Severity.MEDIUM,
-            confidence=0.85,
-            source=InsightSource.RULE_ENGINE,
-            metric="spend_stability",
-            current_value=len(daily_data),
-            baseline_value=3,
-            evidence=f"投放期间连续{len(daily_data)}天消耗波动均在50%以内，投放节奏平稳",
-            suggestion="当前投放节奏良好，可保持现有策略",
-            metadata={"days": len(daily_data), "max_change_rate": max_change_rate}
-        )
-    return None
+    item_ids = list(rows_by_id.keys())
+    healthy_items = []
+    total_days = 0
+
+    for item_id in item_ids:
+        daily_data = daily_data_cache.get(item_id, [])
+        if len(daily_data) < 3:
+            continue
+
+        row = rows_by_id[item_id]
+
+        all_healthy = True
+        max_change = 0
+        for i in range(1, len(daily_data)):
+            prev_cost = daily_data[i-1].get("cost", 0)
+            curr_cost = daily_data[i].get("cost", 0)
+            if prev_cost > 0:
+                change_rate = abs(curr_cost - prev_cost) / prev_cost
+                if change_rate > change_threshold:
+                    all_healthy = False
+                    break
+                max_change = max(max_change, change_rate)
+
+        if all_healthy:
+            display_name = _format_item_name(row)
+            healthy_items.append({"name": display_name, "days": len(daily_data), "max_change": max_change})
+            total_days = max(total_days, len(daily_data))
+
+    if not healthy_items:
+        return None
+
+    healthy_items.sort(key=lambda x: x["days"], reverse=True)
+    top3 = healthy_items[:3]
+    names = "、".join([f"「{item['name']}」" for item in top3])
+
+    return Insight(
+        id="A04",
+        type=InsightType.HIGHLIGHT,
+        name="消耗曲线健康",
+        severity=Severity.MEDIUM,
+        confidence=0.85,
+        source=InsightSource.RULE_ENGINE,
+        metric="spend_stability",
+        current_value=len(healthy_items),
+        baseline_value=1,
+        evidence=f"发现 {len(healthy_items)} 个投放对象消耗波动平稳（均≤{change_threshold*100:.0f}%）：{names}，投放节奏健康",
+        suggestion="这些投放对象节奏稳定，可保持现有预算分配策略",
+        metadata={"healthy_count": len(healthy_items), "max_days": total_days, "threshold": change_threshold}
+    )
 
 
 def a05_good_frequency_control(query_result: Dict[str, Any], query_context: Dict[str, Any]) -> Optional[Insight]:
-    """A05: 频次控制良好（日均频次<=2）"""
+    """A05: 频次控制良好（日均频次 ≤ 阈值）
+
+    遍历 query_result.data 中的每个创意/广告组，逐个判断日均频次是否在健康范围内。
+    优先从 context 缓存中取日数据，没有则批量查询。
+    """
     if not insight_config.is_rule_enabled('A05_frequency_control'):
         return None
 
-    ad_group_id = query_context.get("ad_group_id")
-    creative_id = query_context.get("creative_id")
-
-    daily_data = query_result.get("daily_data")
-    if not daily_data:
-        start_time, end_time = None, None
-        if ad_group_id:
-            start_time, end_time = _get_ad_group_time_range(ad_group_id)
-        daily_data = _query_daily_metrics(ad_group_id, creative_id, start_time, end_time)
-
-    if len(daily_data) < 3:  # 至少需要3天数据才判断
-        return None
-
-    daily_freqs = []
-    for d in daily_data:
-        imp = d.get("impressions", 0)
-        reach = d.get("reach", 0)
-        if reach > 0:
-            daily_freqs.append(imp / reach)
-
-    if not daily_freqs:
-        return None
-
-    avg_freq = sum(daily_freqs) / len(daily_freqs)
     max_freq = insight_config.get('special_rules.A05_frequency_control.max_freq', 4.0)
 
-    if avg_freq <= max_freq:
-        return Insight(
-            id="A05",
-            type=InsightType.HIGHLIGHT,
-            name="曝光频次控制良好",
-            severity=Severity.MEDIUM,
-            confidence=0.8,
-            source=InsightSource.RULE_ENGINE,
-            metric="frequency",
-            current_value=round(avg_freq, 2),
-            baseline_value=round(max_freq, 1),
-            evidence=f"日均曝光频次为{round(avg_freq, 2)}次，控制在健康水平（≤{round(max_freq, 1)}次）",
-            suggestion="频次控制合理，既保证有效触达又避免过度曝光",
-            metadata={"avg_frequency": avg_freq, "days": len(daily_freqs)}
-        )
-    return None
+    daily_data_cache, rows_by_id, _ = _get_daily_data_from_cache(query_result, query_context)
+    if not rows_by_id:
+        return None
+
+    item_ids = list(rows_by_id.keys())
+    good_items = []
+    best_freq = float("inf")
+
+    for item_id in item_ids:
+        daily_data = daily_data_cache.get(item_id, [])
+        if len(daily_data) < 3:
+            continue
+
+        daily_freqs = []
+        for d in daily_data:
+            imp = d.get("impressions", 0)
+            reach = d.get("reach", 0)
+            if reach > 0:
+                daily_freqs.append(imp / reach)
+
+        if not daily_freqs:
+            continue
+
+        avg_freq = sum(daily_freqs) / len(daily_freqs)
+        if avg_freq <= max_freq:
+            row = rows_by_id[item_id]
+            display_name = _format_item_name(row)
+            good_items.append({"name": display_name, "avg_freq": avg_freq, "days": len(daily_freqs)})
+            best_freq = min(best_freq, avg_freq)
+
+    if not good_items:
+        return None
+
+    good_items.sort(key=lambda x: x["avg_freq"])
+    top3 = good_items[:3]
+    names = "、".join([f"「{item['name']}」" for item in top3])
+
+    return Insight(
+        id="A05",
+        type=InsightType.HIGHLIGHT,
+        name="曝光频次控制良好",
+        severity=Severity.MEDIUM,
+        confidence=0.8,
+        source=InsightSource.RULE_ENGINE,
+        metric="frequency",
+        current_value=round(best_freq, 2),
+        baseline_value=round(max_freq, 1),
+        evidence=f"发现 {len(good_items)} 个投放对象日均频次控制良好（≤{round(max_freq, 1)}次）：{names}，最低频次{round(best_freq, 2)}次",
+        suggestion="这些投放对象频次控制合理，既保证有效触达又避免过度曝光",
+        metadata={"good_count": len(good_items), "max_freq": max_freq}
+    )
 
 
 def a07_high_cvr_contrast(query_result: Dict[str, Any], query_context: Dict[str, Any]) -> Optional[Insight]:
@@ -543,54 +855,79 @@ def a07_high_cvr_contrast(query_result: Dict[str, Any], query_context: Dict[str,
 
 
 def a08_device_cpa_contrast(query_result: Dict[str, Any], query_context: Dict[str, Any]) -> Optional[Insight]:
-    """A08: 分设备CPA反差亮点（某设备CPA显著低于其他）"""
+    """A08: 分设备CPA反差亮点（某设备CPA显著低于其他设备）
+
+    遍历每个创意/广告组，检查设备间的 CPA 差异。
+    """
     if not insight_config.is_rule_enabled('A08_device_cpa_contrast'):
         return None
 
-    threshold = insight_config.get('special_rules.A08_device_cpa_contrast.cpa_ratio_threshold', 0.5)
+    threshold = insight_config.get('special_rules.A08_device_cpa_contrast.cpa_ratio_threshold', 0.9)
     rule_name = insight_config.get('special_rules.A08_device_cpa_contrast.name', '分设备CPA反差亮点')
 
-    ad_group_id = query_context.get("ad_group_id")
-    creative_id = query_context.get("creative_id")
+    device_name_map = {"1": "iOS", "2": "Android", "3": "其他"}
 
-    device_metrics = _query_device_metrics(ad_group_id, creative_id)
-    if len(device_metrics) < 2:
+    # audience_type=3 是设备（操作系统）
+    audience_cache, rows_by_id, _ = _get_audience_data_from_cache(query_result, query_context, audience_type=3)
+    if not rows_by_id:
         return None
 
-    # 计算各设备CPA
-    device_cpa = []
-    for device, metrics in device_metrics.items():
-        conv = metrics.get("conversions", 0)
-        cost = metrics.get("cost", 0)
-        if conv > 0:
-            cpa = cost / conv
-            device_cpa.append((cpa, device))
+    good_items = []
+    best_ratio = 1.0
 
-    if len(device_cpa) < 2:
+    for item_id, row in rows_by_id.items():
+        tag_data = audience_cache.get(item_id, {})
+        if len(tag_data) < 2:
+            continue
+
+        device_cpa = []
+        for tag, metrics in tag_data.items():
+            conv = metrics.get("conversions", 0)
+            cost = metrics.get("cost", 0)
+            if conv > 0:
+                device_name = device_name_map.get(tag, f"设备{tag}")
+                device_cpa.append((cost / conv, device_name))
+
+        if len(device_cpa) < 2:
+            continue
+
+        device_cpa.sort()
+        lowest_cpa, best_device = device_cpa[0]
+        second_cpa, _ = device_cpa[1]
+        ratio = lowest_cpa / second_cpa if second_cpa > 0 else 1
+
+        if ratio <= threshold:
+            display_name = _format_item_name(row)
+            good_items.append({
+                "name": display_name,
+                "best_device": best_device,
+                "lowest_cpa": lowest_cpa,
+                "second_cpa": second_cpa,
+                "ratio": ratio
+            })
+            best_ratio = min(best_ratio, ratio)
+
+    if not good_items:
         return None
 
-    device_cpa.sort()
-    lowest_cpa, best_device = device_cpa[0]
-    second_cpa, _ = device_cpa[1]
+    good_items.sort(key=lambda x: x["ratio"])
+    top3 = good_items[:3]
+    names = "、".join([f"「{item['name']}({item['best_device']})」" for item in top3])
 
-    if lowest_cpa <= second_cpa * threshold:  # 最优设备CPA是次优的阈值以下
-        return Insight(
-            id="A08",
-            type=InsightType.HIGHLIGHT,
-            name=rule_name,
-            severity=Severity.HIGH,
-            confidence=0.9,
-            source=InsightSource.RULE_ENGINE,
-            metric="cpa",
-            dimension_key="device",
-            dimension_value=best_device,
-            current_value=round(lowest_cpa, 2),
-            baseline_value=round(second_cpa, 2),
-            evidence=f"{best_device}设备CPA仅{round(lowest_cpa, 2)}元，是次优设备的{round(lowest_cpa / second_cpa * 100, 0)}%",
-            suggestion=f"向{best_device}设备倾斜预算，可获得更高转化效率",
-            metadata={"lowest_cpa": lowest_cpa, "second_cpa": second_cpa, "device": best_device, "threshold": threshold}
-        )
-    return None
+    return Insight(
+        id="A08",
+        type=InsightType.HIGHLIGHT,
+        name=rule_name,
+        severity=Severity.HIGH,
+        confidence=0.9,
+        source=InsightSource.RULE_ENGINE,
+        metric="cpa",
+        current_value=round(best_ratio * 100, 0),
+        baseline_value=round(threshold * 100, 0),
+        evidence=f"发现 {len(good_items)} 个投放对象存在设备间CPA反差（最优≤次优的{threshold*100:.0f}%）：{names}，最大差异达{(1-best_ratio)*100:.0f}%",
+        suggestion="向CPA较低的设备倾斜预算，可获得更高转化效率",
+        metadata={"threshold": threshold, "good_count": len(good_items)}
+    )
 
 
 def a09_ctr_low_cvr_high(query_result: Dict[str, Any], query_context: Dict[str, Any]) -> Optional[Insight]:
@@ -685,7 +1022,10 @@ def check_p01_low_cvr(query_result: Dict[str, Any], context: Dict[str, Any]) -> 
 
 
 def check_p02_creative_fatigue(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
-    """P02: 创意疲劳衰减 - 连续多日CTR下降"""
+    """P02: 创意疲劳衰减 - 连续多日CTR下降
+
+    遍历每个创意/广告组，检查其日CTR是否存在连续下降趋势。
+    """
     if not insight_config.is_rule_enabled('P02_creative_fatigue'):
         return None
 
@@ -693,42 +1033,76 @@ def check_p02_creative_fatigue(query_result: Dict[str, Any], context: Dict[str, 
     decline_threshold = insight_config.get('timing_rules.P02_creative_fatigue.decline_threshold', 0.2)
     rule_name = insight_config.get('timing_rules.P02_creative_fatigue.name', '创意疲劳衰减')
 
-    data = query_result.get("data", [])
-    if len(data) < decline_days:
+    daily_data_cache, rows_by_id, _ = _get_daily_data_from_cache(query_result, context)
+    if not rows_by_id:
         return None
 
-    # 提取每天的CTR（自动计算）和日期名称
-    daily_data = []
-    for row in data:
-        metrics = _calc_metrics(row)
-        name = row.get("name", row.get("date", row.get("日期", "")))
-        if metrics["impressions"] > 0:  # 有曝光才算有效天
-            daily_data.append({"name": name, "ctr": metrics["ctr"]})
+    problem_items = []
+    max_drop = 0
 
-    if len(daily_data) >= decline_days:
-        # 检查连续下降趋势
-        last_n = daily_data[-decline_days:]
-        declining = all(last_n[i]["ctr"] > last_n[i+1]["ctr"] for i in range(decline_days - 1))
-        total_drop = (last_n[0]["ctr"] - last_n[-1]["ctr"]) / last_n[0]["ctr"] if last_n[0]["ctr"] > 0 else 0
+    for item_id, row in rows_by_id.items():
+        daily = daily_data_cache.get(item_id, [])
+        if len(daily) < decline_days + 1:  # 至少需要 decline_days+1 天才能看连续 decline_days 次下降
+            continue
 
-        if declining and total_drop > decline_threshold:
-            dates = f"{last_n[0]['name']} 至 {last_n[-1]['name']}" if last_n[0]['name'] else f"最近{decline_days}天"
-            return Insight(
-                id="P02",
-                type=InsightType.PROBLEM,
-                name=rule_name,
-                severity=Severity.MEDIUM,
-                confidence=0.85,
-                source=InsightSource.RULE_ENGINE,
-                metric="CTR",
-                dimension_value=dates,
-                current_value=last_n[-1]["ctr"],
-                baseline_value=last_n[0]["ctr"],
-                evidence=f"CTR 连续下降：{dates}，从 {last_n[0]['ctr']*100:.2f}% 降至 {last_n[-1]['ctr']*100:.2f}%，降幅 {total_drop*100:.1f}%",
-                suggestion=f"建议准备新的创意素材进行轮换，{dates}期间CTR持续下滑，目标受众可能对当前素材产生审美疲劳",
-                metadata={"decline_days": decline_days, "decline_threshold": decline_threshold}
-            )
-    return None
+        # 计算每天的 CTR
+        daily_ctr = []
+        for d in daily:
+            imp = d.get("impressions", 0)
+            clk = d.get("clicks", 0)
+            if imp > 0:
+                daily_ctr.append(clk / imp)
+
+        if len(daily_ctr) < decline_days + 1:
+            continue
+
+        # 检查最后一段连续下降（找最末端的连续下降趋势）
+        # 从后往前找连续下降的序列
+        declining_start = len(daily_ctr) - 1
+        for i in range(len(daily_ctr) - 1, 0, -1):
+            if daily_ctr[i - 1] > daily_ctr[i]:
+                declining_start = i - 1
+            else:
+                break
+
+        consecutive_decline_days = len(daily_ctr) - declining_start - 1
+        if consecutive_decline_days >= decline_days:
+            start_ctr = daily_ctr[declining_start]
+            end_ctr = daily_ctr[-1]
+            total_drop = (start_ctr - end_ctr) / start_ctr if start_ctr > 0 else 0
+            if total_drop > decline_threshold:
+                display_name = _format_item_name(row)
+                problem_items.append({
+                    "name": display_name,
+                    "start_ctr": start_ctr,
+                    "end_ctr": end_ctr,
+                    "drop_days": consecutive_decline_days,
+                    "total_drop": total_drop
+                })
+                max_drop = max(max_drop, total_drop)
+
+    if not problem_items:
+        return None
+
+    problem_items.sort(key=lambda x: x["total_drop"], reverse=True)
+    top3 = problem_items[:3]
+    names = "、".join([f"「{item['name']}」" for item in top3])
+
+    return Insight(
+        id="P02",
+        type=InsightType.PROBLEM,
+        name=rule_name,
+        severity=Severity.MEDIUM,
+        confidence=0.85,
+        source=InsightSource.RULE_ENGINE,
+        metric="CTR",
+        current_value=round(max_drop * 100, 1),
+        baseline_value=round(decline_threshold * 100, 1),
+        dimension_value=names,
+        evidence=f"发现 {len(problem_items)} 个投放对象CTR连续下降超过{decline_days}天且降幅超{decline_threshold*100:.0f}%：{names}，最大降幅{max_drop*100:.1f}%",
+        suggestion=f"建议为 {names} 准备新的创意素材进行轮换，CTR持续下滑可能是受众产生了审美疲劳",
+        metadata={"decline_days": decline_days, "decline_threshold": decline_threshold, "problem_count": len(problem_items)}
+    )
 
 
 def check_p03_high_cpa(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
@@ -777,49 +1151,65 @@ def check_p03_high_cpa(query_result: Dict[str, Any], context: Dict[str, Any]) ->
 
 
 def check_p04_frequency_control(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
-    """P04: 频次失控（日均频次>=3）"""
-    ad_group_id = context.get("ad_group_id")
-    creative_id = context.get("creative_id")
+    """P04: 频次失控（日均频次超过阈值）
 
-    daily_data = query_result.get("daily_data")
-    if not daily_data:
-        start_time, end_time = None, None
-        if ad_group_id:
-            start_time, end_time = _get_ad_group_time_range(ad_group_id)
-        daily_data = _query_daily_metrics(ad_group_id, creative_id, start_time, end_time)
-
-    if len(daily_data) < 3:  # 至少需要3天数据才判断
+    遍历每个创意/广告组，检查日均频次是否超过阈值。
+    """
+    if not insight_config.is_rule_enabled('P04_frequency_control'):
         return None
 
-    daily_freqs = []
-    for d in daily_data:
-        imp = d.get("impressions", 0)
-        reach = d.get("reach", 0)
-        if reach > 0:
-            daily_freqs.append(imp / reach)
+    threshold = insight_config.get('timing_rules.P04_frequency_control.threshold', 4.5)
 
-    if not daily_freqs:
+    daily_data_cache, rows_by_id, _ = _get_daily_data_from_cache(query_result, context)
+    if not rows_by_id:
         return None
 
-    avg_freq = sum(daily_freqs) / len(daily_freqs)
-    threshold = insight_config.get('timing_rules.P04_frequency_control.threshold', 5.0)
+    problem_items = []
+    worst_freq = 0
 
-    if avg_freq >= threshold:
-        return Insight(
-            id="P04",
-            type=InsightType.PROBLEM,
-            name="频次失控",
-            severity=Severity.HIGH,
-            confidence=0.9,
-            source=InsightSource.RULE_ENGINE,
-            metric="frequency",
-            current_value=round(avg_freq, 2),
-            baseline_value=round(threshold, 2),
-            evidence=f"日均曝光频次达{round(avg_freq, 2)}次，超过健康阈值{threshold}次",
-            suggestion="建议设置频次上限（每人每周不超过10次），避免对同一用户过度曝光造成骚扰和浪费",
-            metadata={"avg_frequency": avg_freq, "days": len(daily_freqs)}
-        )
-    return None
+    for item_id, row in rows_by_id.items():
+        daily = daily_data_cache.get(item_id, [])
+        if len(daily) < 3:
+            continue
+
+        daily_freqs = []
+        for d in daily:
+            imp = d.get("impressions", 0)
+            reach = d.get("reach", 0)
+            if reach > 0:
+                daily_freqs.append(imp / reach)
+
+        if not daily_freqs:
+            continue
+
+        avg_freq = sum(daily_freqs) / len(daily_freqs)
+        if avg_freq >= threshold:
+            display_name = _format_item_name(row)
+            problem_items.append({"name": display_name, "avg_freq": avg_freq, "days": len(daily_freqs)})
+            worst_freq = max(worst_freq, avg_freq)
+
+    if not problem_items:
+        return None
+
+    problem_items.sort(key=lambda x: x["avg_freq"], reverse=True)
+    top3 = problem_items[:3]
+    names = "、".join([f"「{item['name']}」" for item in top3])
+
+    return Insight(
+        id="P04",
+        type=InsightType.PROBLEM,
+        name="频次失控",
+        severity=Severity.HIGH,
+        confidence=0.9,
+        source=InsightSource.RULE_ENGINE,
+        metric="frequency",
+        current_value=round(worst_freq, 2),
+        baseline_value=round(threshold, 2),
+        dimension_value=names,
+        evidence=f"发现 {len(problem_items)} 个投放对象日均曝光频次超标（≥{threshold}次）：{names}，最高达{round(worst_freq, 2)}次",
+        suggestion="建议设置频次上限（每人每周不超过10次），避免对同一用户过度曝光造成骚扰和浪费",
+        metadata={"threshold": threshold, "problem_count": len(problem_items)}
+    )
 
 
 def check_p05_fraud_suspicion(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
@@ -870,53 +1260,78 @@ def check_p05_fraud_suspicion(query_result: Dict[str, Any], context: Dict[str, A
 
 
 def check_p06_bidding_issue(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
-    """P06: 出价策略异常（单日CPC增长>100%）"""
-    ad_group_id = context.get("ad_group_id")
-    creative_id = context.get("creative_id")
+    """P06: 出价策略异常（单日CPC涨幅超过阈值）
 
-    daily_data = query_result.get("daily_data")
-    if not daily_data:
-        start_time, end_time = None, None
-        if ad_group_id:
-            start_time, end_time = _get_ad_group_time_range(ad_group_id)
-        daily_data = _query_daily_metrics(ad_group_id, creative_id, start_time, end_time)
-
-    if len(daily_data) < 3:  # 至少需要3天数据才判断
+    遍历每个创意/广告组，检查是否存在单日 CPC 大幅上涨的情况。
+    """
+    if not insight_config.is_rule_enabled('P06_bidding_issue'):
         return None
 
-    threshold = insight_config.get('timing_rules.P06_bidding_issue.cpc_change_threshold', 5.0)
+    threshold = insight_config.get('timing_rules.P06_bidding_issue.cpc_change_threshold', 2.0)
 
-    # 计算相邻天CPC变化率
-    for i in range(1, len(daily_data)):
-        prev_clicks = daily_data[i-1].get("clicks", 0)
-        curr_clicks = daily_data[i].get("clicks", 0)
-        prev_cost = daily_data[i-1].get("cost", 0)
-        curr_cost = daily_data[i].get("cost", 0)
+    daily_data_cache, rows_by_id, _ = _get_daily_data_from_cache(query_result, context)
+    if not rows_by_id:
+        return None
 
-        if prev_clicks > 0 and curr_clicks > 0:
-            prev_cpc = prev_cost / prev_clicks
-            curr_cpc = curr_cost / curr_clicks
-            if prev_cpc > 0:
-                change_rate = (curr_cpc - prev_cpc) / prev_cpc
-                if change_rate > threshold:
-                    return Insight(
-                        id="P06",
-                        type=InsightType.PROBLEM,
-                        name="出价策略异常",
-                        severity=Severity.MEDIUM,
-                        confidence=0.8,
-                        source=InsightSource.RULE_ENGINE,
-                        metric="CPC",
-                        current_value=round(change_rate * 100, 1),
-                        baseline_value=100,
-                        evidence=f"CPC 单日涨幅达 {change_rate*100:.1f}%，波动异常",
-                        suggestion="建议检查是否有竞品大幅抬价，或调整出价策略目标，设置最高出价限价避免成本失控"
-                    )
-    return None
+    problem_items = []
+    max_rise = 0
+
+    for item_id, row in rows_by_id.items():
+        daily = daily_data_cache.get(item_id, [])
+        if len(daily) < 3:
+            continue
+
+        item_max_rise = 0
+        has_issue = False
+        for i in range(1, len(daily)):
+            prev_clicks = daily[i-1].get("clicks", 0)
+            curr_clicks = daily[i].get("clicks", 0)
+            prev_cost = daily[i-1].get("cost", 0)
+            curr_cost = daily[i].get("cost", 0)
+
+            if prev_clicks > 0 and curr_clicks > 0 and prev_cost > 0:
+                prev_cpc = prev_cost / prev_clicks
+                curr_cpc = curr_cost / curr_clicks
+                if prev_cpc > 0:
+                    change_rate = (curr_cpc - prev_cpc) / prev_cpc
+                    if change_rate > threshold:
+                        has_issue = True
+                        item_max_rise = max(item_max_rise, change_rate)
+
+        if has_issue:
+            display_name = _format_item_name(row)
+            problem_items.append({"name": display_name, "max_rise": item_max_rise})
+            max_rise = max(max_rise, item_max_rise)
+
+    if not problem_items:
+        return None
+
+    problem_items.sort(key=lambda x: x["max_rise"], reverse=True)
+    top3 = problem_items[:3]
+    names = "、".join([f"「{item['name']}」" for item in top3])
+
+    return Insight(
+        id="P06",
+        type=InsightType.PROBLEM,
+        name="出价策略异常",
+        severity=Severity.MEDIUM,
+        confidence=0.8,
+        source=InsightSource.RULE_ENGINE,
+        metric="CPC",
+        current_value=round(max_rise * 100, 1),
+        baseline_value=round(threshold * 100, 1),
+        dimension_value=names,
+        evidence=f"发现 {len(problem_items)} 个投放对象CPC单日涨幅超过{threshold*100:.0f}%：{names}，最大涨幅达{max_rise*100:.1f}%",
+        suggestion="建议检查是否有竞品大幅抬价，或调整出价策略目标，设置最高出价限价避免成本失控",
+        metadata={"threshold": threshold, "problem_count": len(problem_items)}
+    )
 
 
 def check_p07_saturation(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
-    """P07: 地域投放过于集中"""
+    """P07: 地域投放过于集中
+
+    遍历每个创意/广告组，检查是否存在单一地域触达占比过高且成本偏高的情况。
+    """
     if not insight_config.is_rule_enabled('P07_saturation'):
         return None
 
@@ -924,199 +1339,318 @@ def check_p07_saturation(query_result: Dict[str, Any], context: Dict[str, Any]) 
     cpa_ratio_threshold = insight_config.get('timing_rules.P07_saturation.cpa_ratio_threshold', 1.5)
     rule_name = insight_config.get('timing_rules.P07_saturation.name', '地域投放过于集中')
 
-    ad_group_id = context.get("ad_group_id")
-    creative_id = context.get("creative_id")
-
-    region_data = _query_region_metrics(ad_group_id, creative_id)
-    if len(region_data) < 2:
+    # audience_type=7 是城市
+    audience_cache, rows_by_id, _ = _get_audience_data_from_cache(query_result, context, audience_type=7)
+    if not rows_by_id:
         return None
 
-    total_reach = sum(r.get("reach", 0) for r in region_data.values())
-    if total_reach <= 0:
+    city_name_map = {}
+    from src.tools.custom_report_client import AUDIENCE_VALUE_MAPS
+    city_map = AUDIENCE_VALUE_MAPS.get("audience_city", {})
+
+    problem_items = []
+    max_reach_ratio = 0
+
+    for item_id, row in rows_by_id.items():
+        tag_data = audience_cache.get(item_id, {})
+        if len(tag_data) < 2:
+            continue
+
+        total_reach = sum(m.get("reach", 0) for m in tag_data.values())
+        if total_reach <= 0:
+            continue
+
+        # 计算各城市reach占比
+        regions_with_reach = []
+        for tag, metrics in tag_data.items():
+            reach = metrics.get("reach", 0)
+            if reach > 0:
+                city_name = city_map.get(tag, city_map.get(str(tag), f"城市{tag}"))
+                regions_with_reach.append({"region": city_name, "reach_ratio": reach / total_reach, "metrics": metrics})
+
+        if not regions_with_reach:
+            continue
+
+        regions_with_reach.sort(key=lambda x: x["reach_ratio"], reverse=True)
+        top_region = regions_with_reach[0]
+
+        if top_region["reach_ratio"] > reach_threshold:
+            # 计算各城市CPA
+            all_cpa = []
+            for r in regions_with_reach:
+                conv = r["metrics"].get("conversions", 0)
+                cost = r["metrics"].get("cost", 0)
+                if conv > 0:
+                    all_cpa.append({"region": r["region"], "cpa": cost / conv})
+
+            if len(all_cpa) >= 2:
+                top_cpa = next((c["cpa"] for c in all_cpa if c["region"] == top_region["region"]), None)
+                other_cpas = [c["cpa"] for c in all_cpa if c["region"] != top_region["region"]]
+
+                if top_cpa and other_cpas:
+                    avg_other_cpa = sum(other_cpas) / len(other_cpas)
+                    if top_cpa >= avg_other_cpa * cpa_ratio_threshold:
+                        display_name = _format_item_name(row)
+                        problem_items.append({
+                            "name": display_name,
+                            "top_region": top_region["region"],
+                            "reach_ratio": top_region["reach_ratio"],
+                            "top_cpa": top_cpa,
+                            "avg_other_cpa": avg_other_cpa,
+                            "cpa_ratio": top_cpa / avg_other_cpa
+                        })
+                        max_reach_ratio = max(max_reach_ratio, top_region["reach_ratio"])
+
+    if not problem_items:
         return None
 
-    # 计算各城市reach占比
-    regions_with_reach = []
-    for region, metrics in region_data.items():
-        reach = metrics.get("reach", 0)
-        if reach > 0:
-            regions_with_reach.append({"region": region, "reach_ratio": reach / total_reach, "metrics": metrics})
+    problem_items.sort(key=lambda x: x["reach_ratio"], reverse=True)
+    top3 = problem_items[:3]
+    names = "、".join([f"「{item['name']}({item['top_region']})」" for item in top3])
 
-    if not regions_with_reach:
-        return None
-
-    regions_with_reach.sort(key=lambda x: x["reach_ratio"], reverse=True)
-    top_region = regions_with_reach[0]
-
-    if top_region["reach_ratio"] > reach_threshold:  # 单一城市占比超过阈值
-        # 计算各城市CPA
-        all_cpa = []
-        for r in regions_with_reach:
-            conv = r["metrics"].get("conversions", 0)
-            cost = r["metrics"].get("cost", 0)
-            if conv > 0:
-                all_cpa.append({"region": r["region"], "cpa": cost / conv})
-
-        if len(all_cpa) >= 2:
-            all_cpa.sort(key=lambda x: x["cpa"])
-            top_cpa = next((c["cpa"] for c in all_cpa if c["region"] == top_region["region"]), None)
-            other_cpas = [c["cpa"] for c in all_cpa if c["region"] != top_region["region"]]
-
-            if top_cpa and other_cpas:
-                avg_other_cpa = sum(other_cpas) / len(other_cpas)
-                if top_cpa >= avg_other_cpa * cpa_ratio_threshold:
-                    return Insight(
-                        id="P07",
-                        type=InsightType.PROBLEM,
-                        name=rule_name,
-                        severity=Severity.MEDIUM,
-                        confidence=0.85,
-                        source=InsightSource.RULE_ENGINE,
-                        metric="reach/CPA",
-                        dimension_value=top_region["region"],
-                        current_value=round(top_region["reach_ratio"] * 100, 1),
-                        baseline_value=round(reach_threshold * 100, 1),
-                        evidence=f"{top_region['region']} 触达占比达 {top_region['reach_ratio']*100:.1f}%，且CPA {top_cpa:.2f}元是其他地区均值的 {top_cpa/avg_other_cpa:.1f}倍",
-                        suggestion=f"地域投放过于集中且成本偏高，建议拓展周边城市或优化投放人群",
-                        metadata={"reach_threshold": reach_threshold, "cpa_ratio_threshold": cpa_ratio_threshold}
-                    )
-    return None
+    return Insight(
+        id="P07",
+        type=InsightType.PROBLEM,
+        name=rule_name,
+        severity=Severity.MEDIUM,
+        confidence=0.85,
+        source=InsightSource.RULE_ENGINE,
+        metric="reach/CPA",
+        current_value=round(max_reach_ratio * 100, 1),
+        baseline_value=round(reach_threshold * 100, 1),
+        dimension_value=names,
+        evidence=f"发现 {len(problem_items)} 个投放对象存在地域过于集中且成本偏高的问题：{names}，最高单地域触达占比达{max_reach_ratio*100:.1f}%",
+        suggestion="地域投放过于集中且成本偏高，建议拓展周边城市或优化投放人群",
+        metadata={"reach_threshold": reach_threshold, "cpa_ratio_threshold": cpa_ratio_threshold, "problem_count": len(problem_items)}
+    )
 
 
 def check_p08_device_compatibility(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
-    """P08: 设备兼容问题（设备间CTR差异>5倍）"""
-    ad_group_id = context.get("ad_group_id")
-    creative_id = context.get("creative_id")
+    """P08: 设备兼容问题（设备间CTR差异过大）
 
-    device_metrics = _query_device_metrics(ad_group_id, creative_id)
-    if len(device_metrics) < 2:
+    遍历每个创意/广告组，检查不同设备之间的 CTR 差异倍数。
+    """
+    if not insight_config.is_rule_enabled('P08_device_compatibility'):
         return None
 
     threshold = insight_config.get('timing_rules.P08_device_compatibility.ctr_ratio_threshold', 5.0)
 
-    # 计算各设备CTR
-    device_ctr = []
-    for device, metrics in device_metrics.items():
-        imp = metrics.get("impressions", 0)
-        clicks = metrics.get("clicks", 0)
-        if imp > 0:
-            ctr = clicks / imp
-            device_ctr.append((ctr, device))
-
-    if len(device_ctr) < 2:
+    # audience_type=3 是设备（操作系统）
+    audience_cache, rows_by_id, _ = _get_audience_data_from_cache(query_result, context, audience_type=3)
+    if not rows_by_id:
         return None
 
-    device_ctr.sort(reverse=True)
-    best_ctr, best_device = device_ctr[0]
-    worst_ctr, worst_device = device_ctr[-1]
+    device_name_map = {"1": "iOS", "2": "Android", "3": "其他"}
 
-    if best_ctr > 0 and worst_ctr <= best_ctr / threshold:  # 最差CTR是最好的1/threshold以下
-        return Insight(
-            id="P08",
-            type=InsightType.PROBLEM,
-            name="设备兼容问题",
-            severity=Severity.MEDIUM,
-            confidence=0.8,
-            source=InsightSource.RULE_ENGINE,
-            metric="CTR",
-            dimension_value=worst_device,
-            current_value=round(worst_ctr * 100, 2),
-            baseline_value=round(best_ctr * 100, 2),
-            evidence=f"{worst_device} 端CTR仅 {worst_ctr*100:.2f}%，是 {best_device} 端的 {worst_ctr/best_ctr*100:.1f}%",
-            suggestion=f"建议检查 {worst_device} 端的广告素材兼容性、落地页加载速度，可能存在技术问题导致用户体验差"
-        )
-    return None
+    problem_items = []
+    worst_ratio = 0
+
+    for item_id, row in rows_by_id.items():
+        tag_data = audience_cache.get(item_id, {})
+        if len(tag_data) < 2:
+            continue
+
+        # 计算各设备CTR
+        device_ctr = []
+        for tag, metrics in tag_data.items():
+            imp = metrics.get("impressions", 0)
+            clk = metrics.get("clicks", 0)
+            if imp > 0:
+                device_name = device_name_map.get(tag, f"设备{tag}")
+                device_ctr.append((clk / imp, device_name))
+
+        if len(device_ctr) < 2:
+            continue
+
+        device_ctr.sort(reverse=True)
+        best_ctr, best_device = device_ctr[0]
+        worst_ctr, worst_device = device_ctr[-1]
+
+        if best_ctr > 0 and worst_ctr <= best_ctr / threshold:
+            ratio = worst_ctr / best_ctr
+            display_name = _format_item_name(row)
+            problem_items.append({
+                "name": display_name,
+                "best_device": best_device,
+                "best_ctr": best_ctr,
+                "worst_device": worst_device,
+                "worst_ctr": worst_ctr,
+                "ratio": ratio
+            })
+            worst_ratio = max(worst_ratio, ratio)
+
+    if not problem_items:
+        return None
+
+    problem_items.sort(key=lambda x: x["ratio"])
+    top3 = problem_items[:3]
+    names = "、".join([f"「{item['name']}」" for item in top3])
+
+    return Insight(
+        id="P08",
+        type=InsightType.PROBLEM,
+        name="设备兼容问题",
+        severity=Severity.MEDIUM,
+        confidence=0.8,
+        source=InsightSource.RULE_ENGINE,
+        metric="CTR",
+        current_value=round(worst_ratio * 100, 1),
+        baseline_value=round(100.0 / threshold, 1),
+        dimension_value=names,
+        evidence=f"发现 {len(problem_items)} 个投放对象设备间CTR差异超过{threshold:.0f}倍：{names}，最差设备CTR仅为最好设备的{worst_ratio*100:.1f}%",
+        suggestion="建议检查CTR较差的设备端素材兼容性、落地页加载速度，可能存在技术问题导致用户体验差",
+        metadata={"threshold": threshold, "problem_count": len(problem_items)}
+    )
 
 
 def check_p09_competitor_impact(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
-    """P09: 竞品活动冲击（CPC涨50%且CTR跌30%）"""
-    ad_group_id = context.get("ad_group_id")
-    creative_id = context.get("creative_id")
+    """P09: 竞品活动冲击（CPC上涨且CTR下跌同时发生）
 
-    daily_data = query_result.get("daily_data")
-    if not daily_data:
-        start_time, end_time = None, None
-        if ad_group_id:
-            start_time, end_time = _get_ad_group_time_range(ad_group_id)
-        daily_data = _query_daily_metrics(ad_group_id, creative_id, start_time, end_time)
-
-    if len(daily_data) < 3:  # 至少需要3天数据才判断
+    遍历每个创意/广告组，检查是否存在 CPC 大涨同时 CTR 大跌的典型竞品冲击特征。
+    """
+    if not insight_config.is_rule_enabled('P09_competitor_impact'):
         return None
 
-    # 计算相邻天CPC和CTR变化率
-    for i in range(1, len(daily_data)):
-        prev_clicks = daily_data[i-1].get("clicks", 0)
-        curr_clicks = daily_data[i].get("clicks", 0)
-        prev_cost = daily_data[i-1].get("cost", 0)
-        curr_cost = daily_data[i].get("cost", 0)
-        prev_imp = daily_data[i-1].get("impressions", 0)
-        curr_imp = daily_data[i].get("impressions", 0)
+    cpc_threshold = insight_config.get('timing_rules.P09_competitor_impact.cpc_rise_threshold', 0.8)
+    ctr_threshold = insight_config.get('timing_rules.P09_competitor_impact.ctr_drop_threshold', 0.4)
+    rule_name = "竞品活动冲击"
 
-        if prev_clicks > 0 and curr_clicks > 0 and prev_imp > 0 and curr_imp > 0:
-            prev_cpc = prev_cost / prev_clicks
-            curr_cpc = curr_cost / curr_clicks
-            prev_ctr = prev_clicks / prev_imp
-            curr_ctr = curr_clicks / curr_imp
+    daily_data_cache, rows_by_id, _ = _get_daily_data_from_cache(query_result, context)
+    if not rows_by_id:
+        return None
 
-            if prev_cpc > 0 and prev_ctr > 0:
-                cpc_change = (curr_cpc - prev_cpc) / prev_cpc
-                ctr_change = (curr_ctr - prev_ctr) / prev_ctr
+    problem_items = []
+    worst_cpc_rise = 0
+    worst_ctr_drop = 0
 
-                cpc_threshold = insight_config.get('timing_rules.P09_competitor_impact.cpc_rise_threshold', 1.0)
-                ctr_threshold = insight_config.get('timing_rules.P09_competitor_impact.ctr_drop_threshold', 0.5)
+    for item_id, row in rows_by_id.items():
+        daily = daily_data_cache.get(item_id, [])
+        if len(daily) < 3:
+            continue
 
-                if cpc_change > cpc_threshold and ctr_change < -ctr_threshold:  # CPC涨且CTR跌
-                    return Insight(
-                        id="P09",
-                        type=InsightType.PROBLEM,
-                        name="竞品活动冲击",
-                        severity=Severity.MEDIUM,
-                        confidence=0.75,
-                        source=InsightSource.RULE_ENGINE,
-                        metric="CPC/CTR",
-                        evidence=f"CPC单日上涨{cpc_change*100:.1f}%，同时CTR下降{abs(ctr_change)*100:.1f}%，典型的竞品大促竞价冲击特征",
-                        suggestion="建议关注竞品动态，可能对方在进行促销活动并加大了投放。可考虑临时提升出价保持竞争力，或避开竞品高峰时段"
-                    )
-    return None
+        item_worst_cpc_rise = 0
+        item_worst_ctr_drop = 0
+        has_issue = False
+
+        for i in range(1, len(daily)):
+            prev_clicks = daily[i-1].get("clicks", 0)
+            curr_clicks = daily[i].get("clicks", 0)
+            prev_cost = daily[i-1].get("cost", 0)
+            curr_cost = daily[i].get("cost", 0)
+            prev_imp = daily[i-1].get("impressions", 0)
+            curr_imp = daily[i].get("impressions", 0)
+
+            if prev_clicks > 0 and curr_clicks > 0 and prev_imp > 0 and curr_imp > 0 and prev_cost > 0:
+                prev_cpc = prev_cost / prev_clicks
+                curr_cpc = curr_cost / curr_clicks
+                prev_ctr = prev_clicks / prev_imp
+                curr_ctr = curr_clicks / curr_imp
+
+                if prev_cpc > 0 and prev_ctr > 0:
+                    cpc_change = (curr_cpc - prev_cpc) / prev_cpc
+                    ctr_change = (curr_ctr - prev_ctr) / prev_ctr
+
+                    if cpc_change > cpc_threshold and ctr_change < -ctr_threshold:
+                        has_issue = True
+                        if cpc_change > item_worst_cpc_rise:
+                            item_worst_cpc_rise = cpc_change
+                            item_worst_ctr_drop = abs(ctr_change)
+
+        if has_issue:
+            display_name = _format_item_name(row)
+            problem_items.append({
+                "name": display_name,
+                "cpc_rise": item_worst_cpc_rise,
+                "ctr_drop": item_worst_ctr_drop
+            })
+            if item_worst_cpc_rise > worst_cpc_rise:
+                worst_cpc_rise = item_worst_cpc_rise
+                worst_ctr_drop = item_worst_ctr_drop
+
+    if not problem_items:
+        return None
+
+    problem_items.sort(key=lambda x: x["cpc_rise"], reverse=True)
+    top3 = problem_items[:3]
+    names = "、".join([f"「{item['name']}」" for item in top3])
+
+    return Insight(
+        id="P09",
+        type=InsightType.PROBLEM,
+        name=rule_name,
+        severity=Severity.MEDIUM,
+        confidence=0.75,
+        source=InsightSource.RULE_ENGINE,
+        metric="CPC/CTR",
+        current_value=round(worst_cpc_rise * 100, 1),
+        baseline_value=round(cpc_threshold * 100, 1),
+        dimension_value=names,
+        evidence=f"发现 {len(problem_items)} 个投放对象出现CPC大涨同时CTR大跌的异常情况：{names}，典型竞品活动冲击特征（CPC涨超{cpc_threshold*100:.0f}% 且 CTR跌超{ctr_threshold*100:.0f}%）",
+        suggestion="建议关注竞品动态，可能对方在进行促销活动并加大了投放。可考虑临时提升出价保持竞争力，或避开竞品高峰时段",
+        metadata={"cpc_threshold": cpc_threshold, "ctr_threshold": ctr_threshold, "problem_count": len(problem_items)}
+    )
 
 
 def check_p10_spend_volatility(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
-    """P10: 消耗波动异常（单日变化>200%）"""
-    ad_group_id = context.get("ad_group_id")
-    creative_id = context.get("creative_id")
+    """P10: 消耗波动异常（单日消耗变化率超过阈值）
 
-    daily_data = query_result.get("daily_data")
-    if not daily_data:
-        start_time, end_time = None, None
-        if ad_group_id:
-            start_time, end_time = _get_ad_group_time_range(ad_group_id)
-        daily_data = _query_daily_metrics(ad_group_id, creative_id, start_time, end_time)
-
-    if len(daily_data) < 3:  # 至少需要3天数据才判断
+    遍历每个创意/广告组，检查日消耗波动是否过大。
+    """
+    if not insight_config.is_rule_enabled('P10_spend_volatility'):
         return None
 
-    threshold = insight_config.get('timing_rules.P10_spend_volatility.change_threshold', 5.0)
+    threshold = insight_config.get('timing_rules.P10_spend_volatility.change_threshold', 2.0)
 
-    for i in range(1, len(daily_data)):
-        prev_cost = daily_data[i-1].get("cost", 0)
-        curr_cost = daily_data[i].get("cost", 0)
-        if prev_cost > 0:
-            change_rate = abs(curr_cost - prev_cost) / prev_cost
-            if change_rate > threshold:
-                return Insight(
-                    id="P10",
-                    type=InsightType.PROBLEM,
-                    name="消耗波动异常",
-                    severity=Severity.MEDIUM,
-                    confidence=0.8,
-                    source=InsightSource.RULE_ENGINE,
-                    metric="spend_volatility",
-                    current_value=round(change_rate * 100, 1),
-                    baseline_value=round(threshold * 100, 1),
-                    evidence=f"单日消耗波动达{change_rate*100:.1f}%，超过阈值{threshold*100:.0f}%，投放不稳定",
-                    suggestion="建议检查预算设置是否合理，是否有流量突增或突降的异常情况"
-                )
-    return None
+    daily_data_cache, rows_by_id, _ = _get_daily_data_from_cache(query_result, context)
+    if not rows_by_id:
+        return None
+
+    problem_items = []
+    max_volatility = 0
+
+    for item_id, row in rows_by_id.items():
+        daily = daily_data_cache.get(item_id, [])
+        if len(daily) < 3:
+            continue
+
+        item_max_change = 0
+        has_issue = False
+        for i in range(1, len(daily)):
+            prev_cost = daily[i-1].get("cost", 0)
+            curr_cost = daily[i].get("cost", 0)
+            if prev_cost > 0:
+                change_rate = abs(curr_cost - prev_cost) / prev_cost
+                if change_rate > threshold:
+                    has_issue = True
+                    item_max_change = max(item_max_change, change_rate)
+
+        if has_issue:
+            display_name = _format_item_name(row)
+            problem_items.append({"name": display_name, "max_change": item_max_change})
+            max_volatility = max(max_volatility, item_max_change)
+
+    if not problem_items:
+        return None
+
+    problem_items.sort(key=lambda x: x["max_change"], reverse=True)
+    top3 = problem_items[:3]
+    names = "、".join([f"「{item['name']}」" for item in top3])
+
+    return Insight(
+        id="P10",
+        type=InsightType.PROBLEM,
+        name="消耗波动异常",
+        severity=Severity.MEDIUM,
+        confidence=0.8,
+        source=InsightSource.RULE_ENGINE,
+        metric="spend_volatility",
+        current_value=round(max_volatility * 100, 1),
+        baseline_value=round(threshold * 100, 1),
+        dimension_value=names,
+        evidence=f"发现 {len(problem_items)} 个投放对象单日消耗波动超过{threshold*100:.0f}%：{names}，最大波动达{max_volatility*100:.1f}%，投放不稳定",
+        suggestion="建议检查预算设置是否合理，是否有流量突增或突降的异常情况",
+        metadata={"threshold": threshold, "problem_count": len(problem_items)}
+    )
 
 
 def check_p11_advertiser_punished(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
