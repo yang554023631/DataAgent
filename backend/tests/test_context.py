@@ -57,7 +57,6 @@ def test_set_and_get_request_id():
     token = set_request_id("test-req-123")
     assert get_request_id() == "test-req-123"
     # 重置
-    import contextvars
     from src.config.context import request_id_var
     request_id_var.reset(token)
     assert get_request_id() == "-"

@@ -1,13 +1,12 @@
 """上下文变量与日志工具函数"""
 import contextvars
-from typing import Optional
 
 # 请求 ID 上下文变量（异步安全）
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     "request_id", default="-"
 )
 
-# 会话 ID 上下文变量
+# 会话 ID 上下文变量（异步安全）
 session_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     "session_id", default="-"
 )
@@ -15,20 +14,20 @@ session_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
 
 def get_request_id() -> str:
     """获取当前请求 ID，无则返回 '-' """
-    return request_id_var.get() or "-"
+    return request_id_var.get()
 
 
-def set_request_id(request_id: str):
+def set_request_id(request_id: str) -> contextvars.Token:
     """设置当前请求 ID，返回 token 用于 reset"""
     return request_id_var.set(request_id)
 
 
 def get_session_id() -> str:
     """获取当前会话 ID，无则返回 '-' """
-    return session_id_var.get() or "-"
+    return session_id_var.get()
 
 
-def set_session_id(session_id: str):
+def set_session_id(session_id: str) -> contextvars.Token:
     """设置当前会话 ID，返回 token 用于 reset"""
     return session_id_var.set(session_id)
 
