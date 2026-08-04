@@ -1,3 +1,5 @@
+import logging
+logger = logging.getLogger(__name__)
 from typing import List, Dict, Any, Literal, TypedDict
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -59,8 +61,11 @@ class IntentRouter:
     def classify(self, user_input: str) -> Literal["report", "knowledge"]:
         """分类用户意图 - 纯关键词匹配，极速响应"""
         if any(k in user_input for k in REPORT_KEYWORDS):
-            return "report"
-        return "knowledge"
+            result = "report"
+        else:
+            result = "knowledge"
+        logger.info(f"意图路由: 用户输入='{user_input[:100]}', 结果={result}")
+        return result
 
 
 class RagAnswerGenerator:
@@ -185,6 +190,7 @@ Reference documents:
                 )
                 for i, c in enumerate(context)
             ]
+        logger.info(f"RAG回答生成: 基于{len(results)}篇文档生成回答")
 
         # 相关性阈值：向量相似度 + 关键词匹配双重判断
         VECTOR_THRESHOLD = 0.75  # 降低阈值适配本地 embedding 对英文缩写的处理

@@ -1,4 +1,6 @@
 import os
+import logging
+logger = logging.getLogger(__name__)
 # 禁用 tokenizers 的并行性，避免 forking 导致的 LLM API 调用问题
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
 
@@ -174,4 +176,6 @@ class RagRetriever:
         """
         # 直接向量检索，跳过耗时的 CrossEncoder 重排序
         results = self.vector_retriever.retrieve(query, db_session, doc_type)
+        doc_titles = [doc.title[:50] if doc.title else "" for doc in results[:5]]
+        logger.info(f"RAG检索完成: 命中文档数={len(results)}, top5={doc_titles}")
         return results
