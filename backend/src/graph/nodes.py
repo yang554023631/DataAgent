@@ -317,12 +317,12 @@ async def analyst_node(state: dict) -> dict:
         result = await analyst_agent(query_result, query_request)
 
         # 日志：分析完成摘要
-        logger.info(f"分析完成: needs_drill_down={False}")
+        logger.info(f"分析完成: needs_drill_down={result.get('needs_drill_down', False)}")
 
         return {
             "analysis_result": result,
             "drill_down_level": state.get("drill_down_level", 0),
-            "needs_drill_down": False,
+            "needs_drill_down": result.get("needs_drill_down", False),
             "error": None
         }
     except Exception as e:

@@ -58,7 +58,7 @@ def setup_logging():
 
     # --- 控制台 handler ---
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
+    console_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO))
     console_handler.setFormatter(formatter)
     console_handler.addFilter(context_filter)
     root_logger.addHandler(console_handler)
@@ -71,7 +71,7 @@ def setup_logging():
         backupCount=settings.LOG_BACKUP_DAYS,
         encoding="utf-8",
     )
-    file_handler.setLevel(logging.INFO)
+    file_handler.setLevel(getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO))
     file_handler.setFormatter(formatter)
     file_handler.addFilter(context_filter)
     root_logger.addHandler(file_handler)
