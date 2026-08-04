@@ -22,4 +22,10 @@ class Settings(BaseSettings):
     MAX_CLARIFICATION_COUNT: int = 3
     MAX_DRILL_DOWN_LEVEL: int = 2
 
+    # Logging
+    LOG_LEVEL: str = "INFO"
+    LOG_DIR: str = "logs"
+    LOG_BACKUP_DAYS: int = 30
+    LOG_TRUNCATE_LEN: int = 1000
+
 settings = Settings()
