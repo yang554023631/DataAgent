@@ -11,8 +11,6 @@ from src.agents.analyst_agent import analyst_agent
 from src.agents.reporter_agent import reporter_agent, format_comparison_report
 from src.agents.insight_agent import insight_agent, insights_to_highlights
 from src.services.advertiser_service import get_all_advertisers
-from src.config.context import truncate_log
-from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
