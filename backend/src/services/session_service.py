@@ -2,6 +2,7 @@ import uuid
 from typing import Dict, Any, List
 from datetime import datetime
 from src.graph.builder import app as graph_app
+from src.graph.callbacks import get_logging_callbacks
 
 class SessionService:
     """会话管理服务"""
@@ -56,7 +57,10 @@ class SessionService:
         initial_state["user_input"] = user_input
 
         # 执行 Graph
-        result = await graph_app.ainvoke(initial_state)
+        result = await graph_app.ainvoke(
+            initial_state,
+            config={"callbacks": get_logging_callbacks()}
+        )
 
         # 保存状态
         session["graph_state"] = result
@@ -115,7 +119,10 @@ class SessionService:
         state["user_feedback"] = {"selected_value": selected_value}
 
         # 继续执行 Graph（从 hitl 节点之后）
-        result = await graph_app.ainvoke(state)
+        result = await graph_app.ainvoke(
+            state,
+            config={"callbacks": get_logging_callbacks()}
+        )
         session["graph_state"] = result
 
         return {
