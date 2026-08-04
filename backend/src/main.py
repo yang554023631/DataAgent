@@ -8,9 +8,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.config.settings import settings
+from src.config.logging_config import setup_logging
+from src.api.middleware import RequestTracingMiddleware
 from src.api.sessions import router as sessions_router
 
+# 初始化日志（在所有模块导入之后、app 创建之前）
+setup_logging()
+
 app = FastAPI(title="Ad Report Agent API", version="0.1.0")
+
+# 请求追踪中间件（最外层，最先执行）
+app.add_middleware(RequestTracingMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
