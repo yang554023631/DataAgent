@@ -11,6 +11,7 @@ from .prompts import (
     REPORT_INTENT_SYSTEM_PROMPT,
     REENTRY_DETECT_SYSTEM_PROMPT
 )
+from .report_intent import ReportIntentAnalyzer, get_report_intent_analyzer
 
 __all__ = [
     # LLM Client
@@ -28,5 +29,9 @@ __all__ = [
     # Prompts
     "TOP_CLASSIFIER_SYSTEM_PROMPT",
     "REPORT_INTENT_SYSTEM_PROMPT",
-    "REENTRY_DETECT_SYSTEM_PROMPT"
+    "REENTRY_DETECT_SYSTEM_PROMPT",
+
+    # Report Intent Analyzer
+    "ReportIntentAnalyzer",
+    "get_report_intent_analyzer"
 ]
