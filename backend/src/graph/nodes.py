@@ -563,7 +563,7 @@ async def report_intent_node(state: dict) -> dict:
         existing_ad_level = report_intent_result.get("ad_level")
 
     analyzer = get_report_intent_analyzer()
-    result, clarification = await analyzer.analyze(
+    result, clarification, final_report = await analyzer.analyze(
         user_input,
         conversation_history,
         existing_advertiser_ids=existing_advertiser_ids,
@@ -573,44 +573,50 @@ async def report_intent_node(state: dict) -> dict:
 
     updates = {}
 
-    if result:
-        # 将 ReportIntentResult 转换为 dict 存入 state
-        result_dict = result.model_dump()
-        updates["report_intent_result"] = result_dict
-
-        # 同时填充旧的 query_intent 字段，保持向后兼容
-        query_intent = {
-            "advertiser_ids": result.advertiser_ids,
-            "metrics": result.metrics,
-            "dimensions": result.group_by,
-            "filters": result.filters,
-            "is_comparison": result.is_comparison,
-        }
-        if result.time_range:
-            query_intent["time_range"] = {
-                "start": result.time_range.start_date,
-                "end": result.time_range.end_date,
-            }
-        if result.compare_time_range:
-            query_intent["compare_time_range"] = {
-                "start": result.compare_time_range.start_date,
-                "end": result.compare_time_range.end_date,
-            }
-        query_intent["ad_level"] = result.ad_level or "campaign"
-        updates["query_intent"] = query_intent
-        updates["advertiser_ids"] = result.advertiser_ids
-
-    if clarification:
-        # 需要澄清
-        updates.update(build_clarification_state(clarification))
-        logger.info(f"报表意图识别完成: 触发澄清=True, 类型={clarification.type}")
-    else:
-        # 不需要澄清，确保标志位为 False
+    if final_report:
+        # 纯广告主查询，直接返回 final_report
+        updates["final_report"] = final_report
         updates["needs_clarification"] = False
+        logger.info(f"报表意图识别完成: 检测到纯广告主查询")
+    else:
         if result:
-            logger.info(f"报表意图识别完成: 广告主={result.advertiser_ids}, 时间={result.time_range and result.time_range.start_date + '~' + result.time_range.end_date}, 指标={result.metrics}, 层级={result.ad_level}")
+            # 将 ReportIntentResult 转换为 dict 存入 state
+            result_dict = result.model_dump()
+            updates["report_intent_result"] = result_dict
+
+            # 同时填充旧的 query_intent 字段，保持向后兼容
+            query_intent = {
+                "advertiser_ids": result.advertiser_ids,
+                "metrics": result.metrics,
+                "dimensions": result.group_by,
+                "filters": result.filters,
+                "is_comparison": result.is_comparison,
+            }
+            if result.time_range:
+                query_intent["time_range"] = {
+                    "start": result.time_range.start_date,
+                    "end": result.time_range.end_date,
+                }
+            if result.compare_time_range:
+                query_intent["compare_time_range"] = {
+                    "start": result.compare_time_range.start_date,
+                    "end": result.compare_time_range.end_date,
+                }
+            query_intent["ad_level"] = result.ad_level or "campaign"
+            updates["query_intent"] = query_intent
+            updates["advertiser_ids"] = result.advertiser_ids
+
+        if clarification:
+            # 需要澄清
+            updates.update(build_clarification_state(clarification))
+            logger.info(f"报表意图识别完成: 触发澄清=True, 类型={clarification.type}")
         else:
-            logger.info(f"报表意图识别完成: 结果为空")
+            # 不需要澄清，确保标志位为 False
+            updates["needs_clarification"] = False
+            if result:
+                logger.info(f"报表意图识别完成: 广告主={result.advertiser_ids}, 时间={result.time_range and result.time_range.start_date + '~' + result.time_range.end_date}, 指标={result.metrics}, 层级={result.ad_level}")
+            else:
+                logger.info(f"报表意图识别完成: 结果为空")
 
     return updates
 
