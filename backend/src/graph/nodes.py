@@ -28,6 +28,27 @@ def _generate_suggested_queries(advertiser_name: str) -> list:
     ]
     return [t.format(name=advertiser_name) for t in templates]
 
+
+def _resolve_advertiser_from_feedback(feedback: str) -> list:
+    """
+    解析用户澄清反馈中的广告主信息，返回广告主ID列表。
+
+    支持：
+    - 纯数字字符串 → 当作广告主ID
+    - 非纯数字 → 当作名称，调用名称搜索
+    """
+    if not feedback:
+        return []
+
+    # 纯数字 → 直接当作ID
+    if feedback.isdigit():
+        return [feedback]
+
+    # 非数字 → 当作名称搜索
+    from src.services.advertiser_service import get_advertiser_by_name
+    results = get_advertiser_by_name(feedback)
+    return [r["id"] for r in results]
+
 async def nlu_node(state: dict) -> dict:
     """意图理解节点"""
     user_input = state.get("user_input", "")
@@ -340,6 +361,15 @@ async def analyst_node(state: dict) -> dict:
 
 async def reporter_node(state: dict) -> dict:
     """报告生成节点（支持对比查询 + 洞察高亮）"""
+    # 如果 final_report 已经存在（如广告主查询直接生成的），直接返回
+    existing_final_report = state.get("final_report")
+    if existing_final_report is not None:
+        logger.info(f"报告生成: final_report已存在，直接返回，标题='{existing_final_report.get('title', '')}'")
+        return {
+            "final_report": existing_final_report,
+            "error": None,
+        }
+
     query_intent = state.get("query_intent", {})
     query_request = state.get("query_request", {})
     query_result = state.get("query_result") or {}
@@ -550,7 +580,18 @@ async def report_intent_node(state: dict) -> dict:
     """报表意图识别节点"""
     user_input = state.get("user_input", "")
     conversation_history = state.get("conversation_history", [])
-    existing_advertiser_ids = state.get("advertiser_ids", [])
+    existing_advertiser_ids = list(state.get("advertiser_ids", []))
+
+    # --- 澄清回填：上一轮是 missing_advertiser 澄清时，把用户选择的广告主直接填入 ---
+    clarification_info = state.get("clarification", {})
+    last_clarification_type = clarification_info.get("type", "")
+    pending_input = state.get("pending_clarification_input", "")
+
+    if last_clarification_type == "missing_advertiser" and pending_input:
+        resolved_ids = _resolve_advertiser_from_feedback(pending_input)
+        if resolved_ids:
+            existing_advertiser_ids = list(set(existing_advertiser_ids + resolved_ids))
+            logger.info(f"澄清回填广告主: 反馈='{pending_input}', 解析出IDs={resolved_ids}")
 
     logger.info(f"开始报表意图识别: 用户输入='{user_input[:100]}', 已有广告主={existing_advertiser_ids}")
 
