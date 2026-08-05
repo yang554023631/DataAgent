@@ -68,10 +68,13 @@ def build_graph():
         """
         report_intent 之后的条件路由：
         - needs_clarification → clarify
+        - final_report 已存在 → reporter（直接返回广告查询结果）
         - 信息完整 → planner
         """
         if state.get("needs_clarification", False):
             return "clarify"
+        if state.get("final_report"):
+            return "reporter"
         return "planner"
 
     graph.add_conditional_edges(
@@ -143,8 +146,11 @@ def build_graph():
     # ========== 6. 拒答流程 ==========
     graph.add_edge("reject", END)
 
-    # ========== 编译（interrupt_before 改为 clarify） ==========
-    return graph.compile(interrupt_before=["clarify"])
+    # ========== 编译（interrupt_before + MemorySaver checkpoint） ==========
+    # 使用 MemorySaver 保存 checkpoints，确保中断后能正确从 clarify 节点恢复
+    from langgraph.checkpoint.memory import MemorySaver
+    memory = MemorySaver()
+    return graph.compile(checkpointer=memory, interrupt_before=["clarify"])
 
 # 导出编译好的 Graph
 app = build_graph()
