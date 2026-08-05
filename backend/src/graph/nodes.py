@@ -511,6 +511,8 @@ async def intent_classifier_node(state: dict) -> dict:
     user_input = state.get("user_input", "")
     conversation_history = state.get("conversation_history", [])
 
+    logger.info(f"开始顶层意图分类: 用户输入='{user_input[:100]}'")
+
     classifier = get_top_classifier()
     result = await classifier.classify(user_input, conversation_history)
 
@@ -537,6 +539,9 @@ async def intent_classifier_node(state: dict) -> dict:
             missing_fields=[],
         )
         updates.update(build_clarification_state(clarification))
+        logger.info(f"顶层意图分类完成: 分类={result.category}, 置信度={result.confidence:.2f}, 触发澄清=True")
+    else:
+        logger.info(f"顶层意图分类完成: 分类={result.category}, 置信度={result.confidence:.2f}, 来源={result.source}")
 
     return updates
 
@@ -546,6 +551,8 @@ async def report_intent_node(state: dict) -> dict:
     user_input = state.get("user_input", "")
     conversation_history = state.get("conversation_history", [])
     existing_advertiser_ids = state.get("advertiser_ids", [])
+
+    logger.info(f"开始报表意图识别: 用户输入='{user_input[:100]}', 已有广告主={existing_advertiser_ids}")
 
     # 从上下文中获取已有的时间范围和层级
     existing_time_range = None
@@ -596,9 +603,14 @@ async def report_intent_node(state: dict) -> dict:
     if clarification:
         # 需要澄清
         updates.update(build_clarification_state(clarification))
+        logger.info(f"报表意图识别完成: 触发澄清=True, 类型={clarification.type}")
     else:
         # 不需要澄清，确保标志位为 False
         updates["needs_clarification"] = False
+        if result:
+            logger.info(f"报表意图识别完成: 广告主={result.advertiser_ids}, 时间={result.time_range and result.time_range.start_date + '~' + result.time_range.end_date}, 指标={result.metrics}, 层级={result.ad_level}")
+        else:
+            logger.info(f"报表意图识别完成: 结果为空")
 
     return updates
 
