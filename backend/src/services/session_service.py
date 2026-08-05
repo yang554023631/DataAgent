@@ -65,36 +65,60 @@ class SessionService:
         # 保存状态
         session["graph_state"] = result
 
-        # 检查是否需要澄清
+        # 检查是否需要澄清 - 优先使用新的 needs_clarification 字段
+        needs_clarification = result.get("needs_clarification", False)
+        # 向后兼容：如果旧的 ambiguity 字段存在且有数据，也处理
         ambiguity = result.get("ambiguity", {})
-        if ambiguity and ambiguity.get("has_ambiguity", False):
-            from src.tools.clarification_generator import generate_clarification_options
-            # context 需要是 dict，options 是 list，需要包装一下
-            options = ambiguity.get("options", [])
-            # 把广告主选项转换成澄清问题的格式
-            formatted_options = []
-            for opt in options:
-                if isinstance(opt, dict) and "name" in opt and "id" in opt:
-                    formatted_options.append({
-                        "value": f"查看 {opt['name']} 的数据",
-                        "label": opt["name"]
-                    })
-            context = {
-                "question": ambiguity.get("reason", "未找到匹配的广告主"),
-                "options": formatted_options
-            }
-            clarification = generate_clarification_options.func(
-                ambiguity_type=ambiguity.get("type", "time"),
-                context=context
-            )
-            return {
-                "status": "waiting_for_clarification",
-                "clarification": {
+
+        if needs_clarification or (ambiguity and ambiguity.get("has_ambiguity", False)):
+            # 获取澄清信息
+            clarification_info = result.get("clarification", {})
+
+            # 如果是旧格式，生成澄清信息（向后兼容）
+            if not clarification_info and ambiguity and ambiguity.get("has_ambiguity", False):
+                from src.tools.clarification_generator import generate_clarification_options
+                # context 需要是 dict，options 是 list，需要包装一下
+                options = ambiguity.get("options", [])
+                # 把广告主选项转换成澄清问题的格式
+                formatted_options = []
+                for opt in options:
+                    if isinstance(opt, dict) and "name" in opt and "id" in opt:
+                        formatted_options.append({
+                            "value": f"查看 {opt['name']} 的数据",
+                            "label": opt["name"]
+                        })
+                context = {
+                    "question": ambiguity.get("reason", "未找到匹配的广告主"),
+                    "options": formatted_options
+                }
+                clarification = generate_clarification_options.func(
+                    ambiguity_type=ambiguity.get("type", "time"),
+                    context=context
+                )
+                clarification_info = {
                     "question": clarification.question,
                     "options": clarification.options,
                     "allow_custom_input": clarification.allow_custom_input
                 }
+
+            # 构建返回结果
+            response = {
+                "status": "waiting_for_clarification",
+                "clarification": {
+                    "question": clarification_info.get("question", "需要您的澄清"),
+                    "options": clarification_info.get("options", []),
+                    "allow_custom_input": clarification_info.get("allow_custom_input", True)
+                }
             }
+
+            # 如果存在 final_report，也包含进去（某些澄清类型可能已经生成了报告）
+            if result.get("final_report"):
+                response["result"] = {
+                    "final_report": result.get("final_report"),
+                    "warnings": result.get("query_warnings", [])
+                }
+
+            return response
 
         # 返回结果
         return {
@@ -116,20 +140,48 @@ class SessionService:
             raise ValueError(f"Session {session_id} not found")
 
         state = session.get("graph_state", {})
-        state["user_feedback"] = {"selected_value": selected_value}
 
-        # 继续执行 Graph（从 hitl 节点之后）
+        # 检查是否超过最大重试次数
+        clarify_next = state.get("clarify_next")
+        if clarify_next == "max_reentry_exceeded":
+            # 重置澄清计数和状态
+            state["clarification_count"] = 0
+            state["needs_clarification"] = False
+            state["user_feedback"] = {"selected_value": selected_value}
+        else:
+            # 提交用户反馈
+            state["user_feedback"] = {"selected_value": selected_value}
+
+        # 继续执行 Graph
         result = await graph_app.ainvoke(
             state,
             config={"callbacks": get_logging_callbacks()}
         )
         session["graph_state"] = result
 
+        # 检查是否仍然需要澄清
+        needs_clarification = result.get("needs_clarification", False)
+        if needs_clarification:
+            clarification_info = result.get("clarification", {})
+            return {
+                "status": "waiting_for_clarification",
+                "clarification": {
+                    "question": clarification_info.get("question", "需要您的澄清"),
+                    "options": clarification_info.get("options", []),
+                    "allow_custom_input": clarification_info.get("allow_custom_input", True)
+                }
+            }
+
+        # 返回最终结果
         return {
             "status": "completed",
             "result": {
                 "query_intent": result.get("query_intent"),
-                "query_request": result.get("query_request")
+                "query_request": result.get("query_request"),
+                "query_result": result.get("query_result", {}),
+                "analysis": result.get("analysis_result", {}),
+                "final_report": result.get("final_report"),
+                "warnings": result.get("query_warnings", [])
             }
         }
 
