@@ -53,40 +53,44 @@ class TestIntentIntegration:
 
     def _make_mock_report_analyzer(self, has_all_fields: bool = True, clarification: MagicMock = None):
         """创建 Mock 报表意图分析器"""
+        from src.intent.models import ReportIntentResult, ReportTimeRange
+
         mock_analyzer = MagicMock(spec=ReportIntentAnalyzer)
 
-        # 创建 mock 的 ReportIntentResult
-        mock_result = MagicMock()
-        mock_result.advertiser_ids = ["123"]
-        mock_result.metrics = ["impressions", "clicks", "cost"]
-        mock_result.group_by = []
-        mock_result.filters = []
-        mock_result.is_comparison = False
-        mock_result.ad_level = "campaign"
-        mock_result.time_range = MagicMock()
-        mock_result.time_range.start_date = "2024-01-01"
-        mock_result.time_range.end_date = "2024-01-31"
-        mock_result.compare_time_range = None
-        mock_result.confidence = 0.95
-        mock_result.alias_mappings = {}
-        mock_result.model_dump = MagicMock(return_value={
-            "advertiser_ids": ["123"],
-            "metrics": ["impressions", "clicks", "cost"],
-            "group_by": [],
-            "filters": [],
-            "is_comparison": False,
-            "ad_level": "campaign",
-            "time_range": {
-                "start_date": "2024-01-01",
-                "end_date": "2024-01-31",
-                "unit": "day",
-                "is_lifetime": False
-            },
-            "confidence": 0.95,
-            "alias_mappings": {}
-        })
+        # 使用真实对象而不是 MagicMock，确保可序列化
+        if has_all_fields:
+            result = ReportIntentResult(
+                advertiser_ids=["123"],
+                time_range=ReportTimeRange(
+                    start_date="2024-01-01",
+                    end_date="2024-01-31",
+                    unit="day",
+                    is_lifetime=False
+                ),
+                metrics=["impressions", "clicks", "cost"],
+                ad_level="campaign",
+                group_by=[],
+                filters=[],
+                is_comparison=False,
+                compare_time_range=None,
+                confidence=0.95,
+                alias_mappings={},
+            )
+        else:
+            result = ReportIntentResult(
+                advertiser_ids=[],
+                time_range=None,
+                metrics=["impressions"],
+                ad_level="campaign",
+                group_by=[],
+                filters=[],
+                is_comparison=False,
+                compare_time_range=None,
+                confidence=0.95,
+                alias_mappings={},
+            )
 
-        mock_analyzer.analyze = AsyncMock(return_value=(mock_result if has_all_fields else None, clarification))
+        mock_analyzer.analyze = AsyncMock(return_value=(result if has_all_fields else None, clarification, None))
         mock_analyzer.check_required_fields = MagicMock(return_value=(has_all_fields, None))
         mock_analyzer.check_capabilities = MagicMock(return_value=(True, None))
 
@@ -148,7 +152,7 @@ class TestIntentIntegration:
 
         # Run the graph step by step
         # First, run intent_classifier
-        result = await graph_app.ainvoke(initial_state)
+        result = await graph_app.ainvoke(initial_state, config={"configurable": {"thread_id": initial_state["session_id"]}})
 
         # Verify intent classification
         assert result["intent_category"] == "report"
@@ -185,28 +189,27 @@ class TestIntentIntegration:
         mock_clarification.missing_fields = ["advertiser_ids"]
 
         # Mock analyzer to return with clarification
+        from src.intent.models import ReportIntentResult, ReportTimeRange
         mock_analyzer = self._make_mock_report_analyzer(has_all_fields=False, clarification=mock_clarification)
         # Override analyze to return (partial result, clarification)
-        mock_result = MagicMock()
-        mock_result.advertiser_ids = []
-        mock_result.metrics = ["impressions"]
-        mock_result.time_range = MagicMock()
-        mock_result.time_range.start_date = "2024-01-01"
-        mock_result.time_range.end_date = "2024-01-31"
-        mock_result.time_range.unit = "day"
-        mock_result.ad_level = "campaign"
-        mock_result.group_by = []
-        mock_result.model_dump = MagicMock(return_value={
-            "advertiser_ids": [],
-            "metrics": ["impressions"],
-            "time_range": {
-                "start_date": "2024-01-01",
-                "end_date": "2024-01-31",
-                "unit": "day"
-            },
-            "ad_level": "campaign"
-        })
-        mock_analyzer.analyze = AsyncMock(return_value=(mock_result, mock_clarification))
+        mock_result = ReportIntentResult(
+            advertiser_ids=[],
+            time_range=ReportTimeRange(
+                start_date="2024-01-01",
+                end_date="2024-01-31",
+                unit="day",
+                is_lifetime=False,
+            ),
+            metrics=["impressions"],
+            ad_level="campaign",
+            group_by=[],
+            filters=[],
+            is_comparison=False,
+            compare_time_range=None,
+            confidence=0.95,
+            alias_mappings={},
+        )
+        mock_analyzer.analyze = AsyncMock(return_value=(mock_result, mock_clarification, None))
         mock_get_analyzer.return_value = mock_analyzer
 
         # Initial state
@@ -250,7 +253,7 @@ class TestIntentIntegration:
         }
 
         # Run the graph
-        result = await graph_app.ainvoke(initial_state)
+        result = await graph_app.ainvoke(initial_state, config={"configurable": {"thread_id": initial_state["session_id"]}})
 
         # Verify we need clarification
         assert result["needs_clarification"] is True
@@ -308,7 +311,7 @@ class TestIntentIntegration:
         }
 
         # Run the graph
-        result = await graph_app.ainvoke(initial_state)
+        result = await graph_app.ainvoke(initial_state, config={"configurable": {"thread_id": initial_state["session_id"]}})
 
         # Verify rejection
         assert result["intent_category"] == "out_of_domain"
@@ -374,7 +377,7 @@ class TestIntentIntegration:
         }
 
         # Run the graph
-        result = await graph_app.ainvoke(initial_state)
+        result = await graph_app.ainvoke(initial_state, config={"configurable": {"thread_id": initial_state["session_id"]}})
 
         # Verify clarification
         assert result["needs_clarification"] is True
@@ -432,7 +435,7 @@ class TestIntentIntegration:
         }
 
         # Run the graph step by step (we won't mock rag nodes, just check the routing)
-        result = await graph_app.ainvoke(initial_state)
+        result = await graph_app.ainvoke(initial_state, config={"configurable": {"thread_id": initial_state["session_id"]}})
 
         # Verify intent classification
         assert result["intent_category"] == "knowledge"

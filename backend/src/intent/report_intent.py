@@ -10,6 +10,7 @@
 """
 import json
 import logging
+import re
 from typing import Optional, List, Tuple
 from datetime import date
 
@@ -346,7 +347,7 @@ class ReportIntentAnalyzer:
             纯广告查询 → final_report dict
             不是纯广告查询 → None
         """
-        import re
+        # 懒加载避免循环导入
         from src.graph.nodes import _generate_suggested_queries
 
         # Case 1: 查询广告主列表

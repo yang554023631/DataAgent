@@ -251,7 +251,7 @@ class TestFullAnalyze:
 
     @pytest.mark.asyncio
     async def test_successful_analysis(self):
-        """信息齐全 → 返回 (result, None)"""
+        """信息齐全 → 返回 (result, None, None)"""
         mock_client = _make_mock_client({
             "advertiser_ids": ["123"],
             "time_range": {
@@ -267,16 +267,17 @@ class TestFullAnalyze:
             "alias_mappings": {}
         })
         analyzer = ReportIntentAnalyzer(llm_client=mock_client)
-        result, clarification = await analyzer.analyze(
+        result, clarification, final_report = await analyzer.analyze(
             "查看广告主123上个月的曝光点击"
         )
         assert result is not None
         assert clarification is None
+        assert final_report is None
         assert len(result.metrics) == 2
 
     @pytest.mark.asyncio
     async def test_analysis_with_clarification(self):
-        """缺字段 → 返回 (result, clarification)"""
+        """缺字段 → 返回 (result, clarification, None)"""
         mock_client = _make_mock_client({
             "advertiser_ids": [],
             "time_range": {
@@ -292,9 +293,10 @@ class TestFullAnalyze:
             "alias_mappings": {}
         })
         analyzer = ReportIntentAnalyzer(llm_client=mock_client)
-        result, clarification = await analyzer.analyze(
+        result, clarification, final_report = await analyzer.analyze(
             "上个月的曝光数据"
         )
         assert result is not None
         assert clarification is not None
+        assert final_report is None
         assert clarification.type == "missing_advertiser"
