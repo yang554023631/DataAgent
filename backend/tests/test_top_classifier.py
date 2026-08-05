@@ -45,6 +45,11 @@ class TestRuleFastpath:
         result = self.classifier._rule_fastpath("帮我看看")
         assert result is None
 
+    def test_comparison_without_metric_not_fastpath(self):
+        """对比模式但没有指标词 → 快筛不命中"""
+        result = self.classifier._rule_fastpath("今天和昨天的天气")
+        assert result is None
+
 
 class TestLLMClassification:
     """LLM 分类测试（mock LLM 客户端）"""
@@ -124,5 +129,5 @@ class TestLLMClassification:
         classifier = IntentTopClassifier(llm_client=mock_client)
         # 失败时默认返回 knowledge（最安全的降级）
         result = await classifier.classify("一些模糊的输入")
-        assert result.category in ["knowledge", "report"]
+        assert result.category == "knowledge"
         assert result.confidence < 0.7

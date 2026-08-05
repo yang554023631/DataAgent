@@ -7,6 +7,7 @@
 """
 import json
 import logging
+import re
 from typing import Optional, List
 
 from src.intent.llm_client import get_intent_llm_client, IntentLLMClient
@@ -48,7 +49,6 @@ _QUERY_ACTION_KEYWORDS = [
 ]
 
 # 对比模式正则
-import re
 _COMPARISON_PATTERNS = [
     re.compile(r'\d+月\s*(vs|VS|和|与)\s*\d+月'),
     re.compile(r'(今天|昨天|本周|上周|本月|上个月)\s*(vs|VS|和|与)\s*(今天|昨天|本周|上周|本月|上个月)'),
@@ -126,7 +126,7 @@ class IntentTopClassifier:
         has_action = _has_query_action(user_input)
         has_comparison = _has_comparison_pattern(user_input)
 
-        if (has_time and has_metric) or (has_action and has_metric) or has_comparison:
+        if (has_time and has_metric) or (has_action and has_metric) or (has_comparison and has_metric):
             result = TopClassificationResult(
                 category="report",
                 confidence=1.0,
