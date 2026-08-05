@@ -15,7 +15,7 @@ _llm_instance: ChatOpenAI = None
 _rag_generator_instance: 'RagAnswerGenerator' = None
 
 
-def _get_llm():
+def get_llm():
     """获取 LLM 单例 - 优先使用火山引擎 Ark"""
     global _llm_instance
     if _llm_instance is None:
@@ -33,6 +33,11 @@ def _get_llm():
                 temperature=0,
             )
     return _llm_instance
+
+
+# 向后兼容别名
+def _get_llm():
+    return get_llm()
 
 
 def get_rag_generator() -> 'RagAnswerGenerator':
