@@ -16,6 +16,13 @@ from datetime import date
 from src.intent.llm_client import get_intent_llm_client, IntentLLMClient
 from src.intent.prompts import REPORT_INTENT_SYSTEM_PROMPT
 from src.intent.models import ReportIntentResult, ReportTimeRange, ClarificationInfo
+from src.services.advertiser_service import (
+    is_advertiser_list_query,
+    get_all_advertisers,
+    get_advertiser_by_id,
+    get_advertiser_by_name,
+    get_similar_advertiser_names,
+)
 from src.intent.capability_registry import (
     validate_metric,
     validate_ad_level,
@@ -331,6 +338,144 @@ class ReportIntentAnalyzer:
             result.ad_level = existing_ad_level
             logger.debug(f"继承广告层级: {existing_ad_level}")
 
+    def _detect_advertiser_lookup(self, user_input: str) -> Optional[dict]:
+        """
+        检测是否为纯广告主查询，如果是则生成 final_report 返回
+
+        Returns:
+            纯广告查询 → final_report dict
+            不是纯广告查询 → None
+        """
+        import re
+        from src.graph.nodes import _generate_suggested_queries
+
+        # Case 1: 查询广告主列表
+        if is_advertiser_list_query(user_input):
+            advertisers = get_all_advertisers()
+            if not advertisers:
+                return {
+                    "title": "暂无可用广告主",
+                    "time_range": {"start": "", "end": ""},
+                    "metrics": [],
+                    "highlights": [{"type": "info", "text": "⚠️ 当前没有查询到任何可用广告主"}],
+                    "data_table": {"columns": ["广告主ID", "广告主名称"], "rows": []},
+                    "next_queries": [],
+                }
+
+            return {
+                "title": "可用广告主列表",
+                "time_range": {"start": "", "end": ""},
+                "metrics": [],
+                "highlights": [
+                    {"type": "info", "text": "💡 点击以下广告主名称即可查看对应数据"}
+                ],
+                "data_table": {
+                    "columns": ["广告主ID", "广告主名称"],
+                    "rows": [[adv["id"], adv["name"]] for adv in advertisers]
+                },
+                "next_queries": _generate_suggested_queries(advertisers[0]['name']) if advertisers else [],
+            }
+
+        # Case 2: ID 查询名称 - patterns like:
+        # "123叫什么" / "广告主123叫什么名字" / "123的名称是什么"
+        id_match = re.search(r'(\d+)\s*(叫什么|名字|名称|是什么)', user_input.lower())
+        if id_match:
+            adv_id = id_match.group(1)
+            adv = get_advertiser_by_id(adv_id)
+            if adv:
+                return {
+                    "title": f"广告主 {adv_id} 信息",
+                    "time_range": {"start": "", "end": ""},
+                    "metrics": [],
+                    "highlights": [
+                        {"type": "info", "text": f"广告主ID: `{adv['id']}`"},
+                        {"type": "info", "text": f"广告主名称: **{adv['name']}**"},
+                    ],
+                    "data_table": {"columns": [], "rows": []},
+                    "next_queries": _generate_suggested_queries(adv['name']),
+                }
+            else:
+                return {
+                    "title": "未找到广告主",
+                    "time_range": {"start": "", "end": ""},
+                    "metrics": [],
+                    "highlights": [{"type": "warning", "text": f"⚠️ 未找到ID为 `{adv_id}` 的广告主"}],
+                    "data_table": {"columns": [], "rows": []},
+                    "next_queries": ["有哪些广告主"],
+                }
+
+        # Case 3: 名称查询ID - patterns like:
+        # "ABC的ID" / "ABC广告主编号是多少" / "叫ABC的广告主ID是什么"
+        name_match = re.search(r'(id|ID|编号)\s*(是多少|是什么|查询|找)', user_input.lower())
+        if name_match:
+            # 提取名称关键词：去掉问句部分，剩下的就是名称
+            query_words = {"id", "ID", "编号", "是多少", "是什么", "查询", "找", "广告主"}
+            tokens = re.findall(r'[a-zA-Z0-9_一-鿿]+', user_input)
+            name_candidate = "".join([t for t in tokens if t.lower() not in query_words])
+
+            if name_candidate:
+                advertisers = get_advertiser_by_name(name_candidate)
+                if advertisers:
+                    if len(advertisers) == 1:
+                        adv = advertisers[0]
+                        return {
+                            "title": f"广告主「{name_candidate}」信息",
+                            "time_range": {"start": "", "end": ""},
+                            "metrics": [],
+                            "highlights": [
+                                {"type": "info", "text": f"匹配到广告主:"},
+                                {"type": "info", "text": f"• ID: `{adv['id']}` 名称: **{adv['name']}**"},
+                            ],
+                            "data_table": {"columns": [], "rows": []},
+                            "next_queries": _generate_suggested_queries(adv['name']),
+                        }
+                    else:
+                        highlights = [
+                            {"type": "info", "text": f"匹配到 {len(advertisers)} 个广告主:"}
+                        ]
+                        for adv in advertisers:
+                            highlights.append({"type": "info", "text": f"• ID: `{adv['id']}` 名称: **{adv['name']}**"})
+                        return {
+                            "title": f"广告主「{name_candidate}」搜索结果",
+                            "time_range": {"start": "", "end": ""},
+                            "metrics": [],
+                            "highlights": highlights,
+                            "data_table": {
+                                "columns": ["广告主ID", "广告主名称"],
+                                "rows": [[adv["id"], adv["name"]] for adv in advertisers]
+                            },
+                            "next_queries": _generate_suggested_queries(advertisers[0]['name']),
+                        }
+                else:
+                    # 无匹配，返回相似建议
+                    similar = get_similar_advertiser_names(user_input, top_n=5)
+                    if similar:
+                        highlights = [
+                            {"type": "warning", "text": f"⚠️ 未找到完全匹配「{name_candidate}」的广告主，你可能想找:"}
+                        ]
+                        for adv in similar:
+                            highlights.append({"type": "info", "text": f"• ID: `{adv['id']}` 名称: **{adv['name']}**"})
+                        return {
+                            "title": "未找到匹配广告主",
+                            "time_range": {"start": "", "end": ""},
+                            "metrics": [],
+                            "highlights": highlights,
+                            "data_table": {"columns": [], "rows": []},
+                            "next_queries": ["有哪些广告主"],
+                        }
+                    else:
+                        return {
+                            "title": "未找到匹配广告主",
+                            "time_range": {"start": "", "end": ""},
+                            "metrics": [],
+                            "highlights": [{"type": "warning", "text": f"⚠️ 未找到匹配「{name_candidate}」的广告主"}],
+                            "data_table": {"columns": [], "rows": []},
+                            "next_queries": ["有哪些广告主"],
+                        }
+
+        # 不是纯广告主查询，返回 None 继续正常流程
+        return None
+
     # ---- 主入口 ----
 
     async def analyze(
@@ -340,7 +485,7 @@ class ReportIntentAnalyzer:
         existing_advertiser_ids: List[str] = None,
         existing_time_range: ReportTimeRange = None,
         existing_ad_level: str = None,
-    ) -> Tuple[Optional[ReportIntentResult], Optional[ClarificationInfo]]:
+    ) -> Tuple[Optional[ReportIntentResult], Optional[ClarificationInfo], Optional[dict]]:
         """
         分析用户输入，提取报表意图
 
@@ -352,13 +497,22 @@ class ReportIntentAnalyzer:
             existing_ad_level: 上下文中已有的广告层级
 
         Returns:
-            (意图结果, 澄清信息)
-            - 如果信息齐全且能力支持：(result, None)
-            - 如果需要澄清：(result, clarification)
-            - 如果完全无法解析：(None, clarification)
+            (意图结果, 澄清信息, final_report)
+            - 如果是纯广告主查询：(None, None, final_report)
+            - 如果信息齐全且能力支持：(result, None, None)
+            - 如果需要澄清：(result, clarification, None)
+            - 如果完全无法解析：(None, clarification, None)
         """
         # Step 1: LLM 提取
         result = await self._llm_extract(user_input, conversation_history)
+
+        # Step 1.5: 检测是否为纯广告主查询（列表查询/ID查名称/名称查ID）
+        # 如果是，直接生成 final_report 返回，不走后续报表流程
+        final_report = self._detect_advertiser_lookup(user_input)
+        if final_report is not None:
+            # 纯广告查询，直接返回 final_report
+            logger.info(f"报表意图识别: 检测到纯广告主查询，直接返回结果")
+            return None, None, final_report  # result, clarification, final_report
 
         if result.confidence < 0.2:
             # 置信度太低，视为解析失败
@@ -368,7 +522,7 @@ class ReportIntentAnalyzer:
                 options=[],
                 allow_custom_input=True,
                 missing_fields=["metrics"],
-            )
+            ), None
 
         # Step 2: 上下文继承
         self._apply_context_inheritance(
@@ -378,14 +532,14 @@ class ReportIntentAnalyzer:
         # Step 3: 能力校验
         ok, cap_clarification = self.check_capabilities(result)
         if not ok:
-            return result, cap_clarification
+            return result, cap_clarification, None
 
         # Step 4: 必填字段检查
         ok, req_clarification = self.check_required_fields(result)
         if not ok:
-            return result, req_clarification
+            return result, req_clarification, None
 
-        return result, None
+        return result, None, None
 
 
 # 单例
