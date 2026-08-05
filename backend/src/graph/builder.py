@@ -1,90 +1,128 @@
 from langgraph.graph import StateGraph, END
 from .state import AdReportState
-from .nodes import nlu_node, hitl_node, planner_node, executor_node, insight_node, analyst_node, reporter_node, advertiser_handle_node
-from src.rag.agents import intent_router_node, rag_retrieve_node, rag_answer_node
+from .nodes import (
+    nlu_node, hitl_node, planner_node, executor_node, insight_node, analyst_node, reporter_node, advertiser_handle_node,
+    intent_classifier_node, report_intent_node, clarify_node_entry, reject_node_entry
+)
+from src.rag.agents import rag_retrieve_node, rag_answer_node
 
 def build_graph():
-    """构建完整的 LangGraph 流程图"""
+    """构建完整的 LangGraph 流程图（新意图识别架构）"""
     graph = StateGraph(AdReportState)
 
-    # 添加节点
-    graph.add_node("intent_router", intent_router_node)
+    # ========== 添加所有节点 ==========
+    # 新意图识别节点
+    graph.add_node("intent_classifier", intent_classifier_node)
+    graph.add_node("report_intent", report_intent_node)
+    graph.add_node("clarify", clarify_node_entry)
+    graph.add_node("reject", reject_node_entry)
+
+    # 保留原有的 RAG 和报表下游节点
     graph.add_node("rag_retrieve", rag_retrieve_node)
     graph.add_node("rag_generate_answer", rag_answer_node)
-    graph.add_node("nlu", nlu_node)
-    graph.add_node("hitl", hitl_node)
-    graph.add_node("advertiser_handle", advertiser_handle_node)
     graph.add_node("planner", planner_node)
     graph.add_node("executor", executor_node)
     graph.add_node("insight", insight_node)
     graph.add_node("analyst", analyst_node)
     graph.add_node("reporter", reporter_node)
 
-    # 设置入口
-    graph.set_entry_point("intent_router")
+    # 保留旧节点（向后兼容，暂不删除）
+    graph.add_node("advertiser_handle", advertiser_handle_node)
 
-    # Intent Router -> 条件分支：RAG 流程 / 报表流程
-    def route_after_intent(state: dict) -> str:
-        query_type = state.get("query_type", "report")
-        if query_type == "knowledge":
+    # ========== 设置入口 ==========
+    graph.set_entry_point("intent_classifier")
+
+    # ========== 1. 顶层分类后的路由 ==========
+    def route_after_intent_classifier(state: dict) -> str:
+        """
+        intent_classifier 之后的条件路由：
+        - report → report_intent
+        - knowledge → rag_retrieve
+        - out_of_domain → reject
+        - needs_clarification → clarify
+        """
+        if state.get("needs_clarification", False):
+            return "clarify"
+
+        category = state.get("intent_category", "report")
+        if category == "report":
+            return "report_intent"
+        elif category == "knowledge":
             return "rag_retrieve"
-        return "nlu"
+        else:  # out_of_domain
+            return "reject"
 
     graph.add_conditional_edges(
-        "intent_router",
-        route_after_intent,
-        {"rag_retrieve": "rag_retrieve", "nlu": "nlu"}
+        "intent_classifier",
+        route_after_intent_classifier,
+        {
+            "report_intent": "report_intent",
+            "rag_retrieve": "rag_retrieve",
+            "reject": "reject",
+            "clarify": "clarify",
+        }
     )
 
-    # RAG 流程：检索 -> 回答生成 -> 结束
-    graph.add_edge("rag_retrieve", "rag_generate_answer")
-    graph.add_edge("rag_generate_answer", END)
-
-    # NLU -> 条件判断：广告主处理 / 澄清 / Planner
-    def route_after_nlu(state: dict) -> str:
-        ambiguity = state.get("ambiguity", {})
-        query_intent = state.get("query_intent", {})
-
-        # 广告主相关的歧义（未找到匹配的广告主）路由到 advertiser_handle，直接给出友好提示
-        if ambiguity and ambiguity.get("has_ambiguity", False):
-            if ambiguity.get("type") == "advertiser_not_found":
-                return "advertiser_handle"
-            # 其他类型的歧义需要人机交互
-            return "hitl"
-
-        if query_intent.get("show_advertiser_list", False) or query_intent.get("need_advertiser_selection", False):
-            return "advertiser_handle"
-
+    # ========== 2. 报表意图后的路由 ==========
+    def route_after_report_intent(state: dict) -> str:
+        """
+        report_intent 之后的条件路由：
+        - needs_clarification → clarify
+        - 信息完整 → planner
+        """
+        if state.get("needs_clarification", False):
+            return "clarify"
         return "planner"
 
     graph.add_conditional_edges(
-        "nlu",
-        route_after_nlu,
-        {"hitl": "hitl", "advertiser_handle": "advertiser_handle", "planner": "planner"}
+        "report_intent",
+        route_after_report_intent,
+        {
+            "clarify": "clarify",
+            "planner": "planner",
+        }
     )
 
-    # advertiser_handle -> 结束（直接返回列表或提示）
-    graph.add_edge("advertiser_handle", END)
+    # ========== 3. 澄清后的路由 ==========
+    def route_after_clarify(state: dict) -> str:
+        """
+        clarify 之后的条件路由：
+        - reentry_top → intent_classifier
+        - continue_report → report_intent
+        - continue_knowledge → rag_retrieve
+        - max_reentry_exceeded → reject（重置）
+        """
+        clarify_next = state.get("clarify_next", "reentry_top")
 
-    # HITL -> 回到 NLU 重新理解
-    graph.add_edge("hitl", "nlu")
-
-    # Planner -> 条件判断（可能也需要确认）
-    def need_confirm_after_planner(state: dict) -> str:
-        warnings = state.get("query_warnings", [])
-        # 如果有需要用户确认的警告，去HITL
-        for warning in warnings:
-            if "need_confirm" in warning:
-                return "hitl"
-        return "executor"
+        if clarify_next == "reentry_top":
+            return "intent_classifier"
+        elif clarify_next == "continue_report":
+            return "report_intent"
+        elif clarify_next == "continue_knowledge":
+            return "rag_retrieve"
+        else:  # max_reentry_exceeded
+            # 重置 reject_reason
+            state["reject_reason"] = "top_level"
+            return "reject"
 
     graph.add_conditional_edges(
-        "planner",
-        need_confirm_after_planner,
-        {"hitl": "hitl", "executor": "executor"}
+        "clarify",
+        route_after_clarify,
+        {
+            "intent_classifier": "intent_classifier",
+            "report_intent": "report_intent",
+            "rag_retrieve": "rag_retrieve",
+            "reject": "reject",
+        }
     )
 
-    # Executor -> Insight -> Analyst
+    # ========== 4. RAG 流程 ==========
+    graph.add_edge("rag_retrieve", "rag_generate_answer")
+    graph.add_edge("rag_generate_answer", END)
+
+    # ========== 5. 报表下游流程（保持不变） ==========
+    # Planner -> Executor -> Insight -> Analyst -> Reporter
+    graph.add_edge("planner", "executor")
     graph.add_edge("executor", "insight")
     graph.add_edge("insight", "analyst")
 
@@ -100,10 +138,13 @@ def build_graph():
         {"planner": "planner", "reporter": "reporter"}
     )
 
-    # Reporter -> 结束
     graph.add_edge("reporter", END)
 
-    return graph.compile(interrupt_before=["hitl"])
+    # ========== 6. 拒答流程 ==========
+    graph.add_edge("reject", END)
 
-# 导出编译好的Graph
+    # ========== 编译（interrupt_before 改为 clarify） ==========
+    return graph.compile(interrupt_before=["clarify"])
+
+# 导出编译好的 Graph
 app = build_graph()

@@ -11,6 +11,10 @@ from src.agents.analyst_agent import analyst_agent
 from src.agents.reporter_agent import reporter_agent, format_comparison_report
 from src.agents.insight_agent import insight_agent, insights_to_highlights
 from src.services.advertiser_service import get_all_advertisers
+from src.intent.top_classifier import get_top_classifier
+from src.intent.report_intent import get_report_intent_analyzer
+from src.intent.clarify_node import clarify_node as clarify_node_impl, build_clarification_state
+from src.intent.reject_node import reject_node as reject_node_impl
 
 logger = logging.getLogger(__name__)
 
@@ -498,3 +502,112 @@ async def insight_node(state: dict) -> dict:
             "insights": None,
             "error": {"type": "insight_error", "message": str(e)}
         }
+
+
+# ========== 新意图识别架构的节点包装函数 ==========
+
+async def intent_classifier_node(state: dict) -> dict:
+    """顶层意图分类节点"""
+    user_input = state.get("user_input", "")
+    conversation_history = state.get("conversation_history", [])
+
+    classifier = get_top_classifier()
+    result = await classifier.classify(user_input, conversation_history)
+
+    updates = {
+        "intent_category": result.category,
+        "intent_confidence": result.confidence,
+        "intent_classify_source": result.source,
+        "intent_reason": result.reason,
+        # 保持向后兼容，同时设置旧字段
+        "query_type": "knowledge" if result.category == "knowledge" else "report",
+    }
+
+    # 低置信度触发澄清
+    if result.confidence < classifier.confidence_threshold:
+        from src.intent.models import ClarificationInfo
+        clarification = ClarificationInfo(
+            type="intent_confirm",
+            question=f"我不确定你是想查询广告数据还是了解广告知识。你能明确一下吗？",
+            options=[
+                {"value": "report", "label": "查询广告数据"},
+                {"value": "knowledge", "label": "了解广告知识"},
+            ],
+            allow_custom_input=False,
+            missing_fields=[],
+        )
+        updates.update(build_clarification_state(clarification))
+
+    return updates
+
+
+async def report_intent_node(state: dict) -> dict:
+    """报表意图识别节点"""
+    user_input = state.get("user_input", "")
+    conversation_history = state.get("conversation_history", [])
+    existing_advertiser_ids = state.get("advertiser_ids", [])
+
+    # 从上下文中获取已有的时间范围和层级
+    existing_time_range = None
+    existing_ad_level = None
+    report_intent_result = state.get("report_intent_result")
+    if report_intent_result:
+        existing_time_range = report_intent_result.get("time_range")
+        existing_ad_level = report_intent_result.get("ad_level")
+
+    analyzer = get_report_intent_analyzer()
+    result, clarification = await analyzer.analyze(
+        user_input,
+        conversation_history,
+        existing_advertiser_ids=existing_advertiser_ids,
+        existing_time_range=existing_time_range,
+        existing_ad_level=existing_ad_level,
+    )
+
+    updates = {}
+
+    if result:
+        # 将 ReportIntentResult 转换为 dict 存入 state
+        result_dict = result.model_dump()
+        updates["report_intent_result"] = result_dict
+
+        # 同时填充旧的 query_intent 字段，保持向后兼容
+        query_intent = {
+            "advertiser_ids": result.advertiser_ids,
+            "metrics": result.metrics,
+            "dimensions": result.group_by,
+            "filters": result.filters,
+            "is_comparison": result.is_comparison,
+        }
+        if result.time_range:
+            query_intent["time_range"] = {
+                "start": result.time_range.start_date,
+                "end": result.time_range.end_date,
+            }
+        if result.compare_time_range:
+            query_intent["compare_time_range"] = {
+                "start": result.compare_time_range.start_date,
+                "end": result.compare_time_range.end_date,
+            }
+        query_intent["ad_level"] = result.ad_level or "campaign"
+        updates["query_intent"] = query_intent
+        updates["advertiser_ids"] = result.advertiser_ids
+
+    if clarification:
+        # 需要澄清
+        updates.update(build_clarification_state(clarification))
+    else:
+        # 不需要澄清，确保标志位为 False
+        updates["needs_clarification"] = False
+
+    return updates
+
+
+async def clarify_node_entry(state: dict) -> dict:
+    """澄清节点入口（包装 clarify_node）"""
+    return await clarify_node_impl(state)
+
+
+async def reject_node_entry(state: dict) -> dict:
+    """拒答节点入口（包装 reject_node）"""
+    return await reject_node_impl(state)

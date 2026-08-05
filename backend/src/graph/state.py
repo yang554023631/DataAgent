@@ -21,6 +21,29 @@ class AdReportState(TypedDict):
     user_input: str
     conversation_history: Annotated[List[Dict], append_history]
 
+    # ========== 新意图识别架构字段 ==========
+    # 顶层分类结果
+    intent_category: Optional[str]       # report / knowledge / out_of_domain
+    intent_confidence: float             # 0.0 ~ 1.0
+    intent_classify_source: str          # rule_fastpath / llm
+    intent_reason: str                   # 判断依据
+
+    # 回退计数
+    reentry_count: int                   # 回退到第一层的次数，默认 0
+
+    # 澄清相关
+    needs_clarification: bool            # 是否需要澄清（触发 interrupt）
+    clarification: Optional[Dict]        # {type, question, options, allow_custom_input, missing_fields}
+    clarify_next: Optional[str]          # 澄清后下一步方向
+    pending_clarification_input: Optional[str]  # 澄清后的用户输入（待处理）
+
+    # 拒答相关
+    reject_reason: Optional[str]         # top_level / knowledge_scope
+
+    # 报表意图（扩展，替代原 query_intent 的部分职责）
+    report_intent_result: Optional[Dict]  # ReportIntentResult 的 dict 形式
+
+    # ========== 旧字段（保持向后兼容） ==========
     # RAG 相关字段
     query_type: Optional[str]  # "report" 或 "knowledge"
     rag_context: List[str]

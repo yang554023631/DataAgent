@@ -54,12 +54,13 @@ class IntentLLMClient:
 
         for attempt in range(1, self.max_retries + 1):
             try:
-                prompt = ChatPromptTemplate.from_messages([
-                    ("system", system_prompt),
-                    ("human", user_prompt),
-                ])
-                chain = prompt | self.llm
-                response = await chain.ainvoke({})
+                # 直接调用 LLM，不使用 ChatPromptTemplate 以避免花括号解析问题
+                from langchain_core.messages import SystemMessage, HumanMessage
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_prompt),
+                ]
+                response = await self.llm.ainvoke(messages)
                 content = response.content.strip()
 
                 if attempt > 1:

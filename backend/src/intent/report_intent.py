@@ -35,7 +35,7 @@ REQUIRED_FIELDS_PRIORITY = [
     "advertiser_ids",
     "time_range",
     "metrics",
-    "ad_level",
+    # ad_level 不再是必填，默认使用 campaign
 ]
 
 
@@ -295,20 +295,10 @@ class ReportIntentAnalyzer:
                 missing_fields=["metrics"],
             )
 
-        # 4. 广告层级
+        # 4. 广告层级（不再必填，默认使用 campaign）
         if not result.ad_level:
-            options = [
-                {"value": "campaign", "label": "计划层级"},
-                {"value": "ad_group", "label": "广告组层级"},
-                {"value": "creative", "label": "素材/创意层级"},
-            ]
-            return False, ClarificationInfo(
-                type="missing_ad_level",
-                question="请问你想看哪个广告层级的数据？",
-                options=options,
-                allow_custom_input=False,
-                missing_fields=["ad_level"],
-            )
+            logger.info("ad_level 未指定，默认使用 campaign")
+            result.ad_level = "campaign"
 
         return True, None
 

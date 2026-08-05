@@ -133,7 +133,7 @@ class TestRequiredFieldsCheck:
         assert len(clarification.options) > 0
 
     def test_missing_ad_level(self):
-        """缺广告层级 → 触发澄清"""
+        """缺广告层级 → 默认使用 campaign，不触发澄清"""
         result = ReportIntentResult(
             advertiser_ids=["123"],
             time_range=ReportTimeRange(
@@ -143,9 +143,9 @@ class TestRequiredFieldsCheck:
             ad_level=None,
         )
         ok, clarification = self.analyzer.check_required_fields(result)
-        assert ok is False
-        assert clarification.type == "missing_ad_level"
-        assert len(clarification.options) == 3  # 3 个层级
+        assert ok is True
+        assert clarification is None
+        assert result.ad_level == "campaign"  # 默认设置为 campaign
 
     def test_multiple_missing(self):
         """多个字段缺失 → 选第一个最关键的发起澄清"""
