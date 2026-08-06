@@ -40,3 +40,4 @@ patterns:
     dsl_template_summary: >
       query: bool.must advertiser_id + data_date range + audience_type + data_type
       aggs: by_audience terms 按 audience_tag_value 聚合，嵌套 metric_sum sum 聚合
+

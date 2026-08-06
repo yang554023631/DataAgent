@@ -5,8 +5,13 @@
 import os
 import logging
 import yaml
+import hashlib
+import uuid
 from pathlib import Path
 from typing import List, Tuple
+from sqlalchemy import select
+from src.config.context import truncate_log
+from src.rag.models import RagDocument, RagChunk
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +97,7 @@ def _load_yaml_file(file_path: Path) -> dict:
         return yaml.safe_load(f)
 
 
-def _yaml_to_documents(yaml_data: dict, file_path: Path) -> List[Tuple[str, str, str]]:
+def _yaml_to_documents(yaml_data: dict) -> List[Tuple[str, str, str]]:
     """
     将一个 YAML 文件中的 schema 定义转成 (title, doc_type, content_markdown) 列表
 
@@ -104,9 +109,9 @@ def _yaml_to_documents(yaml_data: dict, file_path: Path) -> List[Tuple[str, str,
     docs = []
 
     if "index" in yaml_data:
-        idx = yaml_data["index"]
-        title = f"索引: {idx['index_name']}"
-        content = _index_yaml_to_markdown(idx)
+        index_data = yaml_data["index"]
+        title = f"索引: {index_data['index_name']}"
+        content = _index_yaml_to_markdown(index_data)
         docs.append((title, "schema", content))
 
     if "fields" in yaml_data:
@@ -159,7 +164,7 @@ class SchemaSyncer:
                     count = self._sync_single_file(yaml_file, db)
                     success += count
                 except Exception as e:
-                    logger.error(f"Schema同步失败: 文件={yaml_file.name}, error={e}")
+                    logger.exception(f"Schema同步失败: 文件={truncate_log(yaml_file.name)}, error={truncate_log(str(e))}")
                     failed += 1
         finally:
             db.close()
@@ -170,12 +175,7 @@ class SchemaSyncer:
     def _sync_single_file(self, file_path: Path, db) -> int:
         """同步单个 YAML 文件，返回成功写入的文档数"""
         yaml_data = _load_yaml_file(file_path)
-        documents = _yaml_to_documents(yaml_data, file_path)
-
-        from src.rag.models import RagDocument, RagChunk
-        from sqlalchemy import select
-        import hashlib
-        import uuid
+        documents = _yaml_to_documents(yaml_data)
 
         count = 0
         for title, doc_type, content in documents:
@@ -187,8 +187,8 @@ class SchemaSyncer:
                 select(RagDocument).where(RagDocument.file_path == file_path_str)
             ).scalar_one_or_none()
 
-            if existing and existing.chunks and existing.chunks[0].content_hash == content_hash:
-                logger.debug(f"Schema文档未变更，跳过: {title}")
+            if existing and existing.chunks and len(existing.chunks) > 0 and existing.chunks[0].content_hash == content_hash:
+                logger.debug(f"Schema文档未变更，跳过: {truncate_log(title)}")
                 count += 1
                 continue
 
@@ -196,14 +196,14 @@ class SchemaSyncer:
             embedding = self._embedding_provider.embed(content)
 
             if existing:
-                # 更新
+                # 更新现有文档和 chunk
                 existing.title = title
                 existing.is_active = True
                 existing.chunks[0].content = content
                 existing.chunks[0].content_hash = content_hash
                 existing.chunks[0].embedding = embedding
             else:
-                # 新建
+                # 新建文档和 chunk
                 doc = RagDocument(
                     id=uuid.uuid4(),
                     title=title,
@@ -226,7 +226,7 @@ class SchemaSyncer:
             count += 1
 
         db.commit()
-        logger.info(f"Schema文件同步完成: 文件={file_path.name}, 文档数={count}")
+        logger.info(f"Schema文件同步完成: 文件={truncate_log(file_path.name)}, 文档数={count}")
         return count
 
 

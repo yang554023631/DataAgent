@@ -77,3 +77,4 @@ fields:
     index: ad_stat_data
     field_type: numeric
     description: 指标数值，配合 data_type 使用
+

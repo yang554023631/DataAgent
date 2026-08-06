@@ -22,3 +22,4 @@ fields:
     index: adgroup
     field_type: datetime
     description: 投放结束时间
+

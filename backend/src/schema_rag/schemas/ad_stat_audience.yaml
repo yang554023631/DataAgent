@@ -88,3 +88,4 @@ fields:
     index: ad_stat_audience
     field_type: numeric
     description: 指标数值
+
