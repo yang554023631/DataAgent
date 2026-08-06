@@ -119,14 +119,7 @@ async def test_graph_no_advertiser_triggers_selection():
 
 @pytest.mark.asyncio
 async def test_graph_nl_dsl_path():
-    """测试触发 nl_dsl 路由的查询流程"""
-    graph = build_graph()
-
-    initial_state = create_test_state(
-        "test-session-006",
-        "列出近7天消耗大于1000的计划"
-    )
-
+    """测试触发 nl_dsl 路由的查询流程（完整 Graph 流转验证）"""
     # 模拟 NL→DSL 成功结果
     mock_result = NlDslResult(
         display_type="list",
@@ -135,9 +128,12 @@ async def test_graph_nl_dsl_path():
         metadata={"success": True, "total_rows": 2}
     )
 
-    # mock 所有外部依赖
+    # mock 所有外部依赖和节点（patch builder 模块中的引用）
     with patch('src.nl_dsl.dsl_generator.get_dsl_generator') as mock_get_generator, \
-         patch('src.nl_dsl.self_reflection_executor.get_self_reflection_executor') as mock_get_executor:
+         patch('src.nl_dsl.self_reflection_executor.get_self_reflection_executor') as mock_get_executor, \
+         patch('src.graph.builder.report_intent_node') as mock_report_intent, \
+         patch('src.graph.builder.intent_classifier_node') as mock_classifier, \
+         patch('src.graph.builder.reporter_node') as mock_reporter:
 
         mock_generator = AsyncMock()
         mock_generator.plan_query = AsyncMock(return_value=MagicMock(steps=[], final_output="step_1.output"))
@@ -146,6 +142,31 @@ async def test_graph_nl_dsl_path():
         mock_executor = AsyncMock()
         mock_executor.execute_plan = AsyncMock(return_value=mock_result)
         mock_get_executor.return_value = mock_executor
+
+        # mock 上游节点返回 nl_dsl 路由
+        mock_classifier.return_value = {"intent_category": "report"}
+        mock_report_intent.return_value = {
+            "query_route": "nl_dsl",
+            "route_reason": "探索式列表查询",
+            "analysis_type": "exploratory_query",
+            "report_intent_result": {
+                "time_range": {"start_date": "2026-08-01", "end_date": "2026-08-07"},
+                "advertiser_ids": ["1"],
+            },
+            "advertiser_ids": ["1"],
+            "needs_clarification": False,
+        }
+        # reporter 透传 final_report
+        async def reporter_side_effect(state):
+            return {"final_report": state.get("final_report"), "error": None}
+        mock_reporter.side_effect = reporter_side_effect
+
+        graph = build_graph()
+
+        initial_state = create_test_state(
+            "test-session-006",
+            "列出近7天消耗大于1000的计划"
+        )
 
         # 执行 graph，添加 config 以通过 checkpointer 验证
         result = await graph.ainvoke(

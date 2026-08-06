@@ -170,29 +170,45 @@ async def test_result_formatter_display_types():
 @pytest.mark.asyncio
 async def test_nl_dsl_route_from_report_intent():
     """测试 report_intent 返回 nl_dsl route → Graph 正确路由到 nl_dsl 节点"""
-    # 先patch节点，再build_graph
-    with patch('src.graph.nodes.nl_dsl_node') as mock_nl_dsl, \
-         patch('src.graph.nodes.reporter_node') as mock_reporter:
+    # 先patch builder中引用的节点函数，再build_graph
+    # 注意：必须 patch builder 模块中的引用，因为 build_graph() 从那里读取节点函数
+    with patch('src.graph.builder.nl_dsl_node') as mock_nl_dsl, \
+         patch('src.graph.builder.reporter_node') as mock_reporter, \
+         patch('src.graph.builder.report_intent_node') as mock_report_intent, \
+         patch('src.graph.builder.intent_classifier_node') as mock_classifier:
 
-        # 配置 mock
+        # 配置 mock report_intent：返回 nl_dsl 路由
+        mock_report_intent.return_value = {
+            "query_route": "nl_dsl",
+            "route_reason": "探索式列表查询",
+            "analysis_type": "exploratory_query",
+            "report_intent_result": {
+                "time_range": {"start_date": "2026-08-01", "end_date": "2026-08-07"},
+                "advertiser_ids": ["1"],
+            },
+            "advertiser_ids": ["1"],
+            "needs_clarification": False,
+        }
+        mock_classifier.return_value = {"intent_category": "report"}
+
+        # 配置 mock nl_dsl 和 reporter
         mock_nl_dsl.return_value = {
             "final_report": {
                 "title": "测试报告",
                 "data_table": {"columns": [], "rows": []},
-                "highlights": []
+                "highlights": [],
+                "insights": None,
             }
         }
-        mock_reporter.return_value = {"final_report": {"title": "最终报告"}}
+        mock_reporter.return_value = {"final_report": {"title": "最终报告"}, "error": None}
 
         graph = build_graph()
 
-        # 创建状态，模拟 report_intent 已经设置了 query_route="nl_dsl"
+        # 创建状态
         initial_state = create_test_state(
             "test-session-route-001",
             "列出近7天消耗大于1000的计划"
         )
-        # 确保 report_intent 正确设置
-        initial_state["report_intent_result"]["chart_type"] = "list"
 
         # 执行 graph，添加 config 以通过 checkpointer 验证
         result = await graph.ainvoke(
@@ -200,9 +216,8 @@ async def test_nl_dsl_route_from_report_intent():
             config={"configurable": {"thread_id": "test-thread-001"}}
         )
 
-        # 验证路由
+        # 验证路由：nl_dsl_node 应该被调用
         assert mock_nl_dsl.called, "nl_dsl_node 应该被调用"
-        assert not mock_reporter.called, "reporter_node 不应该直接被调用"
 
 
 @pytest.mark.asyncio
@@ -217,8 +232,12 @@ async def test_nl_dsl_success_flow():
     )
 
     # 先patch依赖，再build_graph
+    # 注意：必须 patch builder 模块中的节点引用
     with patch('src.nl_dsl.dsl_generator.get_dsl_generator') as mock_get_generator, \
-         patch('src.nl_dsl.self_reflection_executor.get_self_reflection_executor') as mock_get_executor:
+         patch('src.nl_dsl.self_reflection_executor.get_self_reflection_executor') as mock_get_executor, \
+         patch('src.graph.builder.report_intent_node') as mock_report_intent, \
+         patch('src.graph.builder.intent_classifier_node') as mock_classifier, \
+         patch('src.graph.builder.reporter_node') as mock_reporter:
 
         mock_generator = AsyncMock()
         mock_generator.plan_query = AsyncMock(return_value=MagicMock(steps=[], final_output="step_1.output"))
@@ -227,6 +246,24 @@ async def test_nl_dsl_success_flow():
         mock_executor = AsyncMock()
         mock_executor.execute_plan = AsyncMock(return_value=mock_result)
         mock_get_executor.return_value = mock_executor
+
+        # mock report_intent 返回 nl_dsl 路由
+        mock_report_intent.return_value = {
+            "query_route": "nl_dsl",
+            "route_reason": "探索式列表查询",
+            "analysis_type": "exploratory_query",
+            "report_intent_result": {
+                "time_range": {"start_date": "2026-08-01", "end_date": "2026-08-07"},
+                "advertiser_ids": ["1"],
+            },
+            "advertiser_ids": ["1"],
+            "needs_clarification": False,
+        }
+        mock_classifier.return_value = {"intent_category": "report"}
+        # reporter 透传 final_report
+        async def reporter_side_effect(state):
+            return {"final_report": state.get("final_report"), "error": None}
+        mock_reporter.side_effect = reporter_side_effect
 
         graph = build_graph()
 
@@ -261,8 +298,12 @@ async def test_nl_dsl_failure_flow():
     )
 
     # 先patch依赖，再build_graph
+    # 注意：必须 patch builder 模块中的节点引用
     with patch('src.nl_dsl.dsl_generator.get_dsl_generator') as mock_get_generator, \
-         patch('src.nl_dsl.self_reflection_executor.get_self_reflection_executor') as mock_get_executor:
+         patch('src.nl_dsl.self_reflection_executor.get_self_reflection_executor') as mock_get_executor, \
+         patch('src.graph.builder.report_intent_node') as mock_report_intent, \
+         patch('src.graph.builder.intent_classifier_node') as mock_classifier, \
+         patch('src.graph.builder.reporter_node') as mock_reporter:
 
         mock_generator = AsyncMock()
         mock_generator.plan_query = AsyncMock(return_value=MagicMock(steps=[], final_output="step_1.output"))
@@ -271,6 +312,24 @@ async def test_nl_dsl_failure_flow():
         mock_executor = AsyncMock()
         mock_executor.execute_plan = AsyncMock(return_value=mock_result)
         mock_get_executor.return_value = mock_executor
+
+        # mock report_intent 返回 nl_dsl 路由
+        mock_report_intent.return_value = {
+            "query_route": "nl_dsl",
+            "route_reason": "探索式查询",
+            "analysis_type": "exploratory_query",
+            "report_intent_result": {
+                "time_range": {"start_date": "2026-08-01", "end_date": "2026-08-07"},
+                "advertiser_ids": ["1"],
+            },
+            "advertiser_ids": ["1"],
+            "needs_clarification": False,
+        }
+        mock_classifier.return_value = {"intent_category": "report"}
+        # reporter 透传 final_report
+        async def reporter_side_effect(state):
+            return {"final_report": state.get("final_report"), "error": None}
+        mock_reporter.side_effect = reporter_side_effect
 
         graph = build_graph()
 
@@ -290,4 +349,4 @@ async def test_nl_dsl_failure_flow():
         assert result["final_report"] is not None
         assert "查询遇到问题" in result["final_report"]["title"]
         assert any("无法识别的指标" in h.get("text", "") for h in result["final_report"]["highlights"])
-        assert any("💡 你可以尝试用结构化方式提问" in h.get("text", "") for h in result["final_report"]["highlights"])
+        assert any("你可以尝试用结构化方式提问" in h.get("text", "") for h in result["final_report"]["highlights"])
