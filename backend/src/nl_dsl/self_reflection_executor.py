@@ -23,11 +23,13 @@ class SelfReflectionExecutor:
         dsl_generator=None,
         max_attempts: int = 3,
         query_timeout: int = 30,
+        max_size: int = 1000,
     ):
         self._es = es_client
         self._generator = dsl_generator
         self.max_attempts = max_attempts
         self.query_timeout = query_timeout
+        self.max_size = max_size
 
     async def execute_plan(
         self,
@@ -199,11 +201,11 @@ class SelfReflectionExecutor:
         if self._es is None:
             raise RuntimeError("ES 客户端未初始化")
 
-        # size 截断
+        # size 截断（与 DslValidator.max_size 保持一致）
         size = dsl.get("size", 10)
-        if isinstance(size, int) and size > 1000:
+        if isinstance(size, int) and size > self.max_size:
             dsl = dict(dsl)
-            dsl["size"] = 1000
+            dsl["size"] = self.max_size
 
         response = self._es.search(
             index=index_name,

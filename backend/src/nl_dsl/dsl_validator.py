@@ -41,9 +41,10 @@ class DslValidator:
     """
 
     # 禁止的顶层 key（写操作 / 脚本）
+    # 注意：_source 是安全的字段过滤，不在禁止列表中
     FORBIDDEN_TOP_LEVEL_KEYS = {
         "script", "script_fields", "update", "doc", "upsert",
-        "source_to_create", "_source",
+        "source_to_create",
     }
 
     # 禁止的 query 类型（写操作相关）
@@ -96,12 +97,15 @@ class DslValidator:
 
         # 4. query 部分校验
         query = dsl.get("query", {})
+        post_filter = dsl.get("post_filter")
         if query:
             self._check_query_forbidden_keys(query, result)
-            if self.require_advertiser_filter:
-                self._check_advertiser_filter(query, result)
-            if self.require_time_filter:
-                self._check_time_filter(query, result)
+        if post_filter and isinstance(post_filter, dict):
+            self._check_query_forbidden_keys(post_filter, result)
+        if self.require_advertiser_filter:
+            self._check_advertiser_filter(query, result, post_filter)
+        if self.require_time_filter:
+            self._check_time_filter(query, result, post_filter)
 
         # 5. size 上限
         size = dsl.get("size", 10)
@@ -137,15 +141,21 @@ class DslValidator:
                         for item in items:
                             self._check_query_forbidden_keys(item, result)
 
-    def _check_advertiser_filter(self, query: dict, result: ValidationResult):
-        """检查是否包含 advertiser_id 过滤"""
-        found = self._find_field_in_query(query, "advertiser_id")
+    def _check_advertiser_filter(self, query: dict, result: ValidationResult, post_filter: dict = None):
+        """检查是否包含 advertiser_id 过滤（query 和 post_filter 都算）"""
+        found = (
+            self._find_field_in_query(query, "advertiser_id")
+            or (post_filter and self._find_field_in_query(post_filter, "advertiser_id"))
+        )
         if not found:
             result.add_error("缺少 advertiser_id 过滤条件，不允许全平台查询")
 
-    def _check_time_filter(self, query: dict, result: ValidationResult):
-        """检查是否包含时间范围过滤"""
-        found = self._find_field_in_query(query, "data_date")
+    def _check_time_filter(self, query: dict, result: ValidationResult, post_filter: dict = None):
+        """检查是否包含时间范围过滤（query 和 post_filter 都算）"""
+        found = (
+            self._find_field_in_query(query, "data_date")
+            or (post_filter and self._find_field_in_query(post_filter, "data_date"))
+        )
         if not found:
             result.add_error("缺少 data_date 时间范围过滤条件")
 
