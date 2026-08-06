@@ -1,0 +1,79 @@
+index:
+  index_name: ad_stat_data
+  description: >
+    广告报表事实表，存储按天聚合的广告效果数据。
+    数据为长表结构，不同指标通过 data_type 字段区分。
+    支持按广告主、计划、单元、创意层级查询，支持时间范围过滤和多维度聚合。
+  supported_analysis_types:
+    - trend: 趋势分析（按时间维度聚合）
+    - comparison: 横向对比（按实体维度对比）
+    - ranking: 排名分析（Top N 实体）
+    - list: 列表查询（满足条件的实体列表）
+    - qa: 数值问答（单个指标值）
+    - detail: 明细查询（多列明细数据）
+  hierarchy_fields:
+    - advertiser_id: 广告主ID（最上层）
+    - campaign_id: 计划ID
+    - adgroup_id: 单元ID
+    - creative_id: 创意ID（最下层）
+  time_field: data_date
+  metric_field: data_value
+  metric_type_field: data_type
+
+fields:
+  - field_name: data_date
+    index: ad_stat_data
+    field_type: date
+    description: 数据日期，按天聚合
+  - field_name: advertiser_id
+    index: ad_stat_data
+    field_type: integer
+    description: 广告主ID
+  - field_name: campaign_id
+    index: ad_stat_data
+    field_type: integer
+    description: 广告计划ID
+  - field_name: adgroup_id
+    index: ad_stat_data
+    field_type: integer
+    description: 广告单元ID
+  - field_name: creative_id
+    index: ad_stat_data
+    field_type: integer
+    description: 创意ID
+  - field_name: channel
+    index: ad_stat_data
+    field_type: string
+    description: 投放渠道
+  - field_name: industry
+    index: ad_stat_data
+    field_type: string
+    description: 行业
+  - field_name: data_type
+    index: ad_stat_data
+    field_type: integer
+    description: 指标类型编码，用于区分不同的指标
+    enumeration:
+      - value: 1
+        label: 曝光
+        alias: [曝光量, impressions, 展示量, 展现]
+      - value: 2
+        label: 点击
+        alias: [点击量, clicks]
+      - value: 3
+        label: 消耗
+        alias: [花费, cost, 成本, 消费]
+      - value: 4
+        label: 转化
+        alias: [转化量, conversions, 成交, 订单]
+      - value: 5
+        label: 触达
+        alias: [reach, 覆盖人数, 到达]
+      - value: 6
+        label: 频次
+        alias: [frequency, 平均频次]
+        note: 存储值为实际值的100倍，使用时需除以100
+  - field_name: data_value
+    index: ad_stat_data
+    field_type: numeric
+    description: 指标数值，配合 data_type 使用

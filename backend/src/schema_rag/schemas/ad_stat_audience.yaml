@@ -1,0 +1,90 @@
+index:
+  index_name: ad_stat_audience
+  description: >
+    广告受众维度统计表，存储按受众维度拆分的广告效果数据。
+    受众类型包括性别、年龄、操作系统、兴趣、地域等。
+  supported_analysis_types:
+    - audience: 受众分布分析
+    - audience_comparison: 受众对比分析
+    - trend: 受众趋势分析
+  hierarchy_fields:
+    - advertiser_id: 广告主ID
+    - campaign_id: 计划ID
+    - adgroup_id: 单元ID
+    - creative_id: 创意ID
+  time_field: data_date
+  metric_field: data_value
+  metric_type_field: data_type
+
+fields:
+  - field_name: data_date
+    index: ad_stat_audience
+    field_type: date
+    description: 数据日期
+  - field_name: advertiser_id
+    index: ad_stat_audience
+    field_type: integer
+    description: 广告主ID
+  - field_name: campaign_id
+    index: ad_stat_audience
+    field_type: integer
+    description: 计划ID
+  - field_name: adgroup_id
+    index: ad_stat_audience
+    field_type: integer
+    description: 单元ID
+  - field_name: creative_id
+    index: ad_stat_audience
+    field_type: integer
+    description: 创意ID
+  - field_name: audience_type
+    index: ad_stat_audience
+    field_type: integer
+    description: 受众类型编码
+    enumeration:
+      - value: 1
+        label: 性别
+        alias: [gender, 男女]
+      - value: 2
+        label: 年龄
+        alias: [age, 年龄段]
+      - value: 3
+        label: 操作系统
+        alias: [os, system, 系统]
+      - value: 4
+        label: 兴趣
+        alias: [interest, 兴趣标签]
+      - value: 5
+        label: 操作系统版本
+        alias: [os_version, 系统版本]
+      - value: 6
+        label: 国家
+        alias: [country, 国家地区]
+      - value: 7
+        label: 城市
+        alias: [city, 城市级别]
+  - field_name: audience_tag_value
+    index: ad_stat_audience
+    field_type: integer
+    description: 受众标签编码值，配合 audience_type 使用
+  - field_name: data_type
+    index: ad_stat_audience
+    field_type: integer
+    description: 指标类型编码（同 ad_stat_data）
+    enumeration:
+      - value: 1
+        label: 曝光
+        alias: [曝光量, impressions]
+      - value: 2
+        label: 点击
+        alias: [点击量, clicks]
+      - value: 3
+        label: 消耗
+        alias: [花费, cost]
+      - value: 4
+        label: 转化
+        alias: [转化量, conversions]
+  - field_name: data_value
+    index: ad_stat_audience
+    field_type: numeric
+    description: 指标数值

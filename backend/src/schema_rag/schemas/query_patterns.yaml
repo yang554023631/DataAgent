@@ -1,0 +1,42 @@
+patterns:
+  - pattern_name: 按天聚合消耗趋势
+    description: 查询某个广告主一段时间内的每日消耗趋势
+    index: ad_stat_data
+    user_query_example: "广告主6最近7天的消耗趋势"
+    dsl_template_summary: >
+      query: bool.must 包含 advertiser_id term、data_date range、data_type=3 (消耗)
+      aggs: by_date 使用 date_histogram 按天聚合，嵌套 total_value sum 聚合 data_value
+
+  - pattern_name: 按实体分组对比
+    description: 查询某个广告主下各计划/单元的指标对比
+    index: ad_stat_data
+    user_query_example: "广告主6各计划的消耗对比"
+    dsl_template_summary: >
+      query: bool.must 包含 advertiser_id term、data_date range、data_type 过滤
+      aggs: by_entity 使用 terms 按 campaign_id/adgroup_id 聚合，
+            嵌套各指标的 filter+sum 聚合（注意：因长表结构，每个指标用 filter agg + sum agg）
+
+  - pattern_name: Top N 排名
+    description: 按指标排序取 Top N 实体
+    index: ad_stat_data
+    user_query_example: "消耗Top 10的计划"
+    dsl_template_summary: >
+      query: bool.must 时间范围 + advertiser_id + data_type
+      aggs: by_entity terms 聚合，size=N，order 按指标值 desc 排序
+
+  - pattern_name: 聚合后过滤 (having)
+    description: 按某指标聚合后过滤满足条件的实体
+    index: ad_stat_data
+    user_query_example: "消耗大于10的计划列表"
+    dsl_template_summary: >
+      query: bool.must 时间范围 + advertiser_id + data_type
+      aggs: by_entity terms 聚合，嵌套 metric_sum sum 聚合，
+            再嵌套 having_filter bucket_selector pipeline agg 过滤 sum > 阈值
+
+  - pattern_name: 受众分布
+    description: 按受众维度统计指标分布
+    index: ad_stat_audience
+    user_query_example: "广告主6的性别分布"
+    dsl_template_summary: >
+      query: bool.must advertiser_id + data_date range + audience_type + data_type
+      aggs: by_audience terms 按 audience_tag_value 聚合，嵌套 metric_sum sum 聚合

@@ -25,3 +25,46 @@ class TestSchemaRetriever:
             mock_vr.retrieve.assert_called_once()
             call_kwargs = mock_vr.retrieve.call_args
             assert call_kwargs[1].get('doc_type') == 'schema'
+
+
+class TestSchemaSyncer:
+    def test_index_yaml_to_markdown(self):
+        """索引级 YAML 转 Markdown 文档"""
+        from src.schema_rag.sync import _index_yaml_to_markdown
+        yaml_data = {
+            "index_name": "ad_stat_data",
+            "description": "广告报表事实表",
+            "supported_analysis_types": ["trend", "comparison"],
+            "hierarchy_fields": [
+                {"advertiser_id": "广告主ID"},
+                {"campaign_id": "计划ID"},
+            ],
+            "time_field": "data_date",
+            "metric_field": "data_value",
+            "metric_type_field": "data_type",
+        }
+        md = _index_yaml_to_markdown(yaml_data)
+        assert "# 索引: ad_stat_data" in md
+        assert "广告报表事实表" in md
+        assert "trend" in md
+        assert "advertiser_id" in md
+
+    def test_field_yaml_to_markdown(self):
+        """字段级 YAML 转 Markdown 文档"""
+        from src.schema_rag.sync import _field_yaml_to_markdown
+        yaml_data = {
+            "field_name": "data_type",
+            "index": "ad_stat_data",
+            "field_type": "integer",
+            "description": "指标类型编码",
+            "enumeration": [
+                {"value": 1, "label": "曝光", "alias": ["曝光量", "impressions"]},
+                {"value": 3, "label": "消耗", "alias": ["花费", "cost"], "note": "单位：元"},
+            ],
+        }
+        md = _field_yaml_to_markdown(yaml_data)
+        assert "data_type" in md
+        assert "指标类型编码" in md
+        assert "曝光" in md
+        assert "消耗" in md
+        assert "单位：元" in md

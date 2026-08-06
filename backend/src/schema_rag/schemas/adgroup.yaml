@@ -1,0 +1,24 @@
+index:
+  index_name: adgroup
+  description: >
+    广告单元元数据表，存储单元基本信息。
+  supported_analysis_types:
+    - list: 单元列表查询
+    - qa: 单元信息查询
+  hierarchy_fields:
+    - ad_group_id: 单元ID
+  time_field: null
+
+fields:
+  - field_name: ad_group_id
+    index: adgroup
+    field_type: integer
+    description: 广告单元ID
+  - field_name: start_time
+    index: adgroup
+    field_type: datetime
+    description: 投放开始时间
+  - field_name: end_time
+    index: adgroup
+    field_type: datetime
+    description: 投放结束时间

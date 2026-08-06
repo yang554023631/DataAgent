@@ -1,0 +1,36 @@
+index:
+  index_name: advertiser
+  description: >
+    广告主元数据表，存储广告主基本信息。
+  supported_analysis_types:
+    - list: 广告主列表查询
+    - qa: 广告主信息查询
+  hierarchy_fields:
+    - advertiser_id: 广告主ID
+    - advertiser_name: 广告主名称
+  time_field: null
+
+fields:
+  - field_name: advertiser_id
+    index: advertiser
+    field_type: integer
+    description: 广告主ID
+  - field_name: advertiser_name
+    index: advertiser
+    field_type: string
+    description: 广告主名称
+  - field_name: is_deleted
+    index: advertiser
+    field_type: integer
+    description: 是否删除标记，0=正常，1=已删除
+  - field_name: status
+    index: advertiser
+    field_type: integer
+    description: 广告主状态
+    enumeration:
+      - value: 1
+        label: 正常
+      - value: 2
+        label: 惩罚
+      - value: 3
+        label: 欠费
