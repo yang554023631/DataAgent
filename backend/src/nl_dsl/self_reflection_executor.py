@@ -3,10 +3,9 @@
 负责执行查询计划，每步：生成 DSL → 校验 → 执行 → 结果检查
 失败则反思并重试，最多 max_attempts 次。
 """
-import json
 import time
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 
 from src.config.context import truncate_log
 from .models import QueryPlan, QueryStep, RetryInfo, NlDslResult
@@ -117,7 +116,7 @@ class SelfReflectionExecutor:
                     previous_dsl=last_dsl,
                 )
                 logger.info(
-                    f"NL→DSL第{attempt}次重试(步骤{step_id}): "
+                    f"NL→DSL第{attempt-1}次重试(步骤{step_id}): "
                     f"失败类型={retry_info.failure_type}"
                 )
 
@@ -235,7 +234,10 @@ class SelfReflectionExecutor:
         # 检查聚合结果是否也为空
         if has_aggs and total == 0:
             # 检查第一个聚合的 buckets
-            first_agg_key = list(aggs.keys())[0]
+            agg_keys = list(aggs.keys())
+            if not agg_keys:
+                return {"ok": False, "reason": "聚合结果为空（0个bucket）", "is_empty": True}
+            first_agg_key = agg_keys[0]
             first_agg = aggs[first_agg_key]
             if isinstance(first_agg, dict) and "buckets" in first_agg:
                 if len(first_agg["buckets"]) == 0:
@@ -271,6 +273,7 @@ def get_self_reflection_executor() -> SelfReflectionExecutor:
         from elasticsearch import Elasticsearch
         from .dsl_generator import get_dsl_generator
 
+        # TODO: 生产环境从配置文件读取 ES 地址
         es_client = Elasticsearch(["http://localhost:9200"])
         generator = get_dsl_generator()
 

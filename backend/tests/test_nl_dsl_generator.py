@@ -336,3 +336,57 @@ class TestSelfReflectionExecutor:
         assert result.metadata.get("success") is False
         assert result.metadata.get("retries") == 2  # 首次 + 2次重试
         assert result.metadata.get("final_error") is not None
+
+    @pytest.mark.asyncio
+    async def test_execute_with_search_exception(self):
+        """ES search 抛异常，重试后最终失败"""
+        from unittest.mock import MagicMock, AsyncMock
+        from src.nl_dsl.self_reflection_executor import SelfReflectionExecutor
+        from src.nl_dsl.dsl_validator import ValidationResult
+
+        # 校验通过，但执行时抛异常
+        async def mock_generate_step(step, advertiser_ids, time_range, prev_results=None, retry_info=None):
+            dsl = {"query": {"bool": {"must": [
+                {"term": {"advertiser_id": 6}},
+                {"range": {"data_date": {"gte": "2026-01-01", "lte": "2026-01-31"}}},
+            ]}}, "size": 10}
+            vr = ValidationResult()
+            return dsl, vr
+
+        mock_generator = MagicMock()
+        mock_generator.generate_step = mock_generate_step
+
+        # ES search 始终抛异常
+        search_call_count = 0
+        def mock_search(index, body, request_timeout):
+            nonlocal search_call_count
+            search_call_count += 1
+            raise Exception("Connection timeout: ES cluster not reachable")
+
+        mock_es = MagicMock()
+        mock_es.search.side_effect = mock_search
+
+        executor = SelfReflectionExecutor(
+            es_client=mock_es,
+            dsl_generator=mock_generator,
+            max_attempts=3,
+        )
+
+        from src.nl_dsl.models import QueryPlan, QueryStep
+        plan = QueryPlan(steps=[
+            QueryStep(step_id="step_1", description="test", index="ad_stat_data",
+                      output_fields=[], purpose="test")
+        ], final_output="step_1.output")
+
+        result = await executor.execute_plan(
+            plan=plan,
+            advertiser_ids=["6"],
+            time_range={"start": "2026-01-01", "end": "2026-01-31"},
+        )
+
+        # 应该失败
+        assert result.metadata.get("success") is False
+        assert result.metadata.get("retries") == 2  # 首次 + 2次重试
+        assert "执行失败" in result.metadata.get("final_error", "")
+        assert "Connection timeout" in result.metadata.get("final_error", "")
+        assert search_call_count == 3  # 共尝试了 3 次
