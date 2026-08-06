@@ -10,7 +10,8 @@ from src.agents.reporter_agent import (
     reporter_agent,
     get_trend,
     format_comparison_report,
-    auto_select_chart_type_for_comparison
+    auto_select_chart_type_for_comparison,
+    infer_display_type
 )
 
 
@@ -489,3 +490,178 @@ class TestNameColumnFiltering:
         columns = result["data_table"]["columns"]
         # 没有其他维度列时，应该保留'name'列
         assert "name" in columns, "没有其他维度列时应该保留name列"
+
+
+class TestDisplayTypeInference:
+    """测试display_type推断逻辑"""
+
+    def test_infer_comparison_display_type(self):
+        """测试对比查询类型推断"""
+        result = infer_display_type(
+            is_comparison=True,
+            group_by=["channel"],
+            rankings={},
+            data=[{"clicks": 1000}, {"clicks": 2000}]
+        )
+        assert result == "comparison"
+
+    def test_infer_trend_display_type(self):
+        """测试时间维度趋势类型推断"""
+        # 测试各种时间维度
+        time_dimensions = ["data_date", "data_day", "data_hour", "date", "day", "hour", "month", "week"]
+        for dim in time_dimensions:
+            result = infer_display_type(
+                is_comparison=False,
+                group_by=[dim],
+                rankings={},
+                data=[{"date": "2024-01-01", "clicks": 1000}]
+            )
+            assert result == "trend", f"维度 {dim} 应该被推断为trend类型"
+
+    def test_infer_ranking_display_type(self):
+        """测试排名数据类型推断"""
+        # 有排名数据
+        rankings = {"top": [{"name": "channelA", "value": 1000}]}
+        result = infer_display_type(
+            is_comparison=False,
+            group_by=["channel"],
+            rankings=rankings,
+            data=[{"channel": "channelA", "clicks": 1000}]
+        )
+        assert result == "ranking"
+
+        # 有bottom排名
+        rankings = {"bottom": [{"name": "channelA", "value": 1000}]}
+        result = infer_display_type(
+            is_comparison=False,
+            group_by=["channel"],
+            rankings=rankings,
+            data=[{"channel": "channelA", "clicks": 1000}]
+        )
+        assert result == "ranking"
+
+    def test_infer_audience_display_type(self):
+        """测试受众维度类型推断"""
+        audience_dimensions = [
+            "性别", "年龄段", "操作系统", "系统版本", "国家", "城市", "行业",
+            "兴趣标签", "渠道", "campaign_id", "adgroup_id", "creative_id", "advertiser_id",
+            "gender", "age_group", "os", "os_version", "country", "city", "industry",
+            "interest_tags", "channel"
+        ]
+        for dim in audience_dimensions:
+            result = infer_display_type(
+                is_comparison=False,
+                group_by=[dim],
+                rankings={},
+                data=[{dim: "value", "clicks": 1000}]
+            )
+            assert result == "audience", f"维度 {dim} 应该被推断为audience类型"
+
+    def test_infer_qa_display_type(self):
+        """测试单条数据QA类型推断"""
+        # 单条数据
+        data = [{"clicks": 1000}]
+        result = infer_display_type(
+            is_comparison=False,
+            group_by=[],
+            rankings={},
+            data=data
+        )
+        assert result == "qa"
+
+        # 空数据
+        data = []
+        result = infer_display_type(
+            is_comparison=False,
+            group_by=[],
+            rankings={},
+            data=data
+        )
+        assert result == "qa"
+
+    def test_infer_list_display_type(self):
+        """测试默认列表类型推断"""
+        # 多条数据且无特殊维度
+        data = [
+            {"channel": "channelA", "clicks": 1000},
+            {"channel": "channelB", "clicks": 2000},
+            {"channel": "channelC", "clicks": 3000}
+        ]
+        result = infer_display_type(
+            is_comparison=False,
+            group_by=["channel"],
+            rankings={},
+            data=data
+        )
+        assert result == "list"
+
+    @pytest.mark.asyncio
+    async def test_reporter_agent_includes_display_type(self):
+        """测试reporter_agent返回结果包含display_type字段"""
+        query_intent = {}
+        query_request = {
+            "metrics": ["clicks"],
+            "time_range": {"start_date": "2024-01-01", "end_date": "2024-01-07"}
+        }
+        query_result = {
+            "data": [
+                {"channel": "channelA", "clicks": 1000},
+                {"channel": "channelB", "clicks": 2000}
+            ]
+        }
+        analysis_result = {"anomalies": [], "insights": [], "recommendations": [], "rankings": {}}
+
+        result = await reporter_agent(query_intent, query_request, query_result, analysis_result)
+
+        assert "display_type" in result
+        assert result["display_type"] == "list"
+        # 标题应该包含列表前缀
+        assert "数据列表：" in result["title"]
+
+    @pytest.mark.asyncio
+    async def test_reporter_agent_trend_display_type(self):
+        """测试reporter_agent趋势类型推断"""
+        query_intent = {}
+        query_request = {
+            "metrics": ["clicks"],
+            "group_by": ["data_date"],
+            "time_range": {"start_date": "2024-01-01", "end_date": "2024-01-07"}
+        }
+        query_result = {
+            "data": [
+                {"data_date": "2024-01-01", "clicks": 1000},
+                {"data_date": "2024-01-02", "clicks": 2000}
+            ]
+        }
+        analysis_result = {"anomalies": [], "insights": [], "recommendations": [], "rankings": {}}
+
+        result = await reporter_agent(query_intent, query_request, query_result, analysis_result)
+
+        assert result["display_type"] == "trend"
+        assert "趋势分析：" in result["title"]
+
+    @pytest.mark.asyncio
+    async def test_reporter_agent_comparison_display_type(self):
+        """测试对比报告的display_type"""
+        query_intent = {"is_comparison": True}
+        query_requests = [
+            {"metrics": ["clicks"], "group_by": ["channel"], "time_range": {"start_date": "2024-01-01"}},
+            {"metrics": ["clicks"], "group_by": ["channel"], "time_range": {"start_date": "2024-01-08"}}
+        ]
+        query_results = [
+            {"data": [
+                {"name": "渠道A", "clicks": 1000},
+                {"name": "渠道B", "clicks": 2000},
+            ]},
+            {"data": [
+                {"name": "渠道A", "clicks": 1200},
+                {"name": "渠道B", "clicks": 1500},
+            ]}
+        ]
+
+        result = format_comparison_report(query_intent, query_requests, query_results)
+
+        assert result is not None
+        assert "display_type" in result
+        assert result["display_type"] == "comparison"
+        assert "对比分析：" in result["title"]

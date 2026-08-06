@@ -30,6 +30,7 @@ def format_comparison_report(
     data2 = result2.get("data", [])
     metrics = query_requests[0].get("metrics", [])
     group_by = query_requests[0].get("group_by", [])
+    is_comparison = True
 
     # 计算两个周期的总指标
     formatted_metrics = []
@@ -85,7 +86,21 @@ def format_comparison_report(
     }
 
     # 生成标题
-    title = f"{period1_label} vs {period2_label} 对比分析"
+    title_prefixes = {
+        "trend": "趋势分析",
+        "comparison": "对比分析",
+        "ranking": "排名分析",
+        "audience": "受众分析",
+        "list": "数据列表",
+        "qa": "查询结果"
+    }
+
+    # 推断display_type
+    display_type = infer_display_type(is_comparison, group_by, {}, data1)
+
+    # 生成更贴切的标题
+    base_title = f"{period1_label} vs {period2_label}"
+    title = f"{title_prefixes.get(display_type, '对比分析')}：{base_title}"
 
     # 生成亮点（变化率提示）
     highlights = []
@@ -140,7 +155,8 @@ def format_comparison_report(
             "查看更多维度的对比分析",
             "分渠道对比效果",
             "分受众对比效果"
-        ]
+        ],
+        "display_type": display_type
     }
 
 def get_trend(change: float) -> str:
@@ -153,6 +169,47 @@ def get_trend(change: float) -> str:
         return "down"
     return "flat"
 
+
+def infer_display_type(
+    is_comparison: bool,
+    group_by: List[str],
+    rankings: Dict[str, Any],
+    data: List[Dict[str, Any]]
+) -> str:
+    """根据查询参数和结果推断display_type"""
+    # 时间维度列表
+    time_dimensions = {"data_date", "data_day", "data_hour", "date", "day", "hour", "month", "week"}
+    # 受众维度列表
+    audience_dimensions = {
+        "性别", "年龄段", "操作系统", "系统版本", "国家", "城市", "行业",
+        "兴趣标签", "渠道", "campaign_id", "adgroup_id", "creative_id", "advertiser_id",
+        "gender", "age_group", "os", "os_version", "country", "city", "industry",
+        "interest_tags", "channel"
+    }
+
+    # 1. 对比查询
+    if is_comparison:
+        return "comparison"
+
+    # 2. 有时间维度分组
+    if any(dim.lower() in time_dimensions for dim in group_by):
+        return "trend"
+
+    # 3. 有排名数据
+    if rankings and (rankings.get("top") or rankings.get("bottom")):
+        return "ranking"
+
+    # 4. 有受众维度
+    if any(dim.lower() in {d.lower() for d in audience_dimensions} for dim in group_by):
+        return "audience"
+
+    # 5. 单条数据或无维度
+    if len(data) <= 1:
+        return "qa"
+
+    # 6. 默认情况
+    return "list"
+
 async def reporter_agent(
     query_intent: Dict[str, Any],
     query_request: Dict[str, Any],
@@ -164,6 +221,8 @@ async def reporter_agent(
     data = query_result.get("data", [])
     anomalies = analysis_result.get("anomalies", [])
     rankings = analysis_result.get("rankings", {})
+    group_by = query_request.get("group_by", [])
+    is_comparison = query_intent.get("is_comparison", False)
 
     # 1. 计算总体指标（汇总）
     formatted_metrics = []
@@ -258,7 +317,31 @@ async def reporter_agent(
     time_range = query_request.get("time_range", {})
     start = time_range.get("start_date", "")
     end = time_range.get("end_date", "")
-    title = f"{start} ~ {end} 广告报表分析"
+
+    # 推断display_type
+    display_type = infer_display_type(is_comparison, group_by, rankings, data)
+
+    # 根据display_type生成更贴切的标题前缀
+    title_prefixes = {
+        "trend": "趋势分析",
+        "comparison": "对比分析",
+        "ranking": "排名分析",
+        "audience": "受众分析",
+        "list": "数据列表",
+        "qa": "查询结果"
+    }
+
+    # 生成基础标题
+    if start and end:
+        base_title = f"{start} ~ {end} 广告报表分析"
+    else:
+        base_title = "广告报表分析"
+
+    # 为特定类型添加前缀
+    if display_type in ["trend", "comparison", "ranking", "audience", "qa"]:
+        title = f"{title_prefixes[display_type]}：{base_title}"
+    else:
+        title = base_title
 
     # 5. 生成图表配置（用于前端渲染）
     group_by = query_request.get("group_by", [])
@@ -278,5 +361,6 @@ async def reporter_agent(
         "highlights": highlights,
         "data_table": {"columns": columns, "rows": rows},
         "chart_config": chart_config,
-        "next_queries": next_queries
+        "next_queries": next_queries,
+        "display_type": display_type
     }
