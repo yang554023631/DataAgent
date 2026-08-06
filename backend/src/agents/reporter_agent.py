@@ -30,7 +30,7 @@ def format_comparison_report(
     data2 = result2.get("data", [])
     metrics = query_requests[0].get("metrics", [])
     group_by = query_requests[0].get("group_by", [])
-    is_comparison = True
+    is_comparison = query_intent.get("is_comparison", True)
 
     # 计算两个周期的总指标
     formatted_metrics = []
@@ -189,7 +189,7 @@ def infer_display_type(
         return "ranking"
 
     # 4. 有受众维度
-    if any(dim.lower() in {d.lower() for d in audience_dimensions} for dim in group_by):
+    if any(dim.lower() in audience_dimensions for dim in group_by):
         return "audience"
 
     # 5. 单条数据或无维度
@@ -212,6 +212,9 @@ async def reporter_agent(
     rankings = analysis_result.get("rankings", {})
     group_by = query_request.get("group_by", [])
     is_comparison = query_intent.get("is_comparison", False)
+
+    # 优先使用传入的display_type字段
+    display_type = query_intent.get("display_type") or infer_display_type(is_comparison, group_by, rankings, data)
 
     # 1. 计算总体指标（汇总）
     formatted_metrics = []
@@ -252,7 +255,6 @@ async def reporter_agent(
 
         # 只显示环比突变类型的异常（数值异常检测噪音太大）
         if anomaly.get("type") == "sudden_change":
-            emoji = "🟢" if change_percent > 0 else "🔴"
             emoji = "🟢" if change_percent > 0 else "🔴"
             change_str = format_change.func(change_percent) if change_percent != 0 else "变化量为0"
             highlights.append({
@@ -307,17 +309,11 @@ async def reporter_agent(
     start = time_range.get("start_date", "")
     end = time_range.get("end_date", "")
 
-    # 推断display_type
-    display_type = infer_display_type(is_comparison, group_by, rankings, data)
-
     # 生成基础标题
     if start and end:
         title = f"{start} ~ {end} 广告报表分析"
     else:
         title = "广告报表分析"
-
-    # 5. 生成图表配置（用于前端渲染）
-    group_by = query_request.get("group_by", [])
     chart_config = None
     if data and len(data) > 1 and metrics:  # 至少有2条数据才渲染图表
         chart_type = auto_select_chart_type_for_comparison(group_by)
