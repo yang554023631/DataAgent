@@ -1,7 +1,7 @@
 from langgraph.graph import StateGraph, END
 from .state import AdReportState
 from .nodes import (
-    nlu_node, hitl_node, planner_node, executor_node, insight_node, analyst_node, reporter_node, advertiser_handle_node,
+    nlu_node, hitl_node, planner_node, executor_node, insight_node, analyst_node, reporter_node,
     intent_classifier_node, report_intent_node, clarify_node_entry, reject_node_entry, nl_dsl_node
 )
 from src.rag.agents import rag_retrieve_node, rag_answer_node
@@ -26,9 +26,6 @@ def build_graph():
     graph.add_node("analyst", analyst_node)
     graph.add_node("reporter", reporter_node)
     graph.add_node("nl_dsl", nl_dsl_node)
-
-    # 保留旧节点（向后兼容，暂不删除）
-    graph.add_node("advertiser_handle", advertiser_handle_node)
 
     # ========== 设置入口 ==========
     graph.set_entry_point("intent_classifier")
