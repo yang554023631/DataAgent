@@ -146,6 +146,12 @@ def test_build_nl_dsl_final_report():
     assert report["title"] == "2026-08-01 ~ 2026-08-07 查询结果"
     assert len(report["data_table"]["rows"]) == 2
     assert any("✅" in h.get("text", "") for h in report["highlights"])
+    assert report["insights"] is None  # 必须有 insights 字段
+    assert report["time_range"]["start"] == "2026-08-01"  # start/end 格式
+    assert report["time_range"]["end"] == "2026-08-07"
+    # 验证 highlights 类型
+    for h in report["highlights"]:
+        assert h["type"] in ["positive", "negative", "info"]
 
 
 def test_build_nl_dsl_final_report_empty_result():
@@ -165,6 +171,11 @@ def test_build_nl_dsl_final_report_empty_result():
     report = _build_nl_dsl_final_report(result_dict, "查看消耗大于1000的计划", {})
 
     assert any("⚠️" in h.get("text", "") for h in report["highlights"])
+    assert report["insights"] is None
+    # 验证 warning 改为 negative
+    warning_highlights = [h for h in report["highlights"] if "⚠️" in h.get("text", "")]
+    for h in warning_highlights:
+        assert h["type"] == "negative"
     assert any("没有找到" in h.get("text", "") for h in report["highlights"])
 
 
@@ -179,6 +190,10 @@ def test_build_failure_guide_report():
     assert any("查询执行超时" in h.get("text", "") for h in report["highlights"])
     assert any("💡" in h.get("text", "") for h in report["highlights"])
     assert len(report["next_queries"]) > 0
+    assert report["insights"] is None
+    # 验证 highlights 类型
+    for h in report["highlights"]:
+        assert h["type"] in ["positive", "negative", "info"]
 
 
 def test_build_failure_guide_report_with_nl_dsl_result():
@@ -206,3 +221,57 @@ def test_build_failure_guide_report_with_exception():
 
     assert any("CustomException" in h.get("text", "") or "连接数据库超时" in h.get("text", "")
                for h in report["highlights"])
+
+
+@pytest.mark.asyncio
+async def test_nl_dsl_node_query_context_type_check():
+    """测试 nl_dsl_node 中 query_context 类型检查"""
+    # 模拟 state
+    state = {
+        "user_input": "测试查询",
+        "report_intent_result": {
+            "time_range": {"start_date": "2026-08-01", "end_date": "2026-08-07"},
+            "metrics": ["cost"],
+            "chart_type": "list"
+        },
+        "advertiser_ids": ["123"],
+        "query_route": "nl_dsl"
+    }
+
+    # 测试 1: query_context 是正常 dict
+    mock_result1 = NlDslResult(
+        display_type="list",
+        columns=["计划ID"],
+        rows=[["1"]],
+        metadata={"success": True},
+        query_context={"page": 1, "size": 10}
+    )
+
+    # 测试 2: query_context 是 None
+    mock_result2 = NlDslResult(
+        display_type="list",
+        columns=["计划ID"],
+        rows=[["1"]],
+        metadata={"success": True},
+        query_context=None
+    )
+
+    # mock
+    with patch('src.nl_dsl.dsl_generator.get_dsl_generator') as mock_get_generator, \
+         patch('src.nl_dsl.self_reflection_executor.get_self_reflection_executor') as mock_get_executor:
+
+        mock_generator = AsyncMock()
+        mock_generator.plan_query = AsyncMock(return_value=MagicMock(steps=[], final_output="step_1.output"))
+        mock_get_generator.return_value = mock_generator
+
+        # 测试 1: 正常 dict
+        mock_executor = AsyncMock()
+        mock_executor.execute_plan = AsyncMock(return_value=mock_result1)
+        mock_get_executor.return_value = mock_executor
+        updates1 = await nl_dsl_node(state)
+        assert updates1["query_context"] == {"page": 1, "size": 10}
+
+        # 测试 2: None
+        mock_executor.execute_plan = AsyncMock(return_value=mock_result2)
+        updates2 = await nl_dsl_node(state)
+        assert updates2["query_context"] == {}

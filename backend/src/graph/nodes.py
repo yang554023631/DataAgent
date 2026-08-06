@@ -720,7 +720,7 @@ def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> 
     if metadata.get('is_empty_result'):
         empty_reason = metadata.get('empty_reason', '查询结果为空')
         highlights.append({
-            "type": "warning",
+            "type": "negative",
             "text": f"⚠️ {empty_reason}"
         })
     else:
@@ -744,7 +744,8 @@ def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> 
     if display_type == "chart" or display_type == "line" or display_type == "bar":
         chart_config = {
             "type": display_type if display_type in ["line", "bar"] else "bar",
-            "series": [{"name": col, "color": "#3b82f6"} for col in columns[1:]] if len(columns) > 1 else []
+            "series": [{"name": col, "color": "#3b82f6"} for col in columns[1:]] if len(columns) > 1 else [],
+            "metrics": []
         }
 
     return {
@@ -754,7 +755,8 @@ def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> 
         "highlights": highlights,
         "data_table": data_table,
         "chart_config": chart_config,
-        "next_queries": next_queries
+        "next_queries": next_queries,
+        "insights": None
     }
 
 
@@ -793,7 +795,7 @@ def _build_failure_guide_report(error_info, user_input: str) -> dict:
         "metrics": [],
         "highlights": [
             {
-                "type": "warning",
+                "type": "negative",
                 "text": f"⚠️ 自然语言查询暂时无法处理这个请求：{error_msg}"
             },
             {
@@ -819,7 +821,8 @@ def _build_failure_guide_report(error_info, user_input: str) -> dict:
             "查看近7天的广告报表",
             "按计划维度分析数据",
             "对比两个时间段的数据"
-        ]
+        ],
+        "insights": None
     }
 
 
@@ -880,8 +883,10 @@ async def nl_dsl_node(state: dict) -> dict:
         updates["nl_dsl_result"] = result.model_dump()
 
         # 保存 query_context（用于翻页）
-        if result.query_context:
+        if result.query_context and isinstance(result.query_context, dict):
             updates["query_context"] = result.query_context
+        else:
+            updates["query_context"] = {}
 
         logger.info(
             f"NL→DSL查询完成: 呈现类型={result.display_type}, "
