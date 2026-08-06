@@ -1,5 +1,7 @@
 import pytest
+from unittest.mock import patch, AsyncMock, MagicMock
 from src.graph.builder import build_graph
+from src.nl_dsl.models import NlDslResult
 
 
 def create_test_state(session_id: str, user_input: str, advertiser_ids: list = None) -> dict:
@@ -113,3 +115,49 @@ async def test_graph_no_advertiser_triggers_selection():
     assert result["final_report"] is not None
     assert result["final_report"]["title"] == "请选择要查看的广告主"
     assert len(result["final_report"]["data_table"]["rows"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_graph_nl_dsl_path():
+    """测试触发 nl_dsl 路由的查询流程"""
+    graph = build_graph()
+
+    initial_state = create_test_state(
+        "test-session-006",
+        "列出近7天消耗大于1000的计划"
+    )
+
+    # 模拟 NL→DSL 成功结果
+    mock_result = NlDslResult(
+        display_type="list",
+        columns=["计划ID", "计划名称", "消耗"],
+        rows=[["1", "计划A", 1500], ["2", "计划B", 2000]],
+        metadata={"success": True, "total_rows": 2}
+    )
+
+    # mock 所有外部依赖
+    with patch('src.nl_dsl.dsl_generator.get_dsl_generator') as mock_get_generator, \
+         patch('src.nl_dsl.self_reflection_executor.get_self_reflection_executor') as mock_get_executor:
+
+        mock_generator = AsyncMock()
+        mock_generator.plan_query = AsyncMock(return_value=MagicMock(steps=[], final_output="step_1.output"))
+        mock_get_generator.return_value = mock_generator
+
+        mock_executor = AsyncMock()
+        mock_executor.execute_plan = AsyncMock(return_value=mock_result)
+        mock_get_executor.return_value = mock_executor
+
+        # 执行 graph，添加 config 以通过 checkpointer 验证
+        result = await graph.ainvoke(
+            initial_state,
+            config={"configurable": {"thread_id": "test-thread-006"}}
+        )
+
+        # 验证最终结果
+        assert result["error"] is None
+        assert result["final_report"] is not None
+        assert result["final_report"]["title"] == "2026-08-01 ~ 2026-08-07 查询结果"
+        assert len(result["final_report"]["data_table"]["rows"]) == 2
+        assert result["final_report"]["data_table"]["columns"] == ["计划ID", "计划名称", "消耗"]
+        # 验证使用了 nl_dsl 路径
+        assert "nl_dsl_result" in result
