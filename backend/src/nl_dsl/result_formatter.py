@@ -72,9 +72,8 @@ class ResultFormatter:
         if ResultFormatter._has_date_histogram(aggs):
             return "trend"
 
-        # 检查是否是 terms 聚合
-        if ResultFormatter._has_terms_agg(aggs):
-            # terms 聚合默认对比类型
+        # 检查是否有任意桶聚合（包括 terms、filters 等）
+        if ResultFormatter._has_bucket_aggregations(aggs):
             return "comparison"
 
         # 单值聚合 → QA
@@ -82,6 +81,24 @@ class ResultFormatter:
             return "qa"
 
         return "detail"
+
+    @staticmethod
+    def _has_bucket_aggregations(aggs: dict) -> bool:
+        """递归检测是否有任意包含 buckets 的聚合"""
+        if not isinstance(aggs, dict):
+            return False
+        for key, val in aggs.items():
+            if not isinstance(val, dict):
+                continue
+            if "buckets" in val:
+                # 排除已经被检测为 date_histogram 的情况
+                if not ResultFormatter._has_date_histogram({key: val}):
+                    return True
+            for nested_key in ["aggs", "aggregations"]:
+                nested = val.get(nested_key)
+                if nested and ResultFormatter._has_bucket_aggregations(nested):
+                    return True
+        return False
 
     @staticmethod
     def _is_hits_result(es_response: dict) -> bool:
@@ -95,7 +112,7 @@ class ResultFormatter:
     @staticmethod
     def _is_aggregation_result(es_response: dict) -> bool:
         """是否是聚合结果为主"""
-        aggs = es_response.get("aggregations") or es_response.get("aggregations")
+        aggs = es_response.get("aggregations") or es_response.get("aggs")
         return bool(aggs)
 
     @staticmethod
@@ -127,9 +144,6 @@ class ResultFormatter:
                 continue
             if "terms" in val:
                 return True
-            # 检测简化的 terms 格式（直接有 buckets）
-            if "buckets" in val:
-                return True
             for nested_key in ["aggs", "aggregations"]:
                 nested = val.get(nested_key)
                 if nested and ResultFormatter._has_terms_agg(nested):
@@ -145,7 +159,7 @@ class ResultFormatter:
             if not isinstance(val, dict):
                 continue
             # 有 value 字段但没有 buckets → 单值
-            if "value" in val and "buckets" not in val and "date_histogram" not in val and "terms" not in val:
+            if "value" in val and "buckets" not in val:
                 return True
         return False
 
@@ -166,7 +180,8 @@ class ResultFormatter:
                 if key not in columns_set:
                     columns_set.append(key)
 
-        columns = columns_set
+        # 排序以保证列顺序稳定
+        columns = sorted(columns_set)
         rows = []
         for hit in hits:
             source = hit.get("_source", {})
@@ -209,7 +224,8 @@ class ResultFormatter:
 
         # 从第一个 bucket 推导列
         first = buckets[0]
-        key_label = agg_name.replace("by_", "").replace("by", "")
+        # 使用原始聚合名称作为列名
+        key_label = agg_name
         columns = [key_label]
         value_agg_names = []
 
