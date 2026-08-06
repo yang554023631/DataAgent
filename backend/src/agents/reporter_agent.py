@@ -86,21 +86,10 @@ def format_comparison_report(
     }
 
     # 生成标题
-    title_prefixes = {
-        "trend": "趋势分析",
-        "comparison": "对比分析",
-        "ranking": "排名分析",
-        "audience": "受众分析",
-        "list": "数据列表",
-        "qa": "查询结果"
-    }
+    title = f"{period1_label} vs {period2_label} 对比分析"
 
     # 推断display_type
     display_type = infer_display_type(is_comparison, group_by, {}, data1)
-
-    # 生成更贴切的标题
-    base_title = f"{period1_label} vs {period2_label}"
-    title = f"{title_prefixes.get(display_type, '对比分析')}：{base_title}"
 
     # 生成亮点（变化率提示）
     highlights = []
@@ -321,27 +310,11 @@ async def reporter_agent(
     # 推断display_type
     display_type = infer_display_type(is_comparison, group_by, rankings, data)
 
-    # 根据display_type生成更贴切的标题前缀
-    title_prefixes = {
-        "trend": "趋势分析",
-        "comparison": "对比分析",
-        "ranking": "排名分析",
-        "audience": "受众分析",
-        "list": "数据列表",
-        "qa": "查询结果"
-    }
-
     # 生成基础标题
     if start and end:
-        base_title = f"{start} ~ {end} 广告报表分析"
+        title = f"{start} ~ {end} 广告报表分析"
     else:
-        base_title = "广告报表分析"
-
-    # 为特定类型添加前缀
-    if display_type in ["trend", "comparison", "ranking", "audience", "qa"]:
-        title = f"{title_prefixes[display_type]}：{base_title}"
-    else:
-        title = base_title
+        title = "广告报表分析"
 
     # 5. 生成图表配置（用于前端渲染）
     group_by = query_request.get("group_by", [])

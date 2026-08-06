@@ -166,11 +166,13 @@ class TestReporterAgent:
                     "metric": "impressions",
                     "dimension_value": "C渠道",
                     "change_percent": -0.3,
+                    "type": "sudden_change"
                 },
                 {
                     "metric": "ctr",
                     "dimension_value": "A渠道",
                     "change_percent": 0.25,
+                    "type": "sudden_change"
                 }
             ],
             "insights": ["检测到 2 个异常点"],
@@ -357,6 +359,7 @@ class TestNoneChangePercentBugFix:
                     "metric": "impressions",
                     "dimension_value": "渠道A",
                     "change_percent": None,  # 这个之前会导致 TypeError
+                    "type": "sudden_change"
                 }
             ],
             "insights": [],
@@ -581,15 +584,15 @@ class TestDisplayTypeInference:
 
     def test_infer_list_display_type(self):
         """测试默认列表类型推断"""
-        # 多条数据且无特殊维度
+        # 多条数据且无特殊维度（既不是时间、也不是受众、也不是排名）
         data = [
-            {"channel": "channelA", "clicks": 1000},
-            {"channel": "channelB", "clicks": 2000},
-            {"channel": "channelC", "clicks": 3000}
+            {"product": "productA", "clicks": 1000},
+            {"product": "productB", "clicks": 2000},
+            {"product": "productC", "clicks": 3000}
         ]
         result = infer_display_type(
             is_comparison=False,
-            group_by=["channel"],
+            group_by=["product"],
             rankings={},
             data=data
         )
@@ -616,7 +619,7 @@ class TestDisplayTypeInference:
         assert "display_type" in result
         assert result["display_type"] == "list"
         # 标题应该包含列表前缀
-        assert "数据列表：" in result["title"]
+        assert "2024-01-01 ~ 2024-01-07 广告报表分析" in result["title"]
 
     @pytest.mark.asyncio
     async def test_reporter_agent_trend_display_type(self):
@@ -638,7 +641,7 @@ class TestDisplayTypeInference:
         result = await reporter_agent(query_intent, query_request, query_result, analysis_result)
 
         assert result["display_type"] == "trend"
-        assert "趋势分析：" in result["title"]
+        assert "2024-01-01 ~ 2024-01-07 广告报表分析" in result["title"]
 
     @pytest.mark.asyncio
     async def test_reporter_agent_comparison_display_type(self):
@@ -664,4 +667,4 @@ class TestDisplayTypeInference:
         assert result is not None
         assert "display_type" in result
         assert result["display_type"] == "comparison"
-        assert "对比分析：" in result["title"]
+        assert "2024-01-01 vs 2024-01-08 对比分析" in result["title"]
