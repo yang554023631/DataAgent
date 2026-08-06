@@ -7,9 +7,11 @@ DSL 生成：为每个步骤生成具体的 ES DSL。
 import json
 import logging
 from typing import Optional, List, Dict, Any, Tuple
+from pydantic import ValidationError
 
 from src.config.context import truncate_log
 from .models import QueryPlan, QueryStep, RetryInfo
+from .dsl_validator import ValidationResult
 from .prompts import (
     QUERY_PLANNING_SYSTEM_PROMPT,
     QUERY_PLANNING_USER_PROMPT,
@@ -60,8 +62,11 @@ class DslGenerator:
         """
         logger.info(f"NL→DSL查询规划开始: 用户问题='{truncate_log(user_input, 100)}'")
 
+        if not self._llm:
+            raise ValueError("llm_client is required")
+
         # 1. 检索相关 schema
-        schema_context = self._get_schema_context(user_input + " " + " ".join(constraints.get("metrics", [])))
+        schema_context = self._get_schema_context(user_input + " " + " ".join(constraints.get("metrics") or []))
 
         # 2. 调用 LLM 生成计划
         user_prompt = QUERY_PLANNING_USER_PROMPT.format(
@@ -81,8 +86,9 @@ class DslGenerator:
 
         try:
             plan_data = json.loads(response)
-        except json.JSONDecodeError as e:
-            logger.error(f"查询规划解析失败: error={e}")
+            plan = QueryPlan(**plan_data)
+        except (json.JSONDecodeError, ValidationError):
+            logger.exception("查询规划解析失败")
             # 降级：返回单步计划
             plan_data = {
                 "steps": [{
@@ -94,8 +100,8 @@ class DslGenerator:
                 }],
                 "final_output": "step_1.output",
             }
+            plan = QueryPlan(**plan_data)
 
-        plan = QueryPlan(**plan_data)
         logger.info(
             f"NL→DSL查询规划完成: 步骤数={len(plan.steps)}, "
             f"步骤=[{', '.join(s.description[:20] for s in plan.steps)}]"
@@ -125,6 +131,9 @@ class DslGenerator:
         step_id = step.step_id
         logger.info(f"NL→DSL生成(步骤{step_id}): 索引={step.index}")
 
+        if not self._llm:
+            raise ValueError("llm_client is required")
+
         # 1. 检索该索引的 schema
         schema_context = self._get_schema_context_for_index(step.index, step.description)
 
@@ -153,8 +162,8 @@ class DslGenerator:
             )
             try:
                 dsl = json.loads(response)
-            except json.JSONDecodeError as e:
-                logger.error(f"DSL生成解析失败(步骤{step_id}): error={e}")
+            except json.JSONDecodeError:
+                logger.exception(f"DSL生成解析失败(步骤{step_id})")
                 dsl = {}
 
         logger.info(f"NL→DSL生成(步骤{step_id}): DSL={truncate_log(json.dumps(dsl, ensure_ascii=False), 500)}")
@@ -163,7 +172,6 @@ class DslGenerator:
         if self._validator:
             validation_result = self._validator.validate(dsl, step.index)
         else:
-            from .dsl_validator import ValidationResult
             validation_result = ValidationResult()
             validation_result.ok = True
 
@@ -194,8 +202,8 @@ class DslGenerator:
             reflection = data.get("reflection", "")
             logger.info(f"NL→DSL反思(步骤{step.step_id}): {truncate_log(reflection, 200)}")
             return fixed_dsl
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.error(f"反思DSL解析失败(步骤{step.step_id}): error={e}")
+        except (json.JSONDecodeError, KeyError):
+            logger.exception(f"反思DSL解析失败(步骤{step.step_id})")
             return retry_info.previous_dsl or {}
 
     def _get_schema_context(self, query: str) -> str:
@@ -205,8 +213,8 @@ class DslGenerator:
         try:
             results = self._schema_retriever.search(query)
             return "\n\n".join(r.content for r in results)
-        except Exception as e:
-            logger.error(f"Schema检索失败: error={e}")
+        except Exception:
+            logger.exception("Schema检索失败")
             return ""
 
     def _get_schema_context_for_index(self, index_name: str, description: str) -> str:
@@ -216,8 +224,8 @@ class DslGenerator:
         try:
             results = self._schema_retriever.search_by_index(description, index_name)
             return "\n\n".join(r.content for r in results)
-        except Exception as e:
-            logger.error(f"Schema检索失败(索引{index_name}): error={e}")
+        except Exception:
+            logger.exception(f"Schema检索失败(索引{index_name})")
             return ""
 
     @staticmethod
@@ -245,7 +253,7 @@ def get_dsl_generator() -> DslGenerator:
     """获取 DslGenerator 单例"""
     global _dsl_generator_instance
     if _dsl_generator_instance is None:
-        from src.intent.llm_client import IntentLLMClient, get_intent_llm_client
+        from src.intent.llm_client import get_intent_llm_client
         from .dsl_validator import DslValidator
         from src.schema_rag.retriever import get_schema_retriever
 
