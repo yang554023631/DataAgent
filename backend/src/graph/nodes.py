@@ -614,11 +614,17 @@ async def report_intent_node(state: dict) -> dict:
 
     updates = {}
 
+    # 写入路由信息到 state（所有路径都有 route_info）
+    if route_info:
+        updates["query_route"] = route_info["route"]
+        updates["route_reason"] = route_info["reason"]
+        updates["analysis_type"] = route_info["analysis_type"]
+
     if final_report:
         # 纯广告主查询，直接返回 final_report
         updates["final_report"] = final_report
         updates["needs_clarification"] = False
-        logger.info(f"报表意图识别完成: 检测到纯广告主查询")
+        logger.info(f"报表意图识别完成: 检测到纯广告主查询, 路由={route_info['route']}")
     else:
         if result:
             # 将 ReportIntentResult 转换为 dict 存入 state
@@ -647,26 +653,19 @@ async def report_intent_node(state: dict) -> dict:
             updates["query_intent"] = query_intent
             updates["advertiser_ids"] = result.advertiser_ids
 
-        # 写入路由信息到 state
-        if route_info:
-            updates["query_route"] = route_info["route"]
-            updates["route_reason"] = route_info["reason"]
-            updates["analysis_type"] = route_info["analysis_type"]
-
         if clarification:
             # 需要澄清
             updates.update(build_clarification_state(clarification))
-            logger.info(f"报表意图识别完成: 触发澄清=True, 类型={clarification.type}")
+            logger.info(f"报表意图识别完成: 触发澄清=True, 类型={clarification.type}, 路由={route_info['route']}")
         else:
             # 不需要澄清，确保标志位为 False
             updates["needs_clarification"] = False
             if result:
                 log_msg = f"报表意图识别完成: 广告主={result.advertiser_ids}, 时间={result.time_range and result.time_range.start_date + '~' + result.time_range.end_date}, 指标={result.metrics}, 层级={result.ad_level}"
-                if route_info:
-                    log_msg += f", 路由={route_info['route']}, 原因={route_info['reason']}"
+                log_msg += f", 路由={route_info['route']}, 原因={route_info['reason']}"
                 logger.info(log_msg)
             else:
-                logger.info(f"报表意图识别完成: 结果为空")
+                logger.info(f"报表意图识别完成: 结果为空, 路由={route_info['route']}")
 
     return updates
 

@@ -520,7 +520,7 @@ class ReportIntentAnalyzer:
         existing_advertiser_ids: List[str] = None,
         existing_time_range: ReportTimeRange = None,
         existing_ad_level: str = None,
-    ) -> Tuple[Optional[ReportIntentResult], Optional[ClarificationInfo], Optional[dict], Optional[dict]]:
+    ) -> Tuple[Optional[ReportIntentResult], Optional[ClarificationInfo], Optional[dict], dict]:
         """
         分析用户输入，提取报表意图
 
@@ -533,11 +533,14 @@ class ReportIntentAnalyzer:
 
         Returns:
             (意图结果, 澄清信息, final_report, route_info)
-            route_info: {"route": "structured"/"nl_dsl", "reason": str, "analysis_type": str}
-            - 如果是纯广告主查询：(None, None, final_report, None)
+            route_info: dict with keys:
+                - route: "structured" / "nl_dsl" / "advertiser_lookup" / "pending_clarification"
+                - reason: str describing why this route was chosen
+                - analysis_type: "standard_report" / "exploratory_query" / "qa" / ""
+            - 如果是纯广告主查询：(None, None, final_report, route_info)
             - 如果信息齐全：(result, None, None, route_info)
-            - 如果需要澄清：(result, clarification, None, None)
-            - 如果完全无法解析：(None, clarification, None, None)
+            - 如果需要澄清：(result, clarification, None, route_info)
+            - 如果完全无法解析：(None, clarification, None, route_info)
         """
         # Step 1: LLM 提取
         result = await self._llm_extract(user_input, conversation_history)
@@ -548,33 +551,36 @@ class ReportIntentAnalyzer:
         if final_report is not None:
             # 纯广告查询，直接返回 final_report
             logger.info(f"报表意图识别: 检测到纯广告主查询，直接返回结果")
-            return None, None, final_report, None  # result, clarification, final_report, route_info
+            route_info = {"route": "advertiser_lookup", "reason": "纯广告主查询", "analysis_type": "qa"}
+            return None, None, final_report, route_info  # result, clarification, final_report, route_info
 
         if result.confidence < 0.2:
             # 置信度太低，视为解析失败
+            route_info = {"route": "pending_clarification", "reason": "需要澄清后再路由", "analysis_type": ""}
             return None, ClarificationInfo(
                 type="missing_metrics",  # 先用缺指标的澄清引导用户
                 question="抱歉，我没太理解你的需求。请告诉我你想查看哪些数据指标？",
                 options=[],
                 allow_custom_input=True,
                 missing_fields=["metrics"],
-            ), None, None
+            ), None, route_info
 
         # Step 2: 上下文继承
         self._apply_context_inheritance(
             result, existing_advertiser_ids, existing_time_range, existing_ad_level
         )
 
-        # Step 3: 能力校验（现在不直接返回澄清，后续路由到 nl_dsl 处理）
-        # 暂时保留原有逻辑，后续可以调整为只记录而不返回澄清
+        # Step 3: 能力校验，失败时返回澄清（后续可调整为路由 nl_dsl）
         ok, cap_clarification = self.check_capabilities(result)
         if not ok:
-            return result, cap_clarification, None, None
+            route_info = {"route": "pending_clarification", "reason": "需要澄清后再路由", "analysis_type": ""}
+            return result, cap_clarification, None, route_info
 
         # Step 4: 必填字段检查
         ok, req_clarification = self.check_required_fields(result)
         if not ok:
-            return result, req_clarification, None, None
+            route_info = {"route": "pending_clarification", "reason": "需要澄清后再路由", "analysis_type": ""}
+            return result, req_clarification, None, route_info
 
         # Step 5: 路由判断
         route, reason, analysis_type = self._determine_query_route(result, user_input)
