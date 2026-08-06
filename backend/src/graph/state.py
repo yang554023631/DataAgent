@@ -43,6 +43,13 @@ class AdReportState(TypedDict):
     # 报表意图（扩展，替代原 query_intent 的部分职责）
     report_intent_result: Optional[Dict]  # ReportIntentResult 的 dict 形式
 
+    # NL→DSL 查询相关
+    query_route: Optional[str]           # "structured" / "nl_dsl"
+    route_reason: Optional[str]          # 路由判断依据
+    analysis_type: Optional[str]         # 分析类型提示
+    nl_dsl_result: Optional[Dict]        # NL→DSL 查询结果（中间格式）
+    query_context: Optional[Dict]        # 翻页上下文（不返回前端）
+
     # ========== 旧字段（保持向后兼容） ==========
     # RAG 相关字段
     query_type: Optional[str]  # "report" 或 "knowledge"

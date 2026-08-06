@@ -678,3 +678,220 @@ async def clarify_node_entry(state: dict) -> dict:
 async def reject_node_entry(state: dict) -> dict:
     """拒答节点入口（包装 reject_node）"""
     return await reject_node_impl(state)
+
+
+def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> dict:
+    """
+    构建 NL→DSL 成功的 final_report
+
+    Args:
+        result: NlDslResult 对象或 dict
+        user_input: 用户原始输入
+        report_intent: report_intent_result dict
+
+    Returns:
+        final_report dict，格式与 reporter_agent 一致
+    """
+    from src.config.context import truncate_log
+
+    # 处理 result 可能是对象或 dict
+    if hasattr(result, 'model_dump'):
+        result_dict = result.model_dump()
+    else:
+        result_dict = result
+
+    display_type = result_dict.get('display_type', 'list')
+    columns = result_dict.get('columns', [])
+    rows = result_dict.get('rows', [])
+    metadata = result_dict.get('metadata', {})
+
+    # 生成标题
+    time_range = report_intent.get('time_range', {}) if report_intent else {}
+    start = time_range.get('start_date', '')
+    end = time_range.get('end_date', '')
+    if start and end:
+        title = f"{start} ~ {end} 查询结果"
+    else:
+        title = "查询结果"
+
+    # 生成 highlights
+    highlights = []
+    total_rows = metadata.get('total_rows', len(rows))
+    if metadata.get('is_empty_result'):
+        empty_reason = metadata.get('empty_reason', '查询结果为空')
+        highlights.append({
+            "type": "warning",
+            "text": f"⚠️ {empty_reason}"
+        })
+    else:
+        highlights.append({
+            "type": "info",
+            "text": f"✅ 查询完成，共 {total_rows} 条结果"
+        })
+
+    # 生成 next_queries
+    next_queries = [
+        "查看更多维度分析",
+        "添加过滤条件缩小范围",
+        "对比不同时间段数据"
+    ]
+
+    # 根据 display_type 调整格式
+    data_table = {"columns": columns, "rows": rows}
+
+    # 图表配置（暂时简单处理）
+    chart_config = None
+    if display_type == "chart" or display_type == "line" or display_type == "bar":
+        chart_config = {
+            "type": display_type if display_type in ["line", "bar"] else "bar",
+            "series": [{"name": col, "color": "#3b82f6"} for col in columns[1:]] if len(columns) > 1 else []
+        }
+
+    return {
+        "title": title,
+        "time_range": {"start": start, "end": end},
+        "metrics": [],  # NL→DSL 暂时不单独展示总指标
+        "highlights": highlights,
+        "data_table": data_table,
+        "chart_config": chart_config,
+        "next_queries": next_queries
+    }
+
+
+def _build_failure_guide_report(error_info, user_input: str) -> dict:
+    """
+    构建 NL→DSL 失败时的引导报告
+
+    Args:
+        error_info: 可以是 NlDslResult、异常对象、或错误字符串
+        user_input: 用户原始输入
+
+    Returns:
+        final_report dict，引导用户使用结构化查询
+    """
+    from src.config.context import truncate_log
+
+    # 提取错误信息
+    error_msg = "未知错误"
+    if hasattr(error_info, 'metadata'):
+        # NlDslResult 对象
+        error_msg = error_info.metadata.get('final_error', str(error_info))
+    elif hasattr(error_info, 'get'):
+        # dict
+        error_msg = error_info.get('metadata', {}).get('final_error', str(error_info))
+    elif isinstance(error_info, Exception):
+        error_msg = f"{type(error_info).__name__}: {str(error_info)}"
+    else:
+        error_msg = str(error_info)
+
+    error_msg = truncate_log(error_msg, 200)
+
+    # 生成失败引导报告
+    return {
+        "title": "查询遇到问题",
+        "time_range": {"start": "", "end": ""},
+        "metrics": [],
+        "highlights": [
+            {
+                "type": "warning",
+                "text": f"⚠️ 自然语言查询暂时无法处理这个请求：{error_msg}"
+            },
+            {
+                "type": "info",
+                "text": "💡 你可以尝试用结构化方式提问，例如："
+            },
+            {
+                "type": "info",
+                "text": "  • \"查看 [广告主] 近7天的展示、点击、消耗\""
+            },
+            {
+                "type": "info",
+                "text": "  • \"[广告主] 昨天按计划维度的消耗排名\""
+            },
+            {
+                "type": "info",
+                "text": "  • \"对比 [广告主] 本月和上月的 CTR 变化\""
+            }
+        ],
+        "data_table": {"columns": [], "rows": []},
+        "chart_config": None,
+        "next_queries": [
+            "查看近7天的广告报表",
+            "按计划维度分析数据",
+            "对比两个时间段的数据"
+        ]
+    }
+
+
+async def nl_dsl_node(state: dict) -> dict:
+    """NL→DSL 查询节点
+
+    封装 Schema RAG 检索 + 查询规划 + DSL 生成 + 安全校验 + 自反思执行 + 结果格式化
+    """
+    from src.config.context import truncate_log
+    from src.nl_dsl.self_reflection_executor import get_self_reflection_executor
+    from src.nl_dsl.dsl_generator import get_dsl_generator
+
+    user_input = state.get("user_input", "")
+    report_intent = state.get("report_intent_result", {}) or {}
+    advertiser_ids = state.get("advertiser_ids", [])
+
+    logger.info(f"开始NL→DSL查询: 用户输入='{truncate_log(user_input, 100)}', 广告主={advertiser_ids}")
+
+    updates = {}
+
+    try:
+        # 1. 构造约束
+        time_range = report_intent.get("time_range") or {}
+        metrics = report_intent.get("metrics", [])
+        analysis_type = report_intent.get("chart_type") or state.get("analysis_type", "")
+
+        constraints = {
+            "advertiser_ids": advertiser_ids,
+            "time_range": time_range,
+            "metrics": metrics,
+            "analysis_type": analysis_type,
+        }
+
+        # 2. 查询规划
+        generator = get_dsl_generator()
+        plan = await generator.plan_query(user_input, constraints)
+
+        # 3. 执行（含自反思重试）
+        executor = get_self_reflection_executor()
+        result = await executor.execute_plan(
+            plan=plan,
+            advertiser_ids=advertiser_ids,
+            time_range=time_range,
+            display_type_hint=analysis_type,
+        )
+
+        # 4. 检查结果
+        if not result.metadata.get("success", True):
+            # 失败：生成失败引导报告
+            final_report = _build_failure_guide_report(result, user_input)
+            updates["final_report"] = final_report
+            logger.info(f"NL→DSL查询失败: 生成失败引导报告")
+            return updates
+
+        # 5. 成功：构建 final_report
+        final_report = _build_nl_dsl_final_report(result, user_input, report_intent)
+        updates["final_report"] = final_report
+        updates["nl_dsl_result"] = result.model_dump()
+
+        # 保存 query_context（用于翻页）
+        if result.query_context:
+            updates["query_context"] = result.query_context
+
+        logger.info(
+            f"NL→DSL查询完成: 呈现类型={result.display_type}, "
+            f"行数={result.metadata.get('total_rows', 0)}"
+        )
+
+    except Exception as e:
+        logger.exception(f"NL→DSL节点异常: error={e}")
+        # 失败引导
+        final_report = _build_failure_guide_report(e, user_input)
+        updates["final_report"] = final_report
+
+    return updates

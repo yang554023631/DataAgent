@@ -2,7 +2,7 @@ from langgraph.graph import StateGraph, END
 from .state import AdReportState
 from .nodes import (
     nlu_node, hitl_node, planner_node, executor_node, insight_node, analyst_node, reporter_node, advertiser_handle_node,
-    intent_classifier_node, report_intent_node, clarify_node_entry, reject_node_entry
+    intent_classifier_node, report_intent_node, clarify_node_entry, reject_node_entry, nl_dsl_node
 )
 from src.rag.agents import rag_retrieve_node, rag_answer_node
 
@@ -25,6 +25,7 @@ def build_graph():
     graph.add_node("insight", insight_node)
     graph.add_node("analyst", analyst_node)
     graph.add_node("reporter", reporter_node)
+    graph.add_node("nl_dsl", nl_dsl_node)
 
     # 保留旧节点（向后兼容，暂不删除）
     graph.add_node("advertiser_handle", advertiser_handle_node)
@@ -69,12 +70,15 @@ def build_graph():
         report_intent 之后的条件路由：
         - needs_clarification → clarify
         - final_report 已存在 → reporter（直接返回广告查询结果）
-        - 信息完整 → planner
+        - query_route == "nl_dsl" → nl_dsl
+        - 其他 → planner（结构化路径）
         """
         if state.get("needs_clarification", False):
             return "clarify"
         if state.get("final_report"):
             return "reporter"
+        if state.get("query_route") == "nl_dsl":
+            return "nl_dsl"
         return "planner"
 
     graph.add_conditional_edges(
@@ -83,6 +87,8 @@ def build_graph():
         {
             "clarify": "clarify",
             "planner": "planner",
+            "reporter": "reporter",
+            "nl_dsl": "nl_dsl",
         }
     )
 
@@ -142,6 +148,9 @@ def build_graph():
     )
 
     graph.add_edge("reporter", END)
+
+    # ========== 5.5 NL→DSL 流程 ==========
+    graph.add_edge("nl_dsl", "reporter")
 
     # ========== 6. 拒答流程 ==========
     graph.add_edge("reject", END)
