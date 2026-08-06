@@ -184,3 +184,155 @@ class TestDslGenerator:
         assert result.ok is True
         # DSL 里应该有 advertiser_id
         assert "advertiser_id" in str(dsl.get("query", {}))
+
+
+class TestSelfReflectionExecutor:
+    @pytest.mark.asyncio
+    async def test_execute_single_step_success(self):
+        """单步查询执行成功"""
+        from unittest.mock import MagicMock, AsyncMock
+        from src.nl_dsl.self_reflection_executor import SelfReflectionExecutor
+        from src.nl_dsl.models import QueryPlan, QueryStep
+
+        # mock ES 客户端
+        mock_es = MagicMock()
+        mock_es.search.return_value = {
+            "hits": {"total": {"value": 2, "relation": "eq"}, "hits": [
+                {"_source": {"campaign_id": 101, "advertiser_id": 6}},
+                {"_source": {"campaign_id": 102, "advertiser_id": 6}},
+            ]},
+            "aggregations": {},
+        }
+
+        # mock generator
+        mock_generator = MagicMock()
+        mock_generator.generate_step = AsyncMock(return_value=(
+            {"query": {"bool": {"must": [
+                {"term": {"advertiser_id": 6}},
+                {"range": {"data_date": {"gte": "2026-01-01", "lte": "2026-01-31"}}},
+            ]}}, "size": 10},
+            MagicMock(ok=True, errors=[], warnings=[]),
+        ))
+
+        executor = SelfReflectionExecutor(
+            es_client=mock_es,
+            dsl_generator=mock_generator,
+        )
+
+        plan = QueryPlan(steps=[
+            QueryStep(step_id="step_1", description="test", index="ad_stat_data",
+                      output_fields=["campaign_id"], purpose="test")
+        ], final_output="step_1.output")
+
+        result = await executor.execute_plan(
+            plan=plan,
+            advertiser_ids=["6"],
+            time_range={"start": "2026-01-01", "end": "2026-01-31"},
+        )
+
+        assert result.display_type == "list"
+        assert result.metadata["total_rows"] == 2
+
+    @pytest.mark.asyncio
+    async def test_execute_with_validation_retry(self):
+        """校验失败后反思重试，最终成功"""
+        from unittest.mock import MagicMock, AsyncMock
+        from src.nl_dsl.self_reflection_executor import SelfReflectionExecutor
+        from src.nl_dsl.dsl_validator import ValidationResult
+
+        # 首次校验失败，反思后成功
+        gen_call_count = 0
+        async def mock_generate_step(step, advertiser_ids, time_range, prev_results=None, retry_info=None):
+            nonlocal gen_call_count
+            gen_call_count += 1
+            from src.nl_dsl.models import RetryInfo
+            if gen_call_count == 1:
+                # 首次：校验失败的 DSL
+                dsl = {"query": {"bool": {"must": [
+                    {"range": {"data_date": {"gte": "2026-01-01", "lte": "2026-01-31"}}},
+                ]}}, "size": 10}
+                vr = ValidationResult()
+                vr.add_error("缺少 advertiser_id 过滤")
+                return dsl, vr
+            else:
+                # 反思后：正确的 DSL
+                dsl = {"query": {"bool": {"must": [
+                    {"term": {"advertiser_id": 6}},
+                    {"range": {"data_date": {"gte": "2026-01-01", "lte": "2026-01-31"}}},
+                ]}}, "size": 10}
+                vr = ValidationResult()
+                return dsl, vr
+
+        mock_generator = MagicMock()
+        mock_generator.generate_step = mock_generate_step
+
+        mock_es = MagicMock()
+        mock_es.search.return_value = {
+            "hits": {"total": {"value": 1}, "hits": [{"_source": {"id": 1}}]},
+            "aggregations": {},
+        }
+
+        executor = SelfReflectionExecutor(
+            es_client=mock_es,
+            dsl_generator=mock_generator,
+            max_attempts=3,
+        )
+
+        from src.nl_dsl.models import QueryPlan, QueryStep
+        plan = QueryPlan(steps=[
+            QueryStep(step_id="step_1", description="test", index="ad_stat_data",
+                      output_fields=[], purpose="test")
+        ], final_output="step_1.output")
+
+        result = await executor.execute_plan(
+            plan=plan,
+            advertiser_ids=["6"],
+            time_range={"start": "2026-01-01", "end": "2026-01-31"},
+        )
+
+        # 应该成功（经过 1 次重试）
+        assert result.metadata["total_rows"] == 1
+        assert result.metadata["retries"] == 1
+        assert gen_call_count == 2  # 首次 + 1次反思生成
+
+    @pytest.mark.asyncio
+    async def test_execute_all_attempts_fail(self):
+        """所有尝试都失败，返回失败结果"""
+        from unittest.mock import MagicMock, AsyncMock
+        from src.nl_dsl.self_reflection_executor import SelfReflectionExecutor
+        from src.nl_dsl.dsl_validator import ValidationResult
+        from src.nl_dsl.models import RetryInfo
+
+        # 始终失败
+        async def mock_generate_step(step, advertiser_ids, time_range, prev_results=None, retry_info=None):
+            dsl = {"query": {"bool": {"must": []}}, "size": 10}
+            vr = ValidationResult()
+            vr.add_error("缺少 advertiser_id 过滤")
+            return dsl, vr
+
+        mock_generator = MagicMock()
+        mock_generator.generate_step = mock_generate_step
+        mock_es = MagicMock()
+
+        executor = SelfReflectionExecutor(
+            es_client=mock_es,
+            dsl_generator=mock_generator,
+            max_attempts=3,
+        )
+
+        from src.nl_dsl.models import QueryPlan, QueryStep
+        plan = QueryPlan(steps=[
+            QueryStep(step_id="step_1", description="test", index="ad_stat_data",
+                      output_fields=[], purpose="test")
+        ], final_output="step_1.output")
+
+        result = await executor.execute_plan(
+            plan=plan,
+            advertiser_ids=["6"],
+            time_range={"start": "2026-01-01", "end": "2026-01-31"},
+        )
+
+        # 应该失败
+        assert result.metadata.get("success") is False
+        assert result.metadata.get("retries") == 2  # 首次 + 2次重试
+        assert result.metadata.get("final_error") is not None
