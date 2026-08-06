@@ -251,7 +251,7 @@ class TestFullAnalyze:
 
     @pytest.mark.asyncio
     async def test_successful_analysis(self):
-        """信息齐全 → 返回 (result, None, None)"""
+        """信息齐全 → 返回 (result, None, None, route_info)"""
         mock_client = _make_mock_client({
             "advertiser_ids": ["123"],
             "time_range": {
@@ -267,17 +267,18 @@ class TestFullAnalyze:
             "alias_mappings": {}
         })
         analyzer = ReportIntentAnalyzer(llm_client=mock_client)
-        result, clarification, final_report = await analyzer.analyze(
+        result, clarification, final_report, route_info = await analyzer.analyze(
             "查看广告主123上个月的曝光点击"
         )
         assert result is not None
         assert clarification is None
         assert final_report is None
+        assert route_info is not None
         assert len(result.metrics) == 2
 
     @pytest.mark.asyncio
     async def test_analysis_with_clarification(self):
-        """缺字段 → 返回 (result, clarification, None)"""
+        """缺字段 → 返回 (result, clarification, None, None)"""
         mock_client = _make_mock_client({
             "advertiser_ids": [],
             "time_range": {
@@ -293,10 +294,120 @@ class TestFullAnalyze:
             "alias_mappings": {}
         })
         analyzer = ReportIntentAnalyzer(llm_client=mock_client)
-        result, clarification, final_report = await analyzer.analyze(
+        result, clarification, final_report, route_info = await analyzer.analyze(
             "上个月的曝光数据"
         )
         assert result is not None
         assert clarification is not None
         assert final_report is None
+        assert route_info is None
         assert clarification.type == "missing_advertiser"
+
+
+class TestQueryRouting:
+    """路由判断测试"""
+
+    def setup_method(self):
+        self.analyzer = ReportIntentAnalyzer(llm_client=None)
+
+    def test_structured_route_default(self):
+        """标准查询 → structured 路由"""
+        result = ReportIntentResult(
+            advertiser_ids=["123"],
+            time_range=ReportTimeRange(start_date="2026-07-01", end_date="2026-07-31"),
+            metrics=["impressions", "clicks"],
+            ad_level="campaign",
+            group_by=["data_date"],
+            filters=[],
+        )
+        route, reason, analysis_type = self.analyzer._determine_query_route(
+            result, "查看广告主123上个月的曝光和点击按天统计"
+        )
+        assert route == "structured"
+        assert analysis_type == "standard_report"
+
+    def test_nl_dsl_route_keyword_list(self):
+        """关键词 '列表' → nl_dsl 路由"""
+        result = ReportIntentResult(
+            advertiser_ids=["123"],
+            time_range=ReportTimeRange(start_date="2026-07-01", end_date="2026-07-31"),
+            metrics=["impressions"],
+            ad_level="campaign",
+        )
+        route, reason, analysis_type = self.analyzer._determine_query_route(
+            result, "有哪些广告计划"
+        )
+        assert route == "nl_dsl"
+        assert "命中关键词" in reason
+        assert analysis_type == "exploratory_query"
+
+    def test_nl_dsl_route_keyword_top(self):
+        """关键词 'top' → nl_dsl 路由"""
+        result = ReportIntentResult(
+            advertiser_ids=["123"],
+            time_range=ReportTimeRange(start_date="2026-07-01", end_date="2026-07-31"),
+            metrics=["impressions"],
+            ad_level="campaign",
+        )
+        route, reason, analysis_type = self.analyzer._determine_query_route(
+            result, "top 10 曝光最高的广告"
+        )
+        assert route == "nl_dsl"
+        assert "命中关键词" in reason
+
+    def test_nl_dsl_route_keyword_greater(self):
+        """关键词 '大于' → nl_dsl 路由"""
+        result = ReportIntentResult(
+            advertiser_ids=["123"],
+            time_range=ReportTimeRange(start_date="2026-07-01", end_date="2026-07-31"),
+            metrics=["impressions"],
+            ad_level="campaign",
+        )
+        route, reason, analysis_type = self.analyzer._determine_query_route(
+            result, "曝光大于 10000 的广告"
+        )
+        assert route == "nl_dsl"
+
+    def test_nl_dsl_route_many_filters(self):
+        """过滤条件较多（>3） → nl_dsl 路由"""
+        result = ReportIntentResult(
+            advertiser_ids=["123"],
+            time_range=ReportTimeRange(start_date="2026-07-01", end_date="2026-07-31"),
+            metrics=["impressions"],
+            ad_level="campaign",
+            filters=[{"field": "a"}, {"field": "b"}, {"field": "c"}, {"field": "d"}],
+        )
+        route, reason, analysis_type = self.analyzer._determine_query_route(
+            result, "复杂条件查询"
+        )
+        assert route == "nl_dsl"
+        assert "过滤条件较多" in reason
+
+    @pytest.mark.asyncio
+    async def test_analyze_with_route_info(self):
+        """完整 analyze 流程应该返回 route_info"""
+        mock_client = _make_mock_client({
+            "advertiser_ids": ["123"],
+            "time_range": {
+                "start_date": "2026-07-01", "end_date": "2026-07-31",
+                "unit": "day", "is_lifetime": False
+            },
+            "metrics": ["impressions", "clicks"],
+            "ad_level": "campaign",
+            "group_by": [], "filters": [],
+            "is_comparison": False, "compare_time_range": None,
+            "top_n": None, "chart_type": None,
+            "confidence": 0.9,
+            "alias_mappings": {}
+        })
+        analyzer = ReportIntentAnalyzer(llm_client=mock_client)
+        result, clarification, final_report, route_info = await analyzer.analyze(
+            "查看广告主123上个月的曝光点击"
+        )
+        assert result is not None
+        assert clarification is None
+        assert final_report is None
+        assert route_info is not None
+        assert "route" in route_info
+        assert "reason" in route_info
+        assert "analysis_type" in route_info

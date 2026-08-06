@@ -604,7 +604,7 @@ async def report_intent_node(state: dict) -> dict:
         existing_ad_level = report_intent_result.get("ad_level")
 
     analyzer = get_report_intent_analyzer()
-    result, clarification, final_report = await analyzer.analyze(
+    result, clarification, final_report, route_info = await analyzer.analyze(
         user_input,
         conversation_history,
         existing_advertiser_ids=existing_advertiser_ids,
@@ -647,6 +647,12 @@ async def report_intent_node(state: dict) -> dict:
             updates["query_intent"] = query_intent
             updates["advertiser_ids"] = result.advertiser_ids
 
+        # 写入路由信息到 state
+        if route_info:
+            updates["query_route"] = route_info["route"]
+            updates["route_reason"] = route_info["reason"]
+            updates["analysis_type"] = route_info["analysis_type"]
+
         if clarification:
             # 需要澄清
             updates.update(build_clarification_state(clarification))
@@ -655,7 +661,10 @@ async def report_intent_node(state: dict) -> dict:
             # 不需要澄清，确保标志位为 False
             updates["needs_clarification"] = False
             if result:
-                logger.info(f"报表意图识别完成: 广告主={result.advertiser_ids}, 时间={result.time_range and result.time_range.start_date + '~' + result.time_range.end_date}, 指标={result.metrics}, 层级={result.ad_level}")
+                log_msg = f"报表意图识别完成: 广告主={result.advertiser_ids}, 时间={result.time_range and result.time_range.start_date + '~' + result.time_range.end_date}, 指标={result.metrics}, 层级={result.ad_level}"
+                if route_info:
+                    log_msg += f", 路由={route_info['route']}, 原因={route_info['reason']}"
+                logger.info(log_msg)
             else:
                 logger.info(f"报表意图识别完成: 结果为空")
 

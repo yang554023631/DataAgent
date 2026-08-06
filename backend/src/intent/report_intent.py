@@ -477,6 +477,40 @@ class ReportIntentAnalyzer:
         # 不是纯广告主查询，返回 None 继续正常流程
         return None
 
+    # ---- 路由判断 ----
+
+    def _determine_query_route(self, result: ReportIntentResult, user_input: str) -> Tuple[str, str, str]:
+        """
+        判断走结构化路径还是 NL→DSL 路径
+
+        Returns:
+            (route: str, reason: str, analysis_type: str)
+            route: "structured" / "nl_dsl"
+            analysis_type: "standard_report" / "exploratory_query" / ...
+        """
+        # 启发式规则：关键词匹配
+        nl_dsl_keywords = [
+            "列表", "有哪些", "包含", "所有", "全部",
+            "大于", "小于", "超过", "低于", "高于",
+            "排名", "top", "前",
+            "明细", "详情",
+        ]
+
+        user_input_lower = user_input.lower()
+        for kw in nl_dsl_keywords:
+            if kw in user_input_lower:
+                return "nl_dsl", f"命中关键词: {kw}", "exploratory_query"
+
+        # 检查是否有复杂过滤
+        if result.filters and len(result.filters) > 3:
+            return "nl_dsl", "过滤条件较多（>3个）", "exploratory_query"
+
+        # 检查是否有 having 类语义（简单判断：filters 中有数值比较型过滤且针对指标）
+        # 这里暂时简化，后续可完善
+
+        # 默认走结构化
+        return "structured", "标准指标+维度，结构化可表达", "standard_report"
+
     # ---- 主入口 ----
 
     async def analyze(
@@ -486,7 +520,7 @@ class ReportIntentAnalyzer:
         existing_advertiser_ids: List[str] = None,
         existing_time_range: ReportTimeRange = None,
         existing_ad_level: str = None,
-    ) -> Tuple[Optional[ReportIntentResult], Optional[ClarificationInfo], Optional[dict]]:
+    ) -> Tuple[Optional[ReportIntentResult], Optional[ClarificationInfo], Optional[dict], Optional[dict]]:
         """
         分析用户输入，提取报表意图
 
@@ -498,11 +532,12 @@ class ReportIntentAnalyzer:
             existing_ad_level: 上下文中已有的广告层级
 
         Returns:
-            (意图结果, 澄清信息, final_report)
-            - 如果是纯广告主查询：(None, None, final_report)
-            - 如果信息齐全且能力支持：(result, None, None)
-            - 如果需要澄清：(result, clarification, None)
-            - 如果完全无法解析：(None, clarification, None)
+            (意图结果, 澄清信息, final_report, route_info)
+            route_info: {"route": "structured"/"nl_dsl", "reason": str, "analysis_type": str}
+            - 如果是纯广告主查询：(None, None, final_report, None)
+            - 如果信息齐全：(result, None, None, route_info)
+            - 如果需要澄清：(result, clarification, None, None)
+            - 如果完全无法解析：(None, clarification, None, None)
         """
         # Step 1: LLM 提取
         result = await self._llm_extract(user_input, conversation_history)
@@ -513,7 +548,7 @@ class ReportIntentAnalyzer:
         if final_report is not None:
             # 纯广告查询，直接返回 final_report
             logger.info(f"报表意图识别: 检测到纯广告主查询，直接返回结果")
-            return None, None, final_report  # result, clarification, final_report
+            return None, None, final_report, None  # result, clarification, final_report, route_info
 
         if result.confidence < 0.2:
             # 置信度太低，视为解析失败
@@ -523,24 +558,34 @@ class ReportIntentAnalyzer:
                 options=[],
                 allow_custom_input=True,
                 missing_fields=["metrics"],
-            ), None
+            ), None, None
 
         # Step 2: 上下文继承
         self._apply_context_inheritance(
             result, existing_advertiser_ids, existing_time_range, existing_ad_level
         )
 
-        # Step 3: 能力校验
+        # Step 3: 能力校验（现在不直接返回澄清，后续路由到 nl_dsl 处理）
+        # 暂时保留原有逻辑，后续可以调整为只记录而不返回澄清
         ok, cap_clarification = self.check_capabilities(result)
         if not ok:
-            return result, cap_clarification, None
+            return result, cap_clarification, None, None
 
         # Step 4: 必填字段检查
         ok, req_clarification = self.check_required_fields(result)
         if not ok:
-            return result, req_clarification, None
+            return result, req_clarification, None, None
 
-        return result, None, None
+        # Step 5: 路由判断
+        route, reason, analysis_type = self._determine_query_route(result, user_input)
+        route_info = {
+            "route": route,
+            "reason": reason,
+            "analysis_type": analysis_type
+        }
+        logger.info(f"报表意图路由判断: 路径={route}, 原因={reason}, 分析类型={analysis_type}")
+
+        return result, None, None, route_info
 
 
 # 单例
