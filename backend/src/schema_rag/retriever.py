@@ -2,6 +2,8 @@
 复用现有 VectorRetriever，固定 doc_type='schema'
 """
 import logging
+from typing import List
+from src.config.context import truncate_log
 from src.rag.retriever import VectorRetriever, RetrievalResult
 
 logger = logging.getLogger(__name__)
@@ -19,7 +21,7 @@ class SchemaRetriever:
     def __init__(self, top_k: int = 10):
         self._retriever = VectorRetriever(top_k=top_k)
 
-    def search(self, query: str, db_session=None) -> list:
+    def search(self, query: str, db_session=None) -> List[RetrievalResult]:
         """语义检索相关的 schema 文档
 
         Args:
@@ -42,13 +44,13 @@ class SchemaRetriever:
                 db_session=db_session,
                 doc_type="schema",
             )
-            logger.info(f"Schema RAG检索: query='{query[:50]}', 命中={len(results)}条")
+            logger.info(f"Schema RAG检索: query='{truncate_log(query)}', 命中={len(results)}条")
             return results
         finally:
             if close_after:
                 db_session.close()
 
-    def search_by_index(self, query: str, index_name: str, db_session=None) -> list:
+    def search_by_index(self, query: str, index_name: str, db_session=None) -> List[RetrievalResult]:
         """检索指定索引下的 schema 文档（字段级 + 示例级）
 
         在 query 前拼接索引名作为上下文，提升检索精准度。
