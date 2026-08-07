@@ -53,7 +53,7 @@ async def nlu_node(state: dict) -> dict:
     """意图理解节点"""
     user_input = state.get("user_input", "")
     conversation_history = state.get("conversation_history", [])
-    existing_advertiser_ids = state.get("advertiser_ids", [])
+    existing_advertiser_ids = state.get("advertiser_ids") or []
 
     try:
         query_intent = await nlu_agent(user_input, conversation_history, existing_advertiser_ids)
@@ -580,7 +580,7 @@ async def report_intent_node(state: dict) -> dict:
     """报表意图识别节点"""
     user_input = state.get("user_input", "")
     conversation_history = state.get("conversation_history", [])
-    existing_advertiser_ids = list(state.get("advertiser_ids", []))
+    existing_advertiser_ids = list(state.get("advertiser_ids") or [])
 
     # --- 澄清回填：上一轮是 missing_advertiser 澄清时，把用户选择的广告主直接填入 ---
     clarification_info = state.get("clarification", {})

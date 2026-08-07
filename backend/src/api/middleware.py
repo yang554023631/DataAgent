@@ -61,9 +61,14 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             duration_ms = int((time.time() - start_time) * 1000)
             logger.exception(f"请求异常: error={e}, 耗时={duration_ms}ms")
-            # 异常也要注入 header 再抛出
-            # 注意：FastAPI 会把未捕获异常转成 500，这里我们直接抛出
-            raise
+            # 构造 500 响应，确保 X-Request-ID header 也能返回给前端
+            from starlette.responses import JSONResponse
+            response = JSONResponse(
+                status_code=500,
+                content={"detail": "Internal Server Error"}
+            )
+            response.headers["X-Request-ID"] = request_id
+            return response
         finally:
             # 重置 contextvars
             request_id_var.reset(req_token)
