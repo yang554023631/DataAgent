@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 # 单例缓存
 _intent_llm_instance: Optional["IntentLLMClient"] = None
+_dsl_lite_llm_instance: Optional["IntentLLMClient"] = None
 
 
 def get_fallback_classifier() -> Optional[callable]:
@@ -82,8 +83,34 @@ class IntentLLMClient:
 
 
 def get_intent_llm_client() -> "IntentLLMClient":
-    """获取意图识别 LLM 客户端单例"""
+    """获取意图识别 LLM 客户端单例（主模型，用于意图理解、查询规划等复杂任务）"""
     global _intent_llm_instance
     if _intent_llm_instance is None:
         _intent_llm_instance = IntentLLMClient()
     return _intent_llm_instance
+
+
+def get_dsl_lite_llm_client() -> "IntentLLMClient":
+    """获取 DSL 生成专用的轻量模型客户端单例
+
+    使用 doubao-seed-2.0-lite 等较小模型，专用于 DSL 生成这类格式明确的任务，
+    以降低延迟。查询规划等需要强理解能力的任务仍使用主模型。
+    """
+    global _dsl_lite_llm_instance
+    if _dsl_lite_llm_instance is None:
+        from langchain_openai import ChatOpenAI
+        from src.rag.config import ARK_API_KEY, ARK_BASE_URL, ARK_LITE_MODEL
+
+        if ARK_LITE_MODEL and ARK_API_KEY:
+            lite_llm = ChatOpenAI(
+                model=ARK_LITE_MODEL,
+                api_key=ARK_API_KEY,
+                base_url=ARK_BASE_URL,
+                temperature=0,
+            )
+            _dsl_lite_llm_instance = IntentLLMClient(llm=lite_llm)
+        else:
+            # 降级：没有配置轻量模型就用主模型
+            logger.warning("未配置 ARK_LITE_MODEL，降级使用主模型进行 DSL 生成")
+            _dsl_lite_llm_instance = get_intent_llm_client()
+    return _dsl_lite_llm_instance

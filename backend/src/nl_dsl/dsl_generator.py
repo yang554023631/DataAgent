@@ -37,11 +37,13 @@ class DslGenerator:
     def __init__(
         self,
         llm_client=None,
+        dsl_llm_client=None,
         schema_retriever=None,
         validator=None,
         max_steps: int = 5,
     ):
-        self._llm = llm_client
+        self._llm = llm_client  # 主模型：查询规划（理解能力要求高）
+        self._dsl_llm = dsl_llm_client or llm_client  # DSL 生成模型：可使用轻量模型
         self._schema_retriever = schema_retriever
         self._validator = validator
         self.max_steps = max_steps
@@ -62,8 +64,8 @@ class DslGenerator:
         """
         logger.info(f"NL→DSL查询规划开始: 用户问题='{truncate_log(user_input, 100)}'")
 
-        if not self._llm:
-            raise ValueError("llm_client is required")
+        if not self._dsl_llm:
+            raise ValueError("dsl_llm_client is required")
 
         # 1. 检索相关 schema
         schema_context = self._get_schema_context(user_input + " " + " ".join(constraints.get("metrics") or []))
@@ -78,7 +80,7 @@ class DslGenerator:
             schema_context=schema_context[:2000],
         )
 
-        response = await self._llm.call(
+        response = await self._dsl_llm.call(
             system_prompt=QUERY_PLANNING_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             json_mode=True,
@@ -131,8 +133,8 @@ class DslGenerator:
         step_id = step.step_id
         logger.info(f"NL→DSL生成(步骤{step_id}): 索引={step.index}")
 
-        if not self._llm:
-            raise ValueError("llm_client is required")
+        if not self._dsl_llm:
+            raise ValueError("dsl_llm_client is required")
 
         # 1. 检索该索引的 schema
         schema_context = self._get_schema_context_for_index(step.index, step.description)
@@ -155,7 +157,7 @@ class DslGenerator:
                 advertiser_ids=advertiser_ids,
                 time_range=time_range,
             )
-            response = await self._llm.call(
+            response = await self._dsl_llm.call(
                 system_prompt=DSL_GENERATION_SYSTEM_PROMPT,
                 user_prompt=user_prompt,
                 json_mode=True,
@@ -191,7 +193,7 @@ class DslGenerator:
             error_message=retry_info.error_message,
             schema_context=schema_context[:2000],
         )
-        response = await self._llm.call(
+        response = await self._dsl_llm.call(
             system_prompt=REFLECTION_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             json_mode=True,
@@ -258,6 +260,9 @@ def get_dsl_generator() -> DslGenerator:
         from src.schema_rag.retriever import get_schema_retriever
 
         llm_client = get_intent_llm_client()
+        # DSL 生成使用轻量模型以降低延迟
+        from src.intent.llm_client import get_dsl_lite_llm_client
+        dsl_llm_client = get_dsl_lite_llm_client()
         schema_retriever = get_schema_retriever()
         # 默认白名单索引
         allowed_indices = {"ad_stat_data", "ad_stat_audience", "advertiser", "adgroup"}
@@ -265,6 +270,7 @@ def get_dsl_generator() -> DslGenerator:
 
         _dsl_generator_instance = DslGenerator(
             llm_client=llm_client,
+            dsl_llm_client=dsl_llm_client,
             schema_retriever=schema_retriever,
             validator=validator,
         )

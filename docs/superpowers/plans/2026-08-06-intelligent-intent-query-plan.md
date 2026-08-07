@@ -3303,3 +3303,23 @@ def get_entity_names(entity_type: str, entity_ids: List[int]) -> Dict[int, str]
 - 判断依据：metrics 空 + group_by 空 + time_range 空 + ad_level 非报表层级
 - 完全依赖 LLM 结构化提取结果，不依赖关键词正则
 - 详见 `2026-08-05-advertiser-lookup-intent-design.md`
+
+### 9. 双模型策略：轻量模型用于 NL→DSL
+
+**背景**：NL→DSL 管线耗时较长（~50s），主要瓶颈在 LLM 调用。使用轻量模型（doubao-seed-2.0-lite）处理格式明确的任务，以降低延迟。
+
+**改造内容**：
+
+| 模块 | 文件 | 改动 |
+|------|------|------|
+| 配置 | `src/rag/config.py` | 新增 `ARK_LITE_MODEL` 环境变量（默认 `ep-20260807194303-xq99t`） |
+| LLM 客户端 | `src/intent/llm_client.py` | 新增 `get_dsl_lite_llm_client()` 工厂函数，支持降级 |
+| DSL 生成器 | `src/nl_dsl/dsl_generator.py` | 新增 `dsl_llm_client` 参数，规划和生成都改用轻量模型 |
+
+**效果**：
+- nl_dsl 节点总耗时降低 ~20-25%（~53s → ~41s）
+- 查询规划：~20s → ~14s
+- DSL 生成：~33s → ~27s
+- 输出质量：DSL 正确性不受影响，规范性略有下降（命名风格差异），由校验层兜底
+
+**降级策略**：未配置 `ARK_LITE_MODEL` 时自动使用主模型，不影响现有部署。
