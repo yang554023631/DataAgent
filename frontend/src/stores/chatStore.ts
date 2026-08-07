@@ -101,7 +101,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { sessionId } = get();
     if (!sessionId) return;
 
-    set({ isLoading: true });
+    // 点确认后立即关闭弹窗并进入加载状态，不用等 API 返回
+    set(state => ({
+      showClarification: false,
+      clarification: null,
+      isLoading: true,
+      messages: [...state.messages, {
+        role: 'user',
+        content: selectedValue,
+      }],
+    }));
 
     try {
       const result = await apiService.submitClarification(sessionId, selectedValue);
@@ -114,8 +123,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
             content: '',
             finalReport,
           }],
-          showClarification: false,
-          clarification: null,
           isLoading: false,
         }));
       } else {
@@ -125,8 +132,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
             role: 'assistant',
             content: `已确认！\n\n\`\`\`json\n${resultMessage}\n\`\`\``,
           }],
-          showClarification: false,
-          clarification: null,
           isLoading: false,
         }));
       }

@@ -49,12 +49,40 @@ reporter → 输出响应 → END
 
 #### 1. `src/intent/report_intent.py` - ReportIntentAnalyzer.analyze()
 
-在方法**最开头**增加广告主查询检测逻辑：
+**方案演进：从规则匹配 → LLM 结构化输出判断**
 
-1. **检测列表查询**：调用 `is_advertiser_list_query(user_input)` → 命中则生成所有广告主列表的 `final_report`
-2. **检测ID查名称**：正则匹配 `r'(\d+)\s*(叫什么|名字|名称)'` 或 `r'广告主\s*(\d+)'` + 名称关键词 → 提取ID，调用 `get_advertiser_by_id` → 生成结果
-3. **检测名称查ID**：匹配 `id|ID|编号` + 名称关键词 → 提取名称片段，调用 `get_advertiser_by_name` → 生成结果列表
-4. 如果命中任一情况，将 `final_report` 写入返回结果，`result` 返回 `None`
+最初方案使用正则 + 关键词规则检测广告主查询（`is_advertiser_list_query` 等函数），但存在以下问题：
+- 规则覆盖不全，自然语言表达方式多样
+- 正则匹配脆弱，语序变化容易漏判或误判
+- 与 LLM 结构化提取结果割裂，可能出现不一致
+
+**最终方案：基于 LLM 结构化输出的纯广告主查询判断**
+
+在 LLM 完成结构化提取后（`ReportIntentResult`），通过判断提取结果的特征来决定是否为纯广告主查询：
+
+```python
+def _build_advertiser_lookup_report(self, result: ReportIntentResult) -> Optional[dict]:
+    """
+    判断是否为纯广告主查询：
+    - 没有指标（metrics 为空）
+    - 没有维度（group_by 为空）
+    - 没有时间范围（time_range 为空）
+    - ad_level 为空或为 advertiser（不是 campaign/adgroup/creative 等报表层级）
+    
+    满足以上条件 → 判定为纯广告主查询
+    """
+```
+
+四种判定结果及处理：
+
+| 场景 | LLM 输出特征 | 处理方式 |
+|------|-------------|---------|
+| 广告主列表 | metrics/dims/time 均空，无 advertiser_ids | 返回所有广告主列表 |
+| 指定广告主详情 | metrics/dims/time 均空，有 advertiser_ids | 返回对应广告主详情 |
+| 名称搜索广告主 | metrics/dims/time 均空，alias_mappings 中有广告主名称 | 按名称模糊搜索返回 |
+| 非纯广告主查询 | 有任一报表特征（指标/维度/时间/报表层级） | 返回 None，走常规报表流程 |
+
+LLM 结构化提取统一通过 `json_mode` 输出，不依赖关键词规则，更加健壮。
 
 #### 2. `src/graph/nodes.py` - report_intent_node()
 

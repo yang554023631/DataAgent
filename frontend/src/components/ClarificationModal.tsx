@@ -10,13 +10,19 @@ interface ClarificationModalProps {
 export default function ClarificationModal({ clarification, onSubmit, onClose }: ClarificationModalProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [customInput, setCustomInput] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const handleConfirm = () => {
+    let value = '';
     if (selected) {
-      onSubmit(selected);
+      value = selected;
     } else if (customInput.trim() && clarification.allow_custom_input) {
-      onSubmit(customInput.trim());
+      value = customInput.trim();
     }
+    if (!value) return;
+
+    setSubmitting(true);
+    onSubmit(value);
   };
 
   return (
@@ -63,10 +69,10 @@ export default function ClarificationModal({ clarification, onSubmit, onClose }:
           </button>
           <button
             onClick={handleConfirm}
-            disabled={!selected && !customInput.trim()}
+            disabled={(!selected && !customInput.trim()) || submitting}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            确认
+            {submitting ? '处理中...' : '确认'}
           </button>
         </div>
       </div>

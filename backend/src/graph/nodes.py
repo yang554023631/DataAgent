@@ -626,6 +626,9 @@ async def report_intent_node(state: dict) -> dict:
         updates["needs_clarification"] = False
         logger.info(f"报表意图识别完成: 检测到纯广告主查询, 路由={route_info['route']}")
     else:
+        # 非纯广告主查询路径，清除旧的 final_report（避免 state 中残留上一轮的结果）
+        updates["final_report"] = None
+
         if result:
             # 将 ReportIntentResult 转换为 dict 存入 state
             result_dict = result.model_dump()
@@ -693,6 +696,15 @@ def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> 
         final_report dict，格式与 reporter_agent 一致
     """
     from src.config.context import truncate_log
+    from src.nl_dsl.field_mapping import (
+        get_dimension_display_name,
+        get_metric_display_name,
+        get_metric_by_data_type,
+        resolve_metric_from_query,
+        extract_data_types_from_dsl,
+        extract_agg_field_mapping,
+        METRICS,
+    )
 
     # 处理 result 可能是对象或 dict
     if hasattr(result, 'model_dump'):
@@ -700,10 +712,243 @@ def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> 
     else:
         result_dict = result
 
-    display_type = result_dict.get('display_type', 'list')
     columns = result_dict.get('columns', [])
     rows = result_dict.get('rows', [])
     metadata = result_dict.get('metadata', {})
+    display_type = result_dict.get('display_type', 'list')
+
+    # 将 exploratory_query 等非渲染类型规范化为实际呈现类型
+    if display_type in ("exploratory_query", "detail", "comparison"):
+        has_aggs = metadata.get('has_aggregations', False)
+        if has_aggs and rows:
+            display_type = "list"  # 聚合列表（按维度分组的指标对比）
+        elif rows:
+            display_type = "list"
+        else:
+            display_type = "qa"
+
+    # ---- 列名映射：原始字段名 → 用户友好的显示名 ----
+    # 从 DSL（如果有）中提取实际查询的 data_type，用于映射 data_value 列名
+    query_context = result_dict.get("query_context") or {}
+    base_dsl = query_context.get("base_dsl") if isinstance(query_context, dict) else None
+
+    # 尝试从 DSL 提取 data_type 来确定指标
+    primary_metric = None
+    data_types = extract_data_types_from_dsl(base_dsl) if base_dsl else []
+    if len(data_types) == 1:
+        metric_info = get_metric_by_data_type(data_types[0])
+        if metric_info:
+            primary_metric = metric_info["name"]
+
+    # DSL 里没找到或多个 data_type 时，fallback 到 report_intent 和用户 query
+    if not primary_metric:
+        intent_metrics = (report_intent or {}).get("metrics", []) or []
+        if intent_metrics and intent_metrics[0] in METRICS:
+            primary_metric = intent_metrics[0]
+        else:
+            resolved = resolve_metric_from_query(user_input)
+            if resolved:
+                primary_metric = resolved
+
+    # 从 DSL 的 aggs 中提取「聚合名称 → 实际字段名」映射
+    # 用于聚合结果中列名是聚合名（如 by_campaign）而非字段名的情况
+    agg_field_map = extract_agg_field_mapping(base_dsl) if base_dsl else {}
+
+    # ID 维度字段 -> (name列显示名, entity_type)
+    # 定义在此处供后续多处使用（列映射、聚合去重、名称补充）
+    id_to_name_map = {
+        "campaign_id": ("计划名称", "campaign"),
+        "adgroup_id": ("广告组名称", "adgroup"),
+        "advertiser_id": ("广告主名称", "advertiser"),
+        "creative_id": ("创意名称", "creative"),
+    }
+
+    def _map_column(col: str):
+        # data_type 列对用户没意义，跳过（不展示）
+        if col == "data_type":
+            return None
+
+        # 如果是聚合名称（不是原始字段名），先映射到实际字段名
+        actual_field = agg_field_map.get(col, col)
+
+        # 特殊处理：长表模型的 data_value 列 → 替换为实际指标名
+        if actual_field == "data_value" and primary_metric:
+            return get_metric_display_name(primary_metric)
+        # 维度字段映射
+        cn_name = get_dimension_display_name(actual_field)
+        if cn_name != actual_field:
+            return cn_name
+        # 指标字段名（如果列名恰好是指标英文名）
+        metric_cn = get_metric_display_name(actual_field)
+        if metric_cn != actual_field:
+            return metric_cn
+        return col
+
+    display_columns = []
+    keep_indices = []
+    for i, col in enumerate(columns):
+        mapped = _map_column(col)
+        if mapped is None:
+            continue  # 跳过不需要展示的列（如 data_type）
+        display_columns.append(mapped)
+        keep_indices.append(i)
+
+    # 对应地过滤 row 中的列
+    if keep_indices != list(range(len(columns))):
+        rows = [[row[i] for i in keep_indices] for row in rows]
+        columns = display_columns
+    else:
+        columns = display_columns
+
+    # ---- 明细数据自动聚合去重 ----
+    # 场景：用户问"消耗>10的计划有哪些"，LLM 可能生成明细查询（每天每行），
+    # 导致同一计划重复出现且消耗是单日值。这里检测到明细数据包含维度ID+指标时，
+    # 按维度聚合汇总指标，确保每个维度实体只有一行。
+    if rows and base_dsl and metadata.get("has_aggregations") is False:
+        # 找出维度列和指标列的索引（基于映射后的 display_columns）
+        dim_field_to_idx = {}
+        metric_indices = []
+        orig_columns_raw = result_dict.get('columns', [])
+
+        for i, col in enumerate(orig_columns_raw):
+            actual_field = agg_field_map.get(col, col)
+            if actual_field in id_to_name_map:
+                dim_field_to_idx[actual_field] = i
+            elif actual_field == "data_value":
+                metric_indices.append(i)
+
+        # 只有在同时有维度列和指标列、且数据行数明显大于维度去重数时才聚合
+        if dim_field_to_idx and metric_indices:
+            # 取第一个维度列作为主键（通常最左边的维度是主要分组维度）
+            primary_dim_field = None
+            for field in id_to_name_map.keys():
+                if field in dim_field_to_idx:
+                    primary_dim_field = field
+                    break
+
+            if primary_dim_field:
+                dim_idx = dim_field_to_idx[primary_dim_field]
+                # 检查是否存在重复（简单用前几行采样判断）
+                sample_keys = set()
+                has_duplicates = False
+                for row in rows[:min(100, len(rows))]:
+                    if dim_idx < len(row):
+                        key = row[dim_idx]
+                        if key in sample_keys:
+                            has_duplicates = True
+                            break
+                        sample_keys.add(key)
+
+                if has_duplicates:
+                    # 按维度聚合：指标列求和，其他列（如日期）丢弃
+                    aggregated = {}
+                    for row in rows:
+                        if dim_idx >= len(row):
+                            continue
+                        key = row[dim_idx]
+                        if key not in aggregated:
+                            # 保留维度列的值，指标列初始化为 0
+                            new_row = list(row)
+                            for mi in metric_indices:
+                                if mi < len(new_row):
+                                    new_row[mi] = 0
+                            aggregated[key] = new_row
+                        # 累加指标列
+                        agg_row = aggregated[key]
+                        for mi in metric_indices:
+                            if mi < len(agg_row) and mi < len(row):
+                                try:
+                                    agg_row[mi] = (agg_row[mi] or 0) + (row[mi] or 0)
+                                except (TypeError, ValueError):
+                                    pass
+
+                    rows = list(aggregated.values())
+                    # 去掉纯明细列（如 data_date 等非维度非指标的列）
+                    # 保留维度列和指标列
+                    keep = []
+                    new_columns = []
+                    for i, col in enumerate(orig_columns_raw):
+                        actual = agg_field_map.get(col, col)
+                        if actual in id_to_name_map or actual == "data_value":
+                            keep.append(i)
+                            new_columns.append(col)
+                    if keep != list(range(len(orig_columns_raw))):
+                        rows = [[r[i] for i in keep if i < len(r)] for r in rows]
+                        # 同步更新 display_columns 和 columns
+                        display_columns = [display_columns[i] for i in keep if i < len(display_columns)]
+                        columns = display_columns
+                        # 重建 agg_field_map 对应的列映射（列数减少了）
+                        # 这里我们用 new_columns 重新映射
+                        orig_columns = new_columns
+                    # 更新总行数
+                    total_rows = len(rows)
+
+    # ---- 自动补充维度名称列（campaign_id → campaign_name 等） ----
+    # 检测原始列中哪些是 ID 维度，然后批量查询对应的 name 并插入到 ID 列后面
+
+    if rows and base_dsl:
+        from src.tools.hierarchy_utils import get_entity_names
+
+        # 找出所有需要补充 name 的 ID 列（通过 agg_field_map 反查实际字段名）
+        # columns 此时是显示名，需要对应回实际字段
+        # 所以我们基于原始 columns 和 agg_field_map 来判断
+        orig_columns = result_dict.get('columns', [])
+        name_insertions = []  # [(insert_after_idx, entity_type, name_col_name)]
+
+        for orig_idx, orig_col in enumerate(orig_columns):
+            actual_field = agg_field_map.get(orig_col, orig_col)
+            if actual_field in id_to_name_map:
+                name_display, entity_type = id_to_name_map[actual_field]
+                # 计算在当前 columns 中的位置（因为可能有列被过滤掉了）
+                # 用 keep_indices 映射
+                if keep_indices:
+                    if orig_idx in keep_indices:
+                        current_idx = keep_indices.index(orig_idx)
+                        name_insertions.append((current_idx, entity_type, name_display))
+                else:
+                    name_insertions.append((orig_idx, entity_type, name_display))
+
+        if name_insertions:
+            # 收集所有需要查询的实体和 ID
+            entity_ids_by_type = {}
+            for _, entity_type, _ in name_insertions:
+                if entity_type not in entity_ids_by_type:
+                    entity_ids_by_type[entity_type] = set()
+
+            # 从每行提取对应列的 ID 值
+            # 需要找到原始列在当前 rows 中的索引
+            col_entity_types = {}  # col_idx -> entity_type
+            for current_idx, entity_type, _ in name_insertions:
+                col_entity_types[current_idx] = entity_type
+                for row in rows:
+                    if current_idx < len(row):
+                        val = row[current_idx]
+                        if val is not None and val != "":
+                            try:
+                                entity_ids_by_type[entity_type].add(int(val))
+                            except (ValueError, TypeError):
+                                pass
+
+            # 批量查询所有 name
+            name_maps = {}
+            for entity_type, ids in entity_ids_by_type.items():
+                if ids:
+                    name_maps[entity_type] = get_entity_names(entity_type, list(ids))
+                else:
+                    name_maps[entity_type] = {}
+
+            # 按位置从后往前插入（避免索引偏移）
+            for current_idx, entity_type, name_display in sorted(name_insertions, key=lambda x: -x[0]):
+                name_map = name_maps.get(entity_type, {})
+                columns.insert(current_idx + 1, name_display)
+                for row in rows:
+                    if current_idx < len(row):
+                        try:
+                            eid = int(row[current_idx])
+                            ename = name_map.get(eid, "")
+                        except (ValueError, TypeError):
+                            ename = ""
+                        row.insert(current_idx + 1, ename)
 
     # 生成标题
     time_range = report_intent.get('time_range', {}) if report_intent else {}
@@ -872,9 +1117,10 @@ async def nl_dsl_node(state: dict) -> dict:
         # 4. 检查结果
         if not result.metadata.get("success", True):
             # 失败：生成失败引导报告
+            final_error = result.metadata.get("final_error", "未知错误")
             final_report = _build_failure_guide_report(result, user_input)
             updates["final_report"] = final_report
-            logger.info(f"NL→DSL查询失败: 生成失败引导报告")
+            logger.info(f"NL→DSL查询失败: 生成失败引导报告, 错误={final_error}, metadata={result.metadata}")
             return updates
 
         # 5. 成功：构建 final_report

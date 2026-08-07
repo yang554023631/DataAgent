@@ -313,3 +313,56 @@ def get_ad_group_level_metrics(
     except Exception as e:
         logger.error(f"按广告组聚合指标失败: {e}")
         return []
+
+
+def get_entity_names(entity_type: str, entity_ids: List[int]) -> Dict[int, str]:
+    """
+    批量查询实体名称（广告主/计划/广告组/创意）
+
+    Args:
+        entity_type: advertiser / campaign / adgroup / creative
+        entity_ids: 实体 ID 列表
+
+    Returns:
+        { entity_id: entity_name } 字典，查不到的不包含
+    """
+    if not entity_ids:
+        return {}
+
+    # 映射关系: entity_type -> (索引名, ID字段, name字段)
+    entity_map = {
+        "advertiser": ("advertiser", "advertiser_id", "advertiser_name"),
+        "campaign": ("campaign", "campaign_id", "campaign_name"),
+        "adgroup": ("adgroup", "adgroup_id", "adgroup_name"),
+        "creative": ("creative", "creative_id", "creative_name"),
+    }
+
+    if entity_type not in entity_map:
+        logger.warning(f"不支持的实体类型: {entity_type}")
+        return {}
+
+    index_name, id_field, name_field = entity_map[entity_type]
+    unique_ids = list(set(entity_ids))
+
+    query = {
+        "query": {"terms": {id_field: unique_ids}},
+        "size": len(unique_ids),
+        "_source": [id_field, name_field]
+    }
+
+    try:
+        response = es_client.search(index=index_name, **query)
+        result = {}
+        for hit in response["hits"]["hits"]:
+            source = hit["_source"]
+            eid = source.get(id_field)
+            ename = source.get(name_field, "")
+            if eid is not None:
+                result[eid] = ename
+
+        logger.info(f"查询 {entity_type} 名称: {len(unique_ids)} 个ID, 命中 {len(result)} 个")
+        return result
+
+    except Exception as e:
+        logger.error(f"查询 {entity_type} 名称失败: {e}")
+        return {}

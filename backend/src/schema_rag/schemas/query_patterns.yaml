@@ -33,6 +33,33 @@ patterns:
       aggs: by_entity terms 聚合，嵌套 metric_sum sum 聚合，
             再嵌套 having_filter bucket_selector pipeline agg 过滤 sum > 阈值
 
+  - pattern_name: 按月聚合趋势
+    description: 按月统计指标趋势，用户问某月、按月、每个月等
+    index: ad_stat_data
+    user_query_example: "今年各月的消耗走势"
+    dsl_template_summary: >
+      query: bool.must 包含 advertiser_id term、data_date range、data_type
+      aggs: by_month 使用 date_histogram，calendar_interval=month，按 month 聚合，
+            format=yyyy-MM，嵌套 metric_sum sum 聚合 data_value
+
+  - pattern_name: 按周聚合趋势
+    description: 按周统计指标趋势，用户问每周、按周、周趋势等
+    index: ad_stat_data
+    user_query_example: "最近8周的曝光量趋势"
+    dsl_template_summary: >
+      query: bool.must 包含 advertiser_id term、data_date range、data_type
+      aggs: by_week 使用 date_histogram，calendar_interval=week，按周聚合，
+            format=yyyy-MM-dd，嵌套 metric_sum sum 聚合 data_value
+
+  - pattern_name: 同比环比对比
+    description: 对比两个时间段的指标数据（环比/同比）
+    index: ad_stat_data
+    user_query_example: "本月消耗和上月对比"
+    dsl_template_summary: >
+      两个独立的 filter agg 分别对应本期和对比期，
+      aggs: { current_period: { filter: data_date in [start, end], aggs: { sum_metric: sum data_value } },
+             compare_period: { filter: data_date in [compare_start, compare_end], aggs: { sum_metric: sum data_value } } }
+
   - pattern_name: 受众分布
     description: 按受众维度统计指标分布
     index: ad_stat_audience
@@ -40,4 +67,14 @@ patterns:
     dsl_template_summary: >
       query: bool.must advertiser_id + data_date range + audience_type + data_type
       aggs: by_audience terms 按 audience_tag_value 聚合，嵌套 metric_sum sum 聚合
+
+  - pattern_name: 明细列表查询
+    description: 查询满足条件的明细数据列表，返回多条原始记录
+    index: ad_stat_data
+    user_query_example: "广告主6昨天消耗大于100的明细数据"
+    dsl_template_summary: >
+      query: bool.must advertiser_id + data_date range + data_type + data_value range 条件
+      size: 指定返回条数（默认10，最大1000）
+      _source: 指定返回字段（如 campaign_id, adgroup_id, data_value, data_date）
+      sort: 按 data_value 或 data_date 排序
 

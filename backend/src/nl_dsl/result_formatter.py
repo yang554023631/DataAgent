@@ -38,7 +38,11 @@ class ResultFormatter:
         if not display_type:
             display_type = cls._detect_display_type(es_response)
 
-        if cls._is_hits_result(es_response):
+        # 如果有聚合结果且没有命中列表（size=0 的纯聚合查询），优先按聚合处理
+        if cls._is_aggregation_result(es_response) and not cls._has_hit_documents(es_response):
+            columns, rows = cls._format_aggregations(es_response, display_type)
+            total = len(rows)
+        elif cls._has_hit_documents(es_response):
             columns, rows = cls._format_hits(es_response)
             total = cls._get_hits_total(es_response)
         elif cls._is_aggregation_result(es_response):
@@ -101,13 +105,21 @@ class ResultFormatter:
         return False
 
     @staticmethod
+    def _has_hit_documents(es_response: dict) -> bool:
+        """是否有实际的命中文档（hits.hits 非空）
+
+        注意：size=0 的聚合查询 hits.total 可能很大，但 hits.hits 为空，
+        这种情况不算命中结果。
+        """
+        return len(es_response.get("hits", {}).get("hits", [])) > 0
+
+    @staticmethod
     def _is_hits_result(es_response: dict) -> bool:
-        """是否是命中结果为主（非聚合查询）"""
-        hits = es_response.get("hits", {})
-        total = hits.get("total", 0)
-        if isinstance(total, dict):
-            total = total.get("value", 0)
-        return total > 0 or len(hits.get("hits", [])) > 0
+        """是否是命中结果为主（非聚合查询）
+
+        保持向后兼容，调用 _has_hit_documents。
+        """
+        return ResultFormatter._has_hit_documents(es_response)
 
     @staticmethod
     def _is_aggregation_result(es_response: dict) -> bool:

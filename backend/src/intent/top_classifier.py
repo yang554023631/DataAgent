@@ -48,11 +48,29 @@ _QUERY_ACTION_KEYWORDS = [
     "哪些", "多少", "排名", "TOP", "top",
 ]
 
+# 广告主查询关键词（列表查询、名称查ID、ID查名称）
+_ADVERTISER_LOOKUP_KEYWORDS = [
+    "广告主列表", "广告主有哪些", "有哪些广告主", "所有广告主",
+    "全部广告主", "可用的广告主", "广告主名单",
+    "广告主id", "广告主ID", "广告主名称", "广告主名字",
+]
+
 # 对比模式正则
 _COMPARISON_PATTERNS = [
     re.compile(r'\d+月\s*(vs|VS|和|与)\s*\d+月'),
     re.compile(r'(今天|昨天|本周|上周|本月|上个月)\s*(vs|VS|和|与)\s*(今天|昨天|本周|上周|本月|上个月)'),
 ]
+
+
+def _has_advertiser_lookup(text: str) -> bool:
+    """检查是否为广告主查询（列表/查ID/查名称）"""
+    for kw in _ADVERTISER_LOOKUP_KEYWORDS:
+        if kw in text:
+            return True
+    # "XX 广告主" + "叫什么" / "ID是多少"
+    if "广告主" in text and ("叫什么" in text or "是什么" in text or "ID" in text or "id" in text or "名称" in text):
+        return True
+    return False
 
 
 def _has_time_keyword(text: str) -> bool:
@@ -125,8 +143,9 @@ class IntentTopClassifier:
         has_metric = _has_metric_keyword(user_input)
         has_action = _has_query_action(user_input)
         has_comparison = _has_comparison_pattern(user_input)
+        has_advertiser_lookup = _has_advertiser_lookup(user_input)
 
-        if (has_time and has_metric) or (has_action and has_metric) or (has_comparison and has_metric):
+        if (has_time and has_metric) or (has_action and has_metric) or (has_comparison and has_metric) or has_advertiser_lookup:
             result = TopClassificationResult(
                 category="report",
                 confidence=1.0,

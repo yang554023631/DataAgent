@@ -136,10 +136,23 @@ async def clarify_node(state: dict) -> dict:
     }
 
     # 合并用户反馈到 user_input（供后续重新识别使用）
-    # 策略：把用户反馈作为新的 user_input，同时保留原始输入在 pending_clarification_input 中
+    # 策略：将反馈追加到原始输入后面（不替换），保证 LLM 重新提取时信息完整
+    # 按澄清类型加不同的语义前缀，帮助 LLM 正确理解反馈的含义
     result_updates["pending_clarification_input"] = user_feedback_text
-    # 也更新 user_input，让下游节点直接拿到最新的用户输入
-    result_updates["user_input"] = user_feedback_text
+    if original_input and user_feedback_text:
+        prefix_map = {
+            "missing_time_range": "时间范围",
+            "missing_advertiser": "广告主",
+            "missing_metrics": "指标",
+            "missing_ad_level": "层级",
+        }
+        prefix = prefix_map.get(clarification_type, "")
+        if prefix:
+            result_updates["user_input"] = f"{original_input}，{prefix}：{user_feedback_text}"
+        else:
+            result_updates["user_input"] = f"{original_input}，{user_feedback_text}"
+    else:
+        result_updates["user_input"] = user_feedback_text or original_input
 
     # 检测意图变化（只在非顶层澄清时检测）
     if clarification_type != "intent_confirm" and current_category in ["report", "knowledge"]:

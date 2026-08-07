@@ -75,6 +75,15 @@ class SelfReflectionExecutor:
         final_step_id = plan.final_output.replace(".output", "")
         final_result = step_results.get(final_step_id)
 
+        # 容错：如果 final_output 匹配不上，就用最后一步的结果
+        if not final_result and step_results:
+            last_step_id = list(step_results.keys())[-1]
+            logger.warning(
+                f"final_output({plan.final_output})不匹配步骤ID, "
+                f"降级使用最后一步({last_step_id})作为结果"
+            )
+            final_result = step_results[last_step_id]
+
         if final_result:
             # 更新总耗时
             final_result.metadata["query_steps"] = len(plan.steps)
@@ -86,12 +95,14 @@ class SelfReflectionExecutor:
             )
             return final_result
 
-        # 没有结果（空计划）
+        # 没有结果（空计划 或 final_output 不匹配）
+        error_msg = f"空查询计划或final_output不匹配: final_output={getattr(plan, 'final_output', 'N/A')}, step_ids={list(step_results.keys())}"
+        logger.error(f"NL→DSL查询失败: {error_msg}")
         return NlDslResult(
             display_type="qa",
             columns=[],
             rows=[],
-            metadata={"success": False, "final_error": "空查询计划"},
+            metadata={"success": False, "final_error": error_msg},
         )
 
     async def _execute_step(
@@ -173,8 +184,9 @@ class SelfReflectionExecutor:
             result.metadata["retries"] = attempt - 1
             result.metadata["success"] = True
             result.metadata["step_id"] = step_id
-            # 保存 query_context 用于翻页（列表类型）
-            if result.display_type == "list":
+            # 保存 query_context（用于翻页和列名映射）
+            # 只要有数据行就保存，不限制 display_type
+            if result.rows:
                 result.query_context = {
                     "index": step.index,
                     "base_dsl": dsl,

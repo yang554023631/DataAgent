@@ -56,10 +56,13 @@ class SessionService:
         # 更新 user_input
         initial_state["user_input"] = user_input
 
-        # 执行 Graph
+        # 执行 Graph（使用 thread_id 管理 checkpoint，中断后可恢复）
         result = await graph_app.ainvoke(
             initial_state,
-            config={"callbacks": get_logging_callbacks()}
+            config={
+                "callbacks": get_logging_callbacks(),
+                "configurable": {"thread_id": session_id},
+            },
         )
 
         # 保存状态
@@ -141,23 +144,41 @@ class SessionService:
 
         state = session.get("graph_state", {})
 
-        # 检查是否超过最大重试次数
+        # 检查是否超限重置
         clarify_next = state.get("clarify_next")
         if clarify_next == "max_reentry_exceeded":
-            # 重置澄清计数和状态
-            state["clarification_count"] = 0
-            state["needs_clarification"] = False
-            state["user_feedback"] = {"selected_value": selected_value}
+            # 重置后用新的输入重新开始一轮
+            state = {
+                "session_id": session_id,
+                "user_input": selected_value,
+                "conversation_history": session.get("messages", []),
+                "clarification_count": 0,
+                "reentry_count": 0,
+            }
+            result = await graph_app.ainvoke(
+                state,
+                config={
+                    "callbacks": get_logging_callbacks(),
+                    "configurable": {"thread_id": session_id},
+                },
+            )
+            session["graph_state"] = result
         else:
-            # 提交用户反馈
-            state["user_feedback"] = {"selected_value": selected_value}
-
-        # 继续执行 Graph
-        result = await graph_app.ainvoke(
-            state,
-            config={"callbacks": get_logging_callbacks()}
-        )
-        session["graph_state"] = result
+            # 将用户反馈写入 state，然后恢复 graph 执行
+            # 先用 update_state 注入用户反馈
+            graph_app.update_state(
+                {"configurable": {"thread_id": session_id}},
+                {"user_feedback": {"selected_value": selected_value}},
+            )
+            # 从中断点（clarify 节点）继续执行
+            result = await graph_app.ainvoke(
+                None,
+                config={
+                    "callbacks": get_logging_callbacks(),
+                    "configurable": {"thread_id": session_id},
+                },
+            )
+            session["graph_state"] = result
 
         # 检查是否仍然需要澄清
         needs_clarification = result.get("needs_clarification", False)
