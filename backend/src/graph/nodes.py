@@ -4,6 +4,11 @@
 
 import time
 import logging
+import sys
+import os
+# Add project root to sys.path to import src.analysis and src.nl_dsl
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from typing import Dict, Any, Optional, List
 from src.tools.executor import execute_ad_report_query
 from src.agents.nlu_agent import nlu_agent
 from src.agents.planner_agent import planner_agent
@@ -1146,3 +1151,383 @@ async def nl_dsl_node(state: dict) -> dict:
         updates["final_report"] = final_report
 
     return updates
+
+
+async def analysis_node(state: dict) -> dict:
+    """
+    CoT 分析节点 - 整合所有分析模块的核心节点
+
+    执行流程：
+    1. IntentAnalyzer - 字段提取 + 场景识别
+    2. CotPlanner - CoT 推理 + 结构化计划生成
+    3. FilterExecutor - 执行筛选计划，获取实体 ID
+    4. AnalysisExecutor - 执行分析计划，获取图表数据
+    5. QualityChecker - 验证结果质量
+    6. ReportFormatter - 包装最终报告
+
+    支持 HITL（人机交互）：
+    - 如果 CotPlanner 返回 clarification_request，设置 needs_clarification 并返回
+    - 如果 QualityChecker 建议 HITL，也可以触发
+    """
+    import time
+    from src.tools.custom_report_client import es_client
+
+    # 延迟导入 CoT 分析模块
+    try:
+        from src.analysis.intent_analyzer import IntentAnalyzer, create_intent_analyzer
+        from src.analysis.cot_planner import CotPlanner, CotResultStatus, get_cot_planner
+        from src.analysis.report_formatter import ReportFormatter
+        from src.nl_dsl.filter_executor import FilterExecutor
+        from src.nl_dsl.analysis_executor import AnalysisExecutor
+        from src.nl_dsl.quality_checker import QualityChecker
+        from src.analysis.models import (
+            AnalysisPlanResult, FieldContext, CotReasoning,
+            FilterPlan, FilterResult, AnalysisResult, QualityResult
+        )
+    except ImportError:
+        # 如果模块不存在，返回错误
+        logger.error("CoT analysis modules not found")
+        return {
+            "error": {"type": "analysis_error", "message": "CoT analysis modules not available"},
+            "execution_trace": [{"step": "init", "status": "failed", "error": "Modules not found"}]
+        }
+
+    # 从 state 中获取输入
+    user_input = state.get("user_input", "")
+    conversation_history = state.get("conversation_history", [])
+    advertiser_ids = state.get("advertiser_ids", [])
+    report_intent = state.get("report_intent_result", {})
+
+    # 初始化执行追踪
+    execution_trace: List[Dict[str, Any]] = []
+    start_time = time.time()
+
+    # 结果更新字典
+    updates = {
+        "execution_trace": execution_trace,
+        "error": None,
+        "needs_clarification": False,
+        "hitl_request": None
+    }
+
+    try:
+        # ========== 步骤 1: IntentAnalyzer - 字段提取 ==========
+        step_start = time.time()
+        execution_trace.append({"step": "intent_analyzer", "status": "started"})
+        logger.info(f"[AnalysisNode] Step 1: IntentAnalyzer started")
+
+        try:
+            intent_analyzer = create_intent_analyzer()
+            intent_result = intent_analyzer.analyze(
+                user_input=user_input,
+                conversation_history=conversation_history,
+                advertiser_ids=advertiser_ids,
+                report_intent=report_intent
+            )
+
+            field_context = intent_result.field_context
+            updates["field_context"] = field_context.model_dump() if field_context else None
+
+            execution_trace.append({
+                "step": "intent_analyzer",
+                "status": "success",
+                "duration_ms": int((time.time() - step_start) * 1000),
+                "extracted_fields": {
+                    "metrics": getattr(field_context, "metrics", []),
+                    "target_level": getattr(field_context, "target_level", None),
+                    "time_range": getattr(field_context, "time_range", None)
+                }
+            })
+            logger.info(f"[AnalysisNode] Step 1: IntentAnalyzer completed")
+        except Exception as e:
+            logger.exception(f"[AnalysisNode] Step 1 failed: {e}")
+            execution_trace.append({
+                "step": "intent_analyzer",
+                "status": "failed",
+                "error": str(e),
+                "duration_ms": int((time.time() - step_start) * 1000)
+            })
+            # 继续执行 - CotPlanner 可以处理没有 field_context 的情况
+            field_context = None
+
+        # ========== 步骤 2: CotPlanner - 生成分析计划 ==========
+        step_start = time.time()
+        execution_trace.append({"step": "cot_planner", "status": "started"})
+        logger.info(f"[AnalysisNode] Step 2: CotPlanner started")
+
+        cot_planner = get_cot_planner()
+        cot_result = await cot_planner.plan(
+            user_input=user_input,
+            conversation_history=conversation_history,
+            field_context=field_context,
+            advertiser_ids=advertiser_ids
+        )
+
+        if cot_result.status == CotResultStatus.NEEDS_CLARIFICATION:
+            # 需要澄清 - HITL 路径
+            clarification = cot_result.clarification
+            hitl_request = {
+                "question": clarification.question,
+                "missing_fields": clarification.missing_fields,
+                "options": clarification.options
+            }
+
+            updates.update({
+                "needs_clarification": True,
+                "clarification": build_clarification_state({
+                    "type": "cot_clarification",
+                    "question": clarification.question,
+                    "options": clarification.options,
+                    "allow_custom_input": True,
+                    "missing_fields": clarification.missing_fields
+                }).get("clarification"),
+                "hitl_request": hitl_request,
+                "cot_reasoning": cot_result.reasoning.model_dump() if cot_result.reasoning else None
+            })
+
+            execution_trace.append({
+                "step": "cot_planner",
+                "status": "hitl_required",
+                "duration_ms": int((time.time() - step_start) * 1000)
+            })
+            logger.info(f"[AnalysisNode] Step 2: HITL required - clarification needed")
+            return updates
+
+        if cot_result.status != CotResultStatus.SUCCESS:
+            # 规划失败
+            error_msg = f"CoT planning failed: {cot_result.status}"
+            logger.error(f"[AnalysisNode] {error_msg}")
+
+            execution_trace.append({
+                "step": "cot_planner",
+                "status": "failed",
+                "error": error_msg,
+                "duration_ms": int((time.time() - step_start) * 1000)
+            })
+
+            # 生成错误报告
+            report_formatter = ReportFormatter()
+            final_report = report_formatter.format_error(
+                error_message="无法生成分析计划，请尝试重新表述您的问题",
+                user_input=user_input
+            )
+
+            updates.update({
+                "final_report": final_report,
+                "error": {"type": "cot_planning_error", "message": error_msg}
+            })
+            return updates
+
+        # 规划成功
+        analysis_plan_result = cot_result.plan
+        updates.update({
+            "analysis_plan": analysis_plan_result.model_dump(),
+            "cot_reasoning": cot_result.reasoning.model_dump() if cot_result.reasoning else None
+        })
+
+        execution_trace.append({
+            "step": "cot_planner",
+            "status": "success",
+            "duration_ms": int((time.time() - step_start) * 1000),
+            "analysis_type": analysis_plan_result.analysis_plan.analysis_type.value if hasattr(analysis_plan_result.analysis_plan.analysis_type, "value") else analysis_plan_result.analysis_plan.analysis_type
+        })
+        logger.info(f"[AnalysisNode] Step 2: CotPlanner completed successfully")
+
+        # ========== 步骤 3: FilterExecutor - 执行筛选计划 ==========
+        step_start = time.time()
+        execution_trace.append({"step": "filter_executor", "status": "started"})
+        logger.info(f"[AnalysisNode] Step 3: FilterExecutor started")
+
+        filter_executor = FilterExecutor(es_client=es_client)
+
+        # 构建时间范围
+        plan_time_range = analysis_plan_result.analysis_plan.time_range
+        time_range_dict = {
+            "start_date": plan_time_range.start_date,
+            "end_date": plan_time_range.end_date
+        }
+
+        filter_result = filter_executor.execute(
+            filter_plan=analysis_plan_result.filter_plan,
+            advertiser_ids=advertiser_ids,
+            time_range=time_range_dict
+        )
+
+        updates["filter_result"] = filter_result.model_dump()
+
+        execution_trace.append({
+            "step": "filter_executor",
+            "status": "success",
+            "duration_ms": int((time.time() - step_start) * 1000),
+            "entity_count": filter_result.total_count,
+            "entity_level": filter_result.entity_level
+        })
+        logger.info(f"[AnalysisNode] Step 3: FilterExecutor completed, got {filter_result.total_count} entities")
+
+        # ========== 步骤 4: AnalysisExecutor - 执行分析计划 ==========
+        step_start = time.time()
+        execution_trace.append({"step": "analysis_executor", "status": "started"})
+        logger.info(f"[AnalysisNode] Step 4: AnalysisExecutor started")
+
+        analysis_executor = AnalysisExecutor(es_client=es_client)
+
+        analysis_result = analysis_executor.execute(
+            analysis_plan=analysis_plan_result.analysis_plan,
+            entity_ids=filter_result.entity_ids,
+            entity_level=filter_result.entity_level,
+            advertiser_ids=advertiser_ids,
+            time_range=time_range_dict
+        )
+
+        updates["chart_data"] = analysis_result.model_dump()
+
+        execution_trace.append({
+            "step": "analysis_executor",
+            "status": "success",
+            "duration_ms": int((time.time() - step_start) * 1000),
+            "has_data": analysis_result.success and (analysis_result.data_table is not None or analysis_result.chart_data is not None)
+        })
+        logger.info(f"[AnalysisNode] Step 4: AnalysisExecutor completed")
+
+        # ========== 步骤 5: QualityChecker - 质量检查 ==========
+        step_start = time.time()
+        execution_trace.append({"step": "quality_checker", "status": "started"})
+        logger.info(f"[AnalysisNode] Step 5: QualityChecker started")
+
+        quality_checker = QualityChecker()
+        quality_result = quality_checker.check(
+            analysis_result=analysis_result
+        )
+
+        updates["quality_result"] = quality_result.model_dump()
+
+        # 检查是否需要 HITL
+        needs_hitl = any(
+            issue.severity == "error" and issue.suggested_action == "hitl"
+            for issue in quality_result.issues
+        )
+
+        if needs_hitl:
+            # 质量检查建议 HITL
+            hitl_request = {
+                "question": "数据质量存在问题，是否继续查看结果？",
+                "missing_fields": [],
+                "options": [
+                    {"value": "continue", "label": "继续查看结果"},
+                    {"value": "rephrase", "label": "重新表述问题"}
+                ],
+                "quality_issues": [
+                    {"type": issue.check_type.value, "message": issue.message, "severity": issue.severity}
+                    for issue in quality_result.issues
+                ]
+            }
+
+            updates.update({
+                "needs_clarification": True,
+                "clarification": build_clarification_state({
+                    "type": "quality_hitl",
+                    "question": "数据质量存在问题，是否继续查看结果？",
+                    "options": [
+                        {"value": "continue", "label": "继续查看结果"},
+                        {"value": "rephrase", "label": "重新表述问题"}
+                    ],
+                    "allow_custom_input": False,
+                    "missing_fields": []
+                }).get("clarification"),
+                "hitl_request": hitl_request
+            })
+
+            execution_trace.append({
+                "step": "quality_checker",
+                "status": "hitl_required",
+                "duration_ms": int((time.time() - step_start) * 1000),
+                "issue_count": len(quality_result.issues)
+            })
+            logger.info(f"[AnalysisNode] Step 5: QualityChecker suggests HITL")
+            return updates
+
+        execution_trace.append({
+            "step": "quality_checker",
+            "status": "success",
+            "duration_ms": int((time.time() - step_start) * 1000),
+            "issue_count": len(quality_result.issues),
+            "warning_count": len([i for i in quality_result.issues if i.severity == "warning"])
+        })
+        logger.info(f"[AnalysisNode] Step 5: QualityChecker completed with {len(quality_result.issues)} issues")
+
+        # ========== 步骤 6: ReportFormatter - 生成最终报告 ==========
+        step_start = time.time()
+        execution_trace.append({"step": "report_formatter", "status": "started"})
+        logger.info(f"[AnalysisNode] Step 6: ReportFormatter started")
+
+        report_formatter = ReportFormatter()
+        final_report = report_formatter.format(
+            analysis_plan_result=analysis_plan_result,
+            analysis_result=analysis_result,
+            quality_result=quality_result,
+            filter_result=filter_result,
+            user_input=user_input
+        )
+
+        updates["final_report"] = final_report
+
+        execution_trace.append({
+            "step": "report_formatter",
+            "status": "success",
+            "duration_ms": int((time.time() - step_start) * 1000),
+            "report_type": final_report.get("report_type", "unknown")
+        })
+        logger.info(f"[AnalysisNode] Step 6: ReportFormatter completed")
+
+        # ========== 完成 ==========
+        total_duration = int((time.time() - start_time) * 1000)
+        execution_trace.append({
+            "step": "complete",
+            "status": "success",
+            "total_duration_ms": total_duration
+        })
+        logger.info(f"[AnalysisNode] All steps completed in {total_duration}ms")
+
+        return updates
+
+    except Exception as e:
+        # 全局异常处理 - 生成友好的错误报告
+        logger.exception(f"[AnalysisNode] Unexpected error: {e}")
+
+        error_duration = int((time.time() - start_time) * 1000)
+        execution_trace.append({
+            "step": "error",
+            "status": "failed",
+            "error": str(e),
+            "duration_ms": error_duration
+        })
+
+        # 尝试生成错误报告
+        try:
+            from src.analysis.report_formatter import ReportFormatter
+            report_formatter = ReportFormatter()
+            final_report = report_formatter.format_error(
+                error_message=f"分析过程中发生错误: {str(e)}",
+                user_input=user_input
+            )
+        except:
+            # 如果 ReportFormatter 也失败，返回简单的错误报告
+            final_report = {
+                "report_type": "error",
+                "title": "分析遇到问题",
+                "highlights": [
+                    {"type": "negative", "text": f"⚠️ 分析过程中发生错误: {str(e)}"}
+                ],
+                "data_table": {"columns": [], "rows": []},
+                "next_queries": [
+                    "查看近7天的广告报表",
+                    "按计划维度分析数据"
+                ]
+            }
+
+        updates.update({
+            "final_report": final_report,
+            "error": {"type": "analysis_error", "message": str(e)}
+        })
+
+        return updates

@@ -1,4 +1,4 @@
-from typing import TypedDict, Optional, List, Dict, Annotated
+from typing import TypedDict, Optional, List, Dict, Annotated, Any
 from datetime import datetime
 from langgraph.graph import add_messages
 from src.models.insight import InsightResult
@@ -89,6 +89,23 @@ class AdReportState(TypedDict):
     # 广告主选择
     advertiser_ids: List[str]
     show_advertiser_list: bool
+
+    # ========== CoT 分析节点字段 ==========
+    # CoT 规划结果
+    analysis_plan: Optional[Dict]  # AnalysisPlanResult 的 dict 形式
+    field_context: Optional[Dict]  # FieldContext 的 dict 形式
+    cot_reasoning: Optional[Dict]  # CotReasoning 的 dict 形式
+
+    # 执行结果
+    filter_result: Optional[Dict]  # FilterResult 的 dict 形式
+    chart_data: Optional[Dict]  # AnalysisResult 的 dict 形式
+    quality_result: Optional[Dict]  # QualityResult 的 dict 形式
+
+    # HITL 相关
+    hitl_request: Optional[Dict]  # 澄清请求（如果需要 HITL）
+
+    # 执行追踪
+    execution_trace: List[Dict]  # 各步骤的执行追踪信息
 
     # 执行控制
     error: Optional[Dict]
