@@ -14,6 +14,18 @@ from .intent_analyzer import (
     RuleBasedExtractor,
     create_intent_analyzer
 )
+from .fewshot_retriever import (
+    FewshotRetriever,
+    RetrievedExample,
+    get_fewshot_retriever,
+)
+from .cot_planner import (
+    CotPlanner,
+    CotPlanResult,
+    CotResultStatus,
+    ClarificationRequest,
+    get_cot_planner,
+)
 from .models import (
     # Enums
     EntityLevel,
@@ -62,6 +74,16 @@ __all__ = [
     "IntentAnalysisResult",
     "RuleBasedExtractor",
     "create_intent_analyzer",
+    # Few-shot Retriever
+    "FewshotRetriever",
+    "RetrievedExample",
+    "get_fewshot_retriever",
+    # CoT Planner
+    "CotPlanner",
+    "CotPlanResult",
+    "CotResultStatus",
+    "ClarificationRequest",
+    "get_cot_planner",
     # Enums
     "EntityLevel",
     "FilterType",

@@ -66,37 +66,37 @@ COT_SYSTEM_PROMPT = """你是广告数据分析专家，擅长将用户的自然
 ## 输出格式要求
 
 如果信息完整，直接输出分析计划（完全按照 AnalysisPlanResult 模型格式）：
-{
+{{
     "target_level": "campaign",
-    "filter_plan": {
+    "filter_plan": {{
         "filter_type": "where",
         "target_level": "campaign",
         "steps": [
-            {
+            {{
                 "step_id": "step_1",
                 "step_type": "where_filter",
                 "level": "campaign",
                 "index": "ad_stat_data",
                 "conditions": [
-                    {
+                    {{
                         "field": "data_date",
                         "operator": ">=",
                         "value": "2026-08-01"
-                    }
+                    }}
                 ],
                 "output_field": "campaign_id"
-            }
+            }}
         ]
-    },
-    "analysis_plan": {
+    }},
+    "analysis_plan": {{
         "analysis_type": "time_trend",
         "chart_type": "line",
         "metrics": ["impressions", "clicks", "ctr"],
-        "time_range": {
+        "time_range": {{
             "start_date": "2026-08-01",
             "end_date": "2026-08-07",
             "granularity": "day"
-        },
+        }},
         "compare_time_range": null,
         "time_granularity": "day",
         "audience_dimension": null,
@@ -105,36 +105,36 @@ COT_SYSTEM_PROMPT = """你是广告数据分析专家，擅长将用户的自然
         "order_dir": "asc",
         "limit": 100,
         "quality_checks": []
-    },
+    }},
     "reasoning": null,
-    "field_context": {
+    "field_context": {{
         "advertiser_ids": [123],
-        "time_range": {
+        "time_range": {{
             "start_date": "2026-08-01",
             "end_date": "2026-08-07",
             "granularity": "day"
-        },
+        }},
         "target_level": "campaign",
         "metrics": ["impressions", "clicks", "ctr"],
         "audience_dimension": null,
         "compare_time_range": null,
         "entity_ids": null,
-        "additional_fields": {}
-    },
+        "additional_fields": {{}}
+    }},
     "quality_checks": []
-}
+}}
 
 如果信息缺失，输出澄清请求：
-{
-    "clarification_request": {
+{{
+    "clarification_request": {{
         "question": "需要补充的信息...",
         "missing_fields": ["advertiser_ids", "time_range"],
         "options": [
-            {"value": "近7天", "label": "近7天"},
-            {"value": "上个月", "label": "上个月"}
+            {{"value": "近7天", "label": "近7天"}},
+            {{"value": "上个月", "label": "上个月"}}
         ]
-    }
-}
+    }}
+}}
 
 ## 注意事项
 1. 所有思考和推理过程用中文
