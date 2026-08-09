@@ -76,7 +76,7 @@ class TestCommonHelpers:
         assert bucket_selector["buckets_path"] == {"value": value_path}
 
     def test_build_common_filters(self):
-        advertiser_ids = [1, 2, 3]
+        advertiser_ids = ["1", "2", "3"]
         start_date = "2024-01-01"
         end_date = "2024-01-02"
         data_types = [1, 2]
@@ -201,6 +201,8 @@ class TestFilterTemplates:
             group_by_level="campaign",
         )
         # 结构校验
+        assert "index" in dsl
+        assert dsl["index"] == "ad_stat_data"
         assert "query" in dsl
         assert "bool" in dsl["query"]
         assert "filter" in dsl["query"]["bool"]
@@ -215,6 +217,20 @@ class TestFilterTemplates:
         # data_type 过滤
         assert any("data_type" in str(f) for f in filters)
 
+    def test_having_filter_invalid_operator(self):
+        from src.nl_dsl.dsl_templates.filter_templates import build_having_filter
+        import pytest
+        with pytest.raises(ValueError, match="Invalid operator"):
+            build_having_filter(
+                advertiser_ids=["6"],
+                start_date="2026-04-01",
+                end_date="2026-04-30",
+                metric="cost",
+                operator="invalid",
+                threshold=10,
+                group_by_level="campaign",
+            )
+
     def test_derived_having_filter(self):
         from src.nl_dsl.dsl_templates.filter_templates import build_derived_having_filter
         dsl = build_derived_having_filter(
@@ -226,12 +242,28 @@ class TestFilterTemplates:
             threshold=0.05,
             group_by_level="campaign",
         )
+        assert "index" in dsl
+        assert dsl["index"] == "ad_stat_data"
         aggs = dsl["aggs"]["by_campaign"]["aggs"]
         assert "sum_clicks" in aggs
         assert "sum_impressions" in aggs
         assert "ctr" in aggs
         assert "bucket_script" in aggs["ctr"]
         assert "having_filter" in aggs
+
+    def test_derived_having_filter_invalid_operator(self):
+        from src.nl_dsl.dsl_templates.filter_templates import build_derived_having_filter
+        import pytest
+        with pytest.raises(ValueError, match="Invalid operator"):
+            build_derived_having_filter(
+                advertiser_ids=["6"],
+                start_date="2026-04-01",
+                end_date="2026-04-30",
+                metric="ctr",
+                operator="invalid",
+                threshold=0.05,
+                group_by_level="campaign",
+            )
 
     def test_where_dimension_filter(self):
         from src.nl_dsl.dsl_templates.filter_templates import build_where_dimension_filter
@@ -243,10 +275,24 @@ class TestFilterTemplates:
                 {"field": "create_time", "operator": ">=", "value": "2026-01-01"},
             ],
         )
+        assert "index" in dsl
+        assert dsl["index"] == "campaign"
         assert dsl["size"] == 0
         assert "by_campaign" in dsl["aggs"]
         filters = dsl["query"]["bool"]["filter"]
         assert len(filters) >= 2  # advertiser + conditions
+
+    def test_where_dimension_filter_invalid_operator(self):
+        from src.nl_dsl.dsl_templates.filter_templates import build_where_dimension_filter
+        import pytest
+        with pytest.raises(ValueError, match="Invalid operator"):
+            build_where_dimension_filter(
+                advertiser_ids=["6"],
+                level="campaign",
+                conditions=[
+                    {"field": "status", "operator": "invalid", "value": "enabled"},
+                ],
+            )
 
     def test_cross_level_up_filter(self):
         from src.nl_dsl.dsl_templates.filter_templates import build_cross_level_up_filter
@@ -259,6 +305,8 @@ class TestFilterTemplates:
             target_level="campaign",
             index="creative",
         )
+        assert "index" in dsl
+        assert dsl["index"] == "creative"
         assert "match" in str(dsl["query"]["bool"]["filter"])
         assert "by_campaign" in dsl["aggs"]
         assert dsl["aggs"]["by_campaign"]["terms"]["field"] == "campaign_id"
@@ -270,6 +318,8 @@ class TestFilterTemplates:
             high_level="campaign",
             conditions=[{"field": "campaign_name", "operator": "contains", "value": "618"}],
         )
+        assert "index" in dsl
+        assert dsl["index"] == "campaign"
         assert "by_campaign" in dsl["aggs"]
 
     def test_full_filter(self):

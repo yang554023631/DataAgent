@@ -118,7 +118,7 @@ def build_base_metric_sum_aggs(metrics: List[str]) -> Dict[str, Any]:
 
 
 def build_common_filters(
-    advertiser_ids: List[int],
+    advertiser_ids: List[str],
     start_date: str,
     end_date: str,
     data_types: Optional[List[int]] = None,

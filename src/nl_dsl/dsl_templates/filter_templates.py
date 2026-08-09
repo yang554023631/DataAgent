@@ -9,7 +9,13 @@ from .common import (
     build_bucket_script,
     build_base_metric_sum_aggs,
     build_common_filters,
+    build_bucket_selector,
 )
+
+# Allowed operators for having filters
+ALLOWED_HAVING_OPERATORS = {">", "<", ">=", "<=", "=="}
+# Allowed operators for field conditions
+ALLOWED_FIELD_OPERATORS = {"=", "in", ">", "<", ">=", "<=", "contains", "match"}
 
 
 def build_having_filter(
@@ -23,12 +29,19 @@ def build_having_filter(
     index: str = "ad_stat_data",
 ) -> Dict[str, Any]:
     """F2-1: 基础指标 having 筛选"""
+    # Validate operator
+    if operator not in ALLOWED_HAVING_OPERATORS:
+        raise ValueError(
+            f"Invalid operator '{operator}'. Allowed operators: {', '.join(sorted(ALLOWED_HAVING_OPERATORS))}"
+        )
+
     level_field = get_level_field(group_by_level)
     data_type = get_data_type(metric)
     if data_type is None:
         raise ValueError(f"Unknown metric: {metric}")
 
     dsl = {
+        "index": index,
         "query": {
             "bool": {
                 "filter": build_common_filters(advertiser_ids, start_date, end_date, [data_type])
@@ -45,13 +58,9 @@ def build_having_filter(
         },
     }
 
-    # bucket_selector 作为 terms 的子聚合
-    dsl["aggs"][f"by_{group_by_level}"]["aggs"]["having_filter"] = {
-        "bucket_selector": {
-            "buckets_path": {"value": "metric_sum"},
-            "script": {"source": f"params.value {operator} {threshold}", "lang": "painless"},
-        }
-    }
+    # Use the common helper for bucket_selector
+    bucket_selector = build_bucket_selector("metric_sum", operator, threshold)
+    dsl["aggs"][f"by_{group_by_level}"]["aggs"].update(bucket_selector)
     return dsl
 
 
@@ -66,6 +75,12 @@ def build_derived_having_filter(
     index: str = "ad_stat_data",
 ) -> Dict[str, Any]:
     """F2-2: 衍生指标 having 筛选"""
+    # Validate operator
+    if operator not in ALLOWED_HAVING_OPERATORS:
+        raise ValueError(
+            f"Invalid operator '{operator}'. Allowed operators: {', '.join(sorted(ALLOWED_HAVING_OPERATORS))}"
+        )
+
     from .common import DERIVED_METRICS
     if not is_derived_metric(metric):
         raise ValueError(f"Not a derived metric: {metric}")
@@ -76,6 +91,7 @@ def build_derived_having_filter(
     level_field = get_level_field(group_by_level)
 
     dsl = {
+        "index": index,
         "query": {
             "bool": {
                 "filter": build_common_filters(advertiser_ids, start_date, end_date, data_types)
@@ -97,13 +113,9 @@ def build_derived_having_filter(
     # bucket_script 衍生指标
     derived_agg = build_bucket_script(metric)
     terms_aggs.update(derived_agg)
-    # bucket_selector 过滤
-    terms_aggs["having_filter"] = {
-        "bucket_selector": {
-            "buckets_path": {"value": metric},
-            "script": {"source": f"params.value {operator} {threshold}", "lang": "painless"},
-        }
-    }
+    # Use the common helper for bucket_selector
+    bucket_selector = build_bucket_selector(metric, operator, threshold)
+    terms_aggs.update(bucket_selector)
     return dsl
 
 
@@ -122,6 +134,7 @@ def build_where_dimension_filter(
         filters.append(_build_field_condition(cond["field"], cond["operator"], cond["value"]))
 
     dsl = {
+        "index": index,
         "query": {"bool": {"filter": filters}},
         "size": 0,
         "aggs": {
@@ -149,6 +162,7 @@ def build_cross_level_up_filter(
     condition = _build_field_condition(low_level_field, low_level_operator, low_level_value)
 
     dsl = {
+        "index": index,
         "query": {
             "bool": {
                 "filter": [
@@ -182,6 +196,7 @@ def build_cross_level_down_filter_step1(
         filters.append(_build_field_condition(cond["field"], cond["operator"], cond["value"]))
 
     dsl = {
+        "index": index,
         "query": {"bool": {"filter": filters}},
         "size": 0,
         "aggs": {
@@ -207,6 +222,11 @@ def build_full_filter(
 
 def _build_field_condition(field: str, operator: str, value: Any) -> Dict[str, Any]:
     """构建单个字段的过滤条件"""
+    if operator not in ALLOWED_FIELD_OPERATORS:
+        raise ValueError(
+            f"Invalid operator '{operator}'. Allowed operators: {', '.join(sorted(ALLOWED_FIELD_OPERATORS))}"
+        )
+
     if operator == "=":
         return {"term": {field: value}}
     elif operator == "in":
@@ -215,5 +235,6 @@ def _build_field_condition(field: str, operator: str, value: Any) -> Dict[str, A
         return {"range": {field: {operator: value}}}
     elif operator in ("contains", "match"):
         return {"match": {field: value}}
-    else:
-        return {"term": {field: value}}
+
+    # This line should never be reached due to the validation above
+    raise ValueError(f"Unhandled operator '{operator}'")
