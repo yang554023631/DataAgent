@@ -11,6 +11,7 @@ from src.analysis.models import (
     AnalysisType,
     ChartType,
     CotReasoning,
+    AnalysisPlanResult,
 )
 from src.nl_dsl.models import (
     FilterResult,
@@ -18,6 +19,8 @@ from src.nl_dsl.models import (
     QualityIssue,
     QualityCheckType,
     QualityAction,
+    AnalysisResult as NlDslAnalysisResult,
+    EmptyCheckResult,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,24 +32,29 @@ class ReportFormatter:
     @classmethod
     def format(
         cls,
-        analysis_plan: AnalysisPlan,
-        chart_data: Dict[str, Any],
-        filter_result: FilterResult,
+        analysis_plan_result: AnalysisPlanResult,
+        analysis_result: NlDslAnalysisResult,
         quality_result: QualityResult,
+        filter_result: FilterResult,
+        user_input: str,
         cot_reasoning: Optional[CotReasoning] = None,
     ) -> Dict[str, Any]:
         """格式化分析结果为最终报告
 
         Args:
-            analysis_plan: 分析计划
-            chart_data: 图表数据 {chart_config: ..., data: ...}
-            filter_result: 筛选结果
+            analysis_plan_result: 分析计划结果（包含分析计划和筛选计划）
+            analysis_result: 分析执行结果
             quality_result: 质量检查结果
+            filter_result: 筛选结果
+            user_input: 用户原始输入
             cot_reasoning: CoT 推理过程（可选）
 
         Returns:
             最终报告字典
         """
+        analysis_plan = analysis_plan_result.analysis_plan
+        chart_data = analysis_result.chart_data or {}
+
         # 1. 判断报告类型
         report_type = cls._determine_report_type(quality_result, chart_data)
 
@@ -69,7 +77,7 @@ class ReportFormatter:
         data = chart_data.get("data", [])
 
         # 4. 格式化数据表格
-        data_table = cls._format_data_table(data, analysis_plan.metrics)
+        data_table = cls._format_analysis_data_table(analysis_result.data_table, analysis_plan.metrics)
 
         # 5. 生成亮点
         highlights = cls._generate_highlights(
@@ -85,7 +93,7 @@ class ReportFormatter:
         metadata = cls._generate_metadata(filter_result, analysis_plan)
 
         # 8. CoT 推理摘要
-        cot_reasoning_summary = cls._summarize_cot_reasoning(cot_reasoning)
+        cot_reasoning_summary = cls._summarize_cot_reasoning(cot_reasoning or analysis_plan_result.reasoning)
 
         # 9. 生成推荐查询
         next_queries = cls._generate_next_queries(analysis_plan, data)
@@ -101,6 +109,51 @@ class ReportFormatter:
             "metadata": metadata,
             "cot_reasoning_summary": cot_reasoning_summary,
             "next_queries": next_queries
+        }
+
+    @classmethod
+    def format_empty_result(
+        cls,
+        empty_check_result: EmptyCheckResult,
+        analysis_plan_result: AnalysisPlanResult,
+        filter_result: FilterResult,
+        user_input: str,
+    ) -> Dict[str, Any]:
+        """格式化空结果报告
+
+        Args:
+            empty_check_result: 空检查结果
+            analysis_plan_result: 分析计划结果
+            filter_result: 筛选结果
+            user_input: 用户原始输入
+
+        Returns:
+            最终报告字典
+        """
+        # 构建建议列表
+        suggestions = empty_check_result.hints or [
+            "调整筛选条件",
+            "扩大时间范围",
+            "检查指标是否正确"
+        ]
+
+        # 生成标题
+        title = cls._generate_title_from_plan(analysis_plan_result.analysis_plan)
+
+        return {
+            "report_type": "empty",
+            "title": f"📭 {title}",
+            "highlights": [
+                {
+                    "type": "negative",
+                    "text": f"⚠️ {empty_check_result.hints[0] if empty_check_result.hints else '未找到符合条件的数据'}"
+                }
+            ],
+            "data_table": {"columns": [], "rows": []},
+            "chart_config": None,
+            "metadata": cls._generate_metadata(filter_result, analysis_plan_result.analysis_plan),
+            "next_queries": ["查看最近7天的整体数据", "查看全部广告主数据"],
+            "suggestions": suggestions
         }
 
     @classmethod
@@ -175,7 +228,7 @@ class ReportFormatter:
 
     @classmethod
     def _format_data_table(cls, data: List[Dict[str, Any]], metrics: List[str]) -> Dict[str, Any]:
-        """格式化数据表格"""
+        """格式化数据表格（从字典列表）"""
         if not data:
             return {"columns": [], "rows": []}
 
@@ -210,6 +263,94 @@ class ReportFormatter:
         return {
             "columns": columns,
             "rows": rows
+        }
+
+    @classmethod
+    def _format_analysis_data_table(cls, data_table, metrics: List[str]) -> Dict[str, Any]:
+        """格式化数据表格（从 AnalysisDataTable 对象）"""
+        if not data_table:
+            return {"columns": [], "rows": []}
+
+        # 如果是字典格式
+        if isinstance(data_table, dict):
+            columns = data_table.get("columns", [])
+            rows = data_table.get("rows", [])
+        # 如果是对象格式
+        else:
+            columns = []
+            for col in getattr(data_table, "columns", []):
+                if isinstance(col, dict):
+                    columns.append(col.get("label", col.get("key", str(col))))
+                else:
+                    columns.append(str(col))
+            rows = getattr(data_table, "rows", [])
+
+        # 格式化行数据
+        formatted_rows = []
+        for row in rows:
+            # 如果行是字典，提取值并格式化
+            if isinstance(row, dict):
+                formatted_row = []
+                for col in (row.keys() if columns == [] else [c.get("key", c) if isinstance(c, dict) else c for c in columns]):
+                    # 如果列是字典，获取key
+                    col_key = col.get("key", col) if isinstance(col, dict) else col
+                    value = row.get(col_key)
+                    # 格式化百分比字段
+                    if col_key in metrics and (str(col_key).lower().find("ctr") != -1 or str(col_key).lower().find("cvr") != -1):
+                        if isinstance(value, (int, float)):
+                            formatted_row.append(f"{value * 100:.1f}%")
+                        else:
+                            formatted_row.append(value)
+                    # 格式化金额字段
+                    elif col_key in metrics and (str(col_key).lower().find("cost") != -1 or str(col_key).lower().find("spend") != -1):
+                        if isinstance(value, (int, float)):
+                            formatted_row.append(f"¥{value:,.2f}")
+                        else:
+                            formatted_row.append(value)
+                    # 格式化数字字段
+                    elif col_key in metrics and isinstance(value, (int, float)):
+                        formatted_row.append(f"{value:,}")
+                    else:
+                        formatted_row.append(value)
+                formatted_rows.append(formatted_row)
+            # 如果行是列表，直接格式化
+            elif isinstance(row, list):
+                formatted_row = []
+                for i, value in enumerate(row):
+                    col = columns[i] if i < len(columns) else ""
+                    col_key = col.get("key", col) if isinstance(col, dict) else col
+                    # 格式化百分比字段
+                    if col_key in metrics and (str(col_key).lower().find("ctr") != -1 or str(col_key).lower().find("cvr") != -1):
+                        if isinstance(value, (int, float)):
+                            formatted_row.append(f"{value * 100:.1f}%")
+                        else:
+                            formatted_row.append(value)
+                    # 格式化金额字段
+                    elif col_key in metrics and (str(col_key).lower().find("cost") != -1 or str(col_key).lower().find("spend") != -1):
+                        if isinstance(value, (int, float)):
+                            formatted_row.append(f"¥{value:,.2f}")
+                        else:
+                            formatted_row.append(value)
+                    # 格式化数字字段
+                    elif col_key in metrics and isinstance(value, (int, float)):
+                        formatted_row.append(f"{value:,}")
+                    else:
+                        formatted_row.append(value)
+                formatted_rows.append(formatted_row)
+            else:
+                formatted_rows.append(row)
+
+        # 处理列格式
+        formatted_columns = []
+        for col in columns:
+            if isinstance(col, dict):
+                formatted_columns.append(col.get("label", col.get("key", str(col))))
+            else:
+                formatted_columns.append(str(col))
+
+        return {
+            "columns": formatted_columns,
+            "rows": formatted_rows
         }
 
     @classmethod
