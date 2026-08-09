@@ -1180,7 +1180,6 @@ async def analysis_node(state: dict) -> dict:
         from src.nl_dsl.filter_executor import FilterExecutor
         from src.nl_dsl.analysis_executor import AnalysisExecutor
         from src.nl_dsl.quality_checker import QualityChecker
-        from src.nl_dsl.empty_checker import EmptyResultChecker
         from src.analysis.models import (
             AnalysisPlanResult, FieldContext, CotReasoning,
             FilterPlan, FilterResult, AnalysisResult, QualityResult
@@ -1365,52 +1364,6 @@ async def analysis_node(state: dict) -> dict:
         })
         logger.info(f"[AnalysisNode] Step 3: FilterExecutor completed, got {filter_result.total_count} entities")
 
-        # ========== 步骤 3.5: EmptyResultChecker - 空结果检查 ==========
-        step_start = time.time()
-        execution_trace.append({"step": "empty_result_checker", "status": "started"})
-        logger.info(f"[AnalysisNode] Step 3.5: EmptyResultChecker started")
-
-        empty_checker = EmptyResultChecker(es_client=es_client)
-        empty_check_result = await empty_checker.async_check(
-            analysis_plan=analysis_plan_result.analysis_plan,
-            advertiser_ids=advertiser_ids,
-            filter_result=filter_result
-        )
-
-        if empty_check_result.found_error:
-            execution_trace.append({
-                "step": "empty_result_checker",
-                "status": "empty_data",
-                "duration_ms": int((time.time() - step_start) * 1000),
-                "error_type": empty_check_result.error_type.value if hasattr(empty_check_result.error_type, "value") else empty_check_result.error_type
-            })
-            logger.info(f"[AnalysisNode] Step 3.5: EmptyResultChecker found empty data, skipping AnalysisExecutor")
-
-            # 直接生成空结果报告
-            report_formatter = ReportFormatter()
-            final_report = report_formatter.format_empty_result(
-                empty_check_result=empty_check_result,
-                analysis_plan_result=analysis_plan_result,
-                filter_result=filter_result,
-                user_input=user_input
-            )
-
-            updates["final_report"] = final_report
-            total_duration = int((time.time() - start_time) * 1000)
-            execution_trace.append({
-                "step": "complete",
-                "status": "empty",
-                "total_duration_ms": total_duration
-            })
-            return updates
-
-        execution_trace.append({
-            "step": "empty_result_checker",
-            "status": "success",
-            "duration_ms": int((time.time() - step_start) * 1000)
-        })
-        logger.info(f"[AnalysisNode] Step 3.5: EmptyResultChecker passed, continuing to AnalysisExecutor")
-
         # ========== 步骤 4: AnalysisExecutor - 执行分析计划 ==========
         step_start = time.time()
         execution_trace.append({"step": "analysis_executor", "status": "started"})
@@ -1513,8 +1466,7 @@ async def analysis_node(state: dict) -> dict:
             analysis_result=analysis_result,
             quality_result=quality_result,
             filter_result=filter_result,
-            user_input=user_input,
-            cot_reasoning=cot_result.reasoning
+            user_input=user_input
         )
 
         updates["final_report"] = final_report
