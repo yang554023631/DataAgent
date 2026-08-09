@@ -330,3 +330,107 @@ class TestFilterTemplates:
         )
         # 全量筛选返回 None 或空步骤（不需要查询，用 advertiser_id + level 直接过滤即可）
         assert result is None or result["steps"] == []
+
+
+class TestAnalysisTemplates:
+    def test_single_series_trend(self):
+        from src.nl_dsl.dsl_templates.analysis_templates import build_single_series_trend
+        dsl = build_single_series_trend(
+            advertiser_ids=["6"],
+            start_date="2026-04-01",
+            end_date="2026-04-30",
+            metric="cost",
+            granularity="day",
+        )
+        assert "by_date" in dsl["aggs"]
+        assert "date_histogram" in dsl["aggs"]["by_date"]
+        assert "metric_sum" in dsl["aggs"]["by_date"]["aggs"]
+        assert dsl["size"] == 0
+
+    def test_multi_series_trend(self):
+        from src.nl_dsl.dsl_templates.analysis_templates import build_multi_series_trend
+        dsl = build_multi_series_trend(
+            advertiser_ids=["6"],
+            start_date="2026-04-01",
+            end_date="2026-04-30",
+            metric="cost",
+            series_level="campaign",
+            series_ids=[101, 102, 103],
+            granularity="day",
+        )
+        assert "by_date" in dsl["aggs"]
+        assert "by_campaign" in dsl["aggs"]["by_date"]["aggs"]
+        assert "metric_sum" in dsl["aggs"]["by_date"]["aggs"]["by_campaign"]["aggs"]
+
+    def test_entity_table(self):
+        from src.nl_dsl.dsl_templates.analysis_templates import build_entity_table
+        dsl = build_entity_table(
+            advertiser_ids=["6"],
+            start_date="2026-04-01",
+            end_date="2026-04-30",
+            metrics=["cost", "clicks", "ctr"],
+            group_by_level="campaign",
+            order_by="cost",
+            order_dir="desc",
+            limit=20,
+        )
+        aggs = dsl["aggs"]["by_campaign"]["aggs"]
+        assert "sum_cost" in aggs
+        assert "sum_clicks" in aggs
+        assert "ctr" in aggs  # 衍生指标
+
+    def test_period_comparison(self):
+        from src.nl_dsl.dsl_templates.analysis_templates import build_period_comparison_summary
+        dsl = build_period_comparison_summary(
+            advertiser_ids=["6"],
+            current_start="2026-04-01",
+            current_end="2026-04-30",
+            compare_start="2026-03-01",
+            compare_end="2026-03-31",
+            metrics=["cost", "clicks"],
+        )
+        assert "current_period" in dsl["aggs"]
+        assert "compare_period" in dsl["aggs"]
+        assert "filter" in dsl["aggs"]["current_period"]
+
+    def test_audience_distribution(self):
+        from src.nl_dsl.dsl_templates.analysis_templates import build_audience_distribution
+        dsl = build_audience_distribution(
+            advertiser_ids=["6"],
+            start_date="2026-04-01",
+            end_date="2026-04-30",
+            metric="cost",
+            audience_type="gender",
+        )
+        assert "by_audience" in dsl["aggs"]
+        filters = dsl["query"]["bool"]["filter"]
+        assert any("audience_type" in str(f) for f in filters)
+
+    def test_summary(self):
+        from src.nl_dsl.dsl_templates.analysis_templates import build_summary
+        dsl = build_summary(
+            advertiser_ids=["6"],
+            start_date="2026-04-01",
+            end_date="2026-04-30",
+            metrics=["cost", "clicks", "impressions", "ctr"],
+        )
+        assert "sum_cost" in dsl["aggs"]
+        assert "sum_clicks" in dsl["aggs"]
+        assert "ctr" in dsl["aggs"]  # 衍生指标
+
+    def test_detail_list(self):
+        from src.nl_dsl.dsl_templates.analysis_templates import build_detail_list
+        dsl = build_detail_list(
+            advertiser_ids=["6"],
+            start_date="2026-04-01",
+            end_date="2026-04-30",
+            metric="cost",
+            value_operator=">",
+            value_threshold=100,
+            page=1,
+            page_size=20,
+        )
+        assert dsl["from"] == 0
+        assert dsl["size"] == 20
+        assert "sort" in dsl
+        assert "data_value" in str(dsl["query"])
