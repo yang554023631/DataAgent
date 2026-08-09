@@ -54,7 +54,38 @@ class EmptyResultChecker:
         entity_level: Optional[str] = None,
     ) -> EmptyCheckResult:
         """
-        执行空结果检查
+        同步执行空结果检查（同步包装器，兼容非异步调用者）
+
+        Args:
+            analysis_plan: 分析计划
+            advertiser_ids: 广告主ID列表
+            filter_result: 筛选结果（可选）
+            entity_ids: 实体ID列表（可选，优先使用 filter_result）
+            entity_level: 实体层级（可选）
+
+        Returns:
+            EmptyCheckResult: 检查结果
+        """
+        return asyncio.run(
+            self.async_check(
+                analysis_plan=analysis_plan,
+                advertiser_ids=advertiser_ids,
+                filter_result=filter_result,
+                entity_ids=entity_ids,
+                entity_level=entity_level,
+            )
+        )
+
+    async def async_check(
+        self,
+        analysis_plan: AnalysisPlan,
+        advertiser_ids: List[str],
+        filter_result: Optional[FilterResult] = None,
+        entity_ids: Optional[List[Any]] = None,
+        entity_level: Optional[str] = None,
+    ) -> EmptyCheckResult:
+        """
+        异步执行空结果检查（并行执行静态检查和ES检查）
 
         Args:
             analysis_plan: 分析计划
@@ -73,22 +104,33 @@ class EmptyResultChecker:
             ids = filter_result.entity_ids
             level = filter_result.entity_level
 
-        # 运行静态检查
-        static_result = self._run_static_checks(
+        # 并行运行静态检查组和ES轻量查询组
+        static_task = asyncio.to_thread(
+            self._run_static_checks,
             analysis_plan=analysis_plan,
             entity_ids=ids,
         )
-        if static_result.found_error:
-            return static_result
-
-        # 运行ES轻量查询检查
-        es_result = self._run_es_checks(
+        es_task = asyncio.to_thread(
+            self._run_es_checks,
             analysis_plan=analysis_plan,
             advertiser_ids=advertiser_ids,
             entity_ids=ids,
             entity_level=level,
         )
-        return es_result
+
+        # 等待两者完成
+        static_result, es_result = await asyncio.gather(static_task, es_task)
+
+        # 优先返回静态检查错误（因为更快且无需ES查询）
+        if static_result.found_error:
+            return static_result
+
+        # 然后返回ES检查错误
+        if es_result.found_error:
+            return es_result
+
+        # 两者都通过
+        return EmptyCheckResult(found_error=False)
 
     def _run_static_checks(
         self,

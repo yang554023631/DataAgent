@@ -1,5 +1,6 @@
 """空结果自查器测试"""
 import pytest
+import asyncio
 from unittest.mock import Mock, MagicMock
 from typing import Dict, Any, List
 from src.nl_dsl.empty_checker import EmptyResultChecker
@@ -73,6 +74,110 @@ class TestEmptyResultChecker:
         )
 
         assert result.found_error is False
+
+    @pytest.mark.asyncio
+    async def test_async_check_passed(
+        self,
+        empty_checker,
+        mock_es_client,
+        sample_analysis_plan,
+    ):
+        """测试异步检查通过"""
+        mock_es_client.search.side_effect = [
+            {"hits": {"total": {"value": 1000}}},
+            {
+                "aggregations": {
+                    "sum_dt_1": {"total": {"value": 10000}},
+                    "sum_dt_2": {"total": {"value": 500000}},
+                }
+            },
+        ]
+
+        result = await empty_checker.async_check(
+            analysis_plan=sample_analysis_plan,
+            advertiser_ids=["6"],
+        )
+
+        assert result.found_error is False
+        assert result.error_type is None
+
+    @pytest.mark.asyncio
+    async def test_async_check_static_error_priority(
+        self,
+        empty_checker,
+        mock_es_client,
+        sample_analysis_plan,
+    ):
+        """测试异步检查中静态错误优先返回"""
+        # 设置静态检查失败
+        sample_analysis_plan.time_range.start_date = "2026-04-30"
+        sample_analysis_plan.time_range.end_date = "2026-04-01"
+
+        # 同时ES也返回错误，但静态错误应该优先被返回
+        mock_es_client.search.side_effect = Exception("ES error (should not be reached)")
+
+        result = await empty_checker.async_check(
+            analysis_plan=sample_analysis_plan,
+            advertiser_ids=["6"],
+        )
+
+        assert result.found_error is True
+        assert result.error_type == EmptyCheckErrorType.INVALID_TIME_RANGE
+
+    @pytest.mark.asyncio
+    async def test_async_check_es_error(
+        self,
+        empty_checker,
+        mock_es_client,
+        sample_analysis_plan,
+    ):
+        """测试异步检查中ES错误"""
+        mock_es_client.search.return_value = {
+            "hits": {"total": {"value": 0}},
+        }
+
+        result = await empty_checker.async_check(
+            analysis_plan=sample_analysis_plan,
+            advertiser_ids=["6"],
+        )
+
+        assert result.found_error is True
+        assert result.error_type == EmptyCheckErrorType.NO_DOCUMENTS
+
+    def test_sync_async_compatibility(
+        self,
+        empty_checker,
+        mock_es_client,
+        sample_analysis_plan,
+    ):
+        """测试同步和异步方法返回一致结果"""
+        mock_es_client.search.side_effect = [
+            {"hits": {"total": {"value": 1000}}},
+            {
+                "aggregations": {
+                    "sum_dt_1": {"total": {"value": 10000}},
+                    "sum_dt_2": {"total": {"value": 500000}},
+                }
+            },
+        ] * 2  # *2 因为同步和异步各调用一次
+
+        # 同步调用
+        sync_result = empty_checker.check(
+            analysis_plan=sample_analysis_plan,
+            advertiser_ids=["6"],
+        )
+
+        # 异步调用
+        async def run_async():
+            return await empty_checker.async_check(
+                analysis_plan=sample_analysis_plan,
+                advertiser_ids=["6"],
+            )
+        async_result = asyncio.run(run_async())
+
+        # 结果应该一致
+        assert sync_result.found_error == async_result.found_error
+        assert sync_result.error_type == async_result.error_type
         assert result.error_type is None
 
     def test_check_invalid_time_range_swapped(
@@ -315,3 +420,107 @@ class TestEmptyResultChecker:
         )
 
         assert result.found_error is False
+
+    @pytest.mark.asyncio
+    async def test_async_check_passed(
+        self,
+        empty_checker,
+        mock_es_client,
+        sample_analysis_plan,
+    ):
+        """测试异步检查通过"""
+        mock_es_client.search.side_effect = [
+            {"hits": {"total": {"value": 1000}}},
+            {
+                "aggregations": {
+                    "sum_dt_1": {"total": {"value": 10000}},
+                    "sum_dt_2": {"total": {"value": 500000}},
+                }
+            },
+        ]
+
+        result = await empty_checker.async_check(
+            analysis_plan=sample_analysis_plan,
+            advertiser_ids=["6"],
+        )
+
+        assert result.found_error is False
+        assert result.error_type is None
+
+    @pytest.mark.asyncio
+    async def test_async_check_static_error_priority(
+        self,
+        empty_checker,
+        mock_es_client,
+        sample_analysis_plan,
+    ):
+        """测试异步检查中静态错误优先返回"""
+        # 设置静态检查失败
+        sample_analysis_plan.time_range.start_date = "2026-04-30"
+        sample_analysis_plan.time_range.end_date = "2026-04-01"
+
+        # 同时ES也返回错误，但静态错误应该优先被返回
+        mock_es_client.search.side_effect = Exception("ES error (should not be reached)")
+
+        result = await empty_checker.async_check(
+            analysis_plan=sample_analysis_plan,
+            advertiser_ids=["6"],
+        )
+
+        assert result.found_error is True
+        assert result.error_type == EmptyCheckErrorType.INVALID_TIME_RANGE
+
+    @pytest.mark.asyncio
+    async def test_async_check_es_error(
+        self,
+        empty_checker,
+        mock_es_client,
+        sample_analysis_plan,
+    ):
+        """测试异步检查中ES错误"""
+        mock_es_client.search.return_value = {
+            "hits": {"total": {"value": 0}},
+        }
+
+        result = await empty_checker.async_check(
+            analysis_plan=sample_analysis_plan,
+            advertiser_ids=["6"],
+        )
+
+        assert result.found_error is True
+        assert result.error_type == EmptyCheckErrorType.NO_DOCUMENTS
+
+    def test_sync_async_compatibility(
+        self,
+        empty_checker,
+        mock_es_client,
+        sample_analysis_plan,
+    ):
+        """测试同步和异步方法返回一致结果"""
+        mock_es_client.search.side_effect = [
+            {"hits": {"total": {"value": 1000}}},
+            {
+                "aggregations": {
+                    "sum_dt_1": {"total": {"value": 10000}},
+                    "sum_dt_2": {"total": {"value": 500000}},
+                }
+            },
+        ] * 2  # *2 因为同步和异步各调用一次
+
+        # 同步调用
+        sync_result = empty_checker.check(
+            analysis_plan=sample_analysis_plan,
+            advertiser_ids=["6"],
+        )
+
+        # 异步调用
+        async def run_async():
+            return await empty_checker.async_check(
+                analysis_plan=sample_analysis_plan,
+                advertiser_ids=["6"],
+            )
+        async_result = asyncio.run(run_async())
+
+        # 结果应该一致
+        assert sync_result.found_error == async_result.found_error
+        assert sync_result.error_type == async_result.error_type
