@@ -1,6 +1,61 @@
 """CoT Analysis Planner 数据模型"""
 from typing import List, Optional, Dict, Any
+from enum import Enum
 from pydantic import BaseModel, Field
+
+
+class QualityCheckType(str, Enum):
+    """质量检查类型"""
+    MAX_SERIES_COUNT = "max_series_count"
+    MAX_ROWS = "max_rows"
+    MAX_CATEGORIES = "max_categories"
+    MIN_DATA_POINTS = "min_data_points"
+    ALL_ZERO = "all_zero"
+    EMPTY_RESULT = "empty_result"
+
+
+class QualityAction(str, Enum):
+    """质量检查建议动作"""
+    HITL = "hitl"  # 人工介入
+    TRIM_TOP = "trim_top"  # 截断前N个
+    TRIM_OTHERS = "trim_others"  # 保留前N个，其余合并为"其他"
+    WARN = "warn"  # 仅警告
+    FAIL = "fail"  # 失败
+
+
+class QualityIssue(BaseModel):
+    """质量问题"""
+    check_type: QualityCheckType
+    severity: str  # "warning" | "error" | "hitl_required"
+    message: str
+    suggested_action: Optional[QualityAction] = None
+    threshold: Optional[Any] = None
+    actual: Optional[Any] = None
+
+
+class QualityResult(BaseModel):
+    """质量检查结果"""
+    passed: bool
+    issues: List[QualityIssue] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    actions: List[QualityAction] = Field(default_factory=list)
+
+
+class EmptyCheckErrorType(str, Enum):
+    """空结果检查错误类型"""
+    INVALID_TIME_RANGE = "invalid_time_range"
+    INVALID_METRICS = "invalid_metrics"
+    NO_ENTITY_IDS = "no_entity_ids"
+    NO_DOCUMENTS = "no_documents"
+    NO_DATA_VALUES = "no_data_values"
+
+
+class EmptyCheckResult(BaseModel):
+    """空结果检查结果"""
+    found_error: bool
+    error_type: Optional[EmptyCheckErrorType] = None
+    correction: Optional[Dict[str, Any]] = None
+    hints: List[str] = Field(default_factory=list)
 
 
 class FilterCondition(BaseModel):
