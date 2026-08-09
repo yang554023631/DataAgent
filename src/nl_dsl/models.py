@@ -37,3 +37,74 @@ class FilterResult(BaseModel):
     total_count: int
     trace: List[Dict[str, Any]] = Field(default_factory=list)  # 每步的执行追踪
     truncated: bool = False  # 是否因超过500上限被截断
+
+
+# ========== Analysis Models ==========
+
+class AnalysisTimeRange(BaseModel):
+    """分析时间范围"""
+    start_date: str
+    end_date: str
+    granularity: Optional[str] = "day"  # day / week / month
+
+
+class AnalysisComparison(BaseModel):
+    """时期对比配置"""
+    compare_start_date: str
+    compare_end_date: str
+
+
+class AnalysisChartConfig(BaseModel):
+    """图表配置"""
+    type: str  # line / bar / pie / kpi_card / table
+    title: str
+    x_axis: Optional[Dict[str, Any]] = None
+    y_axis: Optional[Dict[str, Any]] = None
+    series_field: Optional[str] = None
+    series: Optional[List[Dict[str, Any]]] = None
+
+
+class AnalysisDataTable(BaseModel):
+    """数据表格"""
+    columns: List[Dict[str, Any]]
+    rows: List[Dict[str, Any]]
+
+
+class AnalysisResult(BaseModel):
+    """分析执行结果"""
+    chart_data: Optional[Dict[str, Any]] = None  # {chart_config: ..., data: ...}
+    data_table: Optional[AnalysisDataTable] = None
+    trace: List[Dict[str, Any]] = Field(default_factory=list)
+    success: bool = True
+    error: Optional[str] = None
+
+
+class AnalysisStep(BaseModel):
+    """单个分析步骤"""
+    step_id: str
+    analysis_type: str  # entity_table / time_trend / period_comparison / audience_distribution / summary
+    metrics: List[str]
+    group_by_level: Optional[str] = None
+    series_level: Optional[str] = None  # for multi-series trend
+    audience_type: Optional[str] = None  # for audience distribution
+    order_by: Optional[str] = None
+    order_dir: str = "desc"
+    limit: int = 100
+    comparison: Optional[AnalysisComparison] = None
+    chart_config: Optional[AnalysisChartConfig] = None
+
+
+class AnalysisPlan(BaseModel):
+    """分析计划"""
+    analysis_type: str  # entity_table / time_trend / period_comparison / audience_distribution / summary
+    time_range: AnalysisTimeRange
+    metrics: List[str]
+    group_by_level: Optional[str] = None  # for entity table
+    series_level: Optional[str] = None  # for multi-series trend
+    audience_type: Optional[str] = None  # for audience distribution
+    order_by: Optional[str] = None
+    order_dir: str = "desc"
+    limit: int = 100
+    comparison: Optional[AnalysisComparison] = None
+    chart_config: Optional[AnalysisChartConfig] = None
+    steps: List[AnalysisStep] = Field(default_factory=list)  # 支持多步骤分析

@@ -49,7 +49,7 @@ def extract_trend_data(es_response: Dict[str, Any], series_level: Optional[str] 
                 # Get the first metric sum (handles both base and derived metrics)
                 metric_value = None
                 for agg_key, agg_val in sb.items():
-                    if agg_key.startswith("sum_") or agg_key in ["ctr", "cvr", "cpc", "cpm"]:
+                    if agg_key.startswith("sum_") or agg_key == "metric_sum" or agg_key in ["ctr", "cvr", "cpc", "cpm"]:
                         metric_value = agg_val.get("value", agg_val.get("value", None))
                         break
                 if metric_value is not None:
@@ -59,7 +59,7 @@ def extract_trend_data(es_response: Dict[str, Any], series_level: Optional[str] 
             # Single series trend
             metric_value = None
             for agg_key, agg_val in date_bucket.items():
-                if agg_key.startswith("sum_") or agg_key in ["ctr", "cvr", "cpc", "cpm"]:
+                if agg_key.startswith("sum_") or agg_key == "metric_sum" or agg_key in ["ctr", "cvr", "cpc", "cpm"]:
                     metric_value = agg_val.get("value", agg_val.get("value", None))
                     break
             result[date_key] = metric_value
