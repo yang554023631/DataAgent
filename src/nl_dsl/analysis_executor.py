@@ -169,7 +169,9 @@ class AnalysisExecutor:
                 end_date=end_date,
                 metric=metric,
                 series_level=series_level,
-                series_ids=entity_ids if entity_level == series_level else None,
+                # 注意：series_ids 只是当 series_level == entity_level 时用于筛选系列
+                # 我们需要在下面单独添加实体过滤器，不管 series_level 是什么
+                series_ids=None,
                 granularity=granularity,
             )
         else:
@@ -182,10 +184,11 @@ class AnalysisExecutor:
                 granularity=granularity,
             )
 
-            # 如果有实体 ID，需要添加过滤条件
-            if entity_ids and entity_level:
-                level_field = get_level_field(entity_level)
-                dsl["query"]["bool"]["filter"].append({"terms": {level_field: entity_ids}})
+        # 如果有实体 ID，需要添加过滤条件（无论是单系列还是多系列）
+        # 注意：派生指标以小数形式存储（0.05 = 5%），只在显示层格式化
+        if entity_ids and entity_level:
+            level_field = get_level_field(entity_level)
+            dsl["query"]["bool"]["filter"].append({"terms": {level_field: entity_ids}})
 
         # 执行查询（带重试）
         response = self._execute_with_retry(dsl, "time_trend")

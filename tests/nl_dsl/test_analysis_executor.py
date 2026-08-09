@@ -485,3 +485,99 @@ class TestAnalysisExecutor:
         assert result.success is True
         assert result.chart_data["chart_config"]["type"] == "bar"
         assert result.chart_data["chart_config"]["title"] == "自定义图表标题"
+
+    def test_derived_metrics_are_decimal_format(self, analysis_executor, mock_es_client, sample_time_range):
+        """Test that derived metrics (CTR, etc.) are in decimal format (0.05 = 5%), not percentage format (5.0)"""
+        analysis_plan = AnalysisPlan(
+            analysis_type="entity_table",
+            time_range=sample_time_range,
+            metrics=["ctr", "cost"],  # Include CTR (derived) and cost (base)
+            group_by_level="campaign",
+        )
+
+        # Mock ES response with CTR = 0.1 (10%), cost = 100
+        mock_es_client.search.return_value = {
+            "aggregations": {
+                "by_campaign": {
+                    "buckets": [
+                        {
+                            "key": 101,
+                            "doc_count": 10,
+                            "sum_cost": {"value": 100},
+                            "sum_clicks": {"value": 100},
+                            "sum_impressions": {"value": 1000},
+                            "ctr": {"value": 0.1},  # Decimal format: 0.1 = 10%
+                        },
+                    ],
+                },
+            },
+        }
+
+        result = analysis_executor.execute(
+            analysis_plan=analysis_plan,
+            advertiser_ids=["6"],
+        )
+
+        assert result.success is True
+        assert result.data_table is not None
+        assert len(result.data_table.rows) == 1
+
+        # Verify CTR is in decimal format (0.1), not percentage (10.0)
+        campaign_row = result.data_table.rows[0]
+        assert campaign_row["ctr"] == 0.1  # Should be 0.1 (10% as decimal)
+        assert campaign_row["ctr"] != 10.0  # Should NOT be 10.0 (percentage format)
+
+        # Also verify base metric comes through correctly
+        assert campaign_row["cost"] == 100
+
+    def test_multi_series_trend_with_entity_filter(self, analysis_executor, mock_es_client, sample_time_range):
+        """Test that multi-series trend applies entity filter correctly (even when series_level != entity_level)"""
+        analysis_plan = AnalysisPlan(
+            analysis_type="time_trend",
+            time_range=sample_time_range,
+            metrics=["cost"],
+            series_level="campaign",  # Show series by campaign
+        )
+
+        # Mock ES response
+        mock_es_client.search.return_value = {
+            "aggregations": {
+                "by_date": {
+                    "buckets": [
+                        {
+                            "key": "2026-04-01",
+                            "doc_count": 10,
+                            "by_campaign": {
+                                "buckets": [
+                                    {"key": 101, "doc_count": 5, "metric_sum": {"value": 60}},
+                                ],
+                            },
+                        },
+                    ],
+                },
+            },
+        }
+
+        # Execute with entity_ids at ad_group level (different from series_level)
+        result = analysis_executor.execute(
+            analysis_plan=analysis_plan,
+            entity_ids=[201, 202, 203],  # Filter to these ad group IDs
+            entity_level="ad_group",     # Entity level is ad_group (different from series_level=campaign)
+            advertiser_ids=["6"],
+        )
+
+        assert result.success is True
+
+        # Verify that the entity filter was added to the DSL
+        call_args = mock_es_client.search.call_args
+        dsl = call_args[1]["body"]
+
+        # Check that we have a terms filter for adgroup_id (entity_level = ad_group maps to adgroup_id)
+        has_entity_filter = False
+        for filter_cond in dsl["query"]["bool"]["filter"]:
+            if isinstance(filter_cond, dict) and "terms" in filter_cond:
+                if "adgroup_id" in filter_cond["terms"]:
+                    assert set(filter_cond["terms"]["adgroup_id"]) == {201, 202, 203}
+                    has_entity_filter = True
+
+        assert has_entity_filter, "Multi-series trend should include entity filter even when series_level != entity_level"
