@@ -163,7 +163,7 @@ def validate_es_dsl(dsl: Dict[str, Any], index: str = "ad_stat_data") -> tuple[b
     try:
         # Perform validation
         response = es.indices.validate_query(index=index, body=dsl)
-        return response["valid", response.get("error", "Unknown error")]
+        return response["valid"], response.get("error", "Unknown error")
     except exceptions.ConnectionError as e:
         raise ConnectionError(f"Failed to connect to Elasticsearch: {e}") from e
     except Exception as e:
