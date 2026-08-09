@@ -434,3 +434,142 @@ class TestAnalysisTemplates:
         assert dsl["size"] == 20
         assert "sort" in dsl
         assert "data_value" in str(dsl["query"])
+
+
+class TestPublicAPIImports:
+    def test_public_api_imports(self):
+        """Test that all public API exports work correctly from the package"""
+        # Import the entire package
+        from src.nl_dsl.dsl_templates import (
+            # Common exports
+            LEVEL_TO_FIELD,
+            DERIVED_METRICS,
+            get_data_type,
+            is_derived_metric,
+            get_level_field,
+            build_time_filter,
+            build_bucket_script,
+            build_bucket_selector,
+            build_base_metric_sum_aggs,
+            build_common_filters,
+
+            # Filter templates exports
+            build_having_filter,
+            build_derived_having_filter,
+            build_where_dimension_filter,
+            build_cross_level_up_filter,
+            build_cross_level_down_filter_step1,
+            build_full_filter,
+
+            # Analysis templates exports
+            build_single_series_trend,
+            build_multi_series_trend,
+            build_entity_table,
+            build_top_n_entities,
+            build_period_comparison_summary,
+            build_audience_distribution,
+            build_summary,
+            build_detail_list,
+
+            # Result extractors exports
+            extract_entity_ids,
+            extract_trend_data,
+            extract_entity_table_data,
+            extract_summary_data,
+            extract_comparison_data,
+            extract_audience_data,
+            extract_detail_data,
+        )
+        # Verify we can access all imported items
+        assert LEVEL_TO_FIELD is not None
+        assert DERIVED_METRICS is not None
+        assert callable(get_data_type)
+        assert callable(is_derived_metric)
+        assert callable(get_level_field)
+        assert callable(build_time_filter)
+        assert callable(build_bucket_script)
+        assert callable(build_bucket_selector)
+        assert callable(build_base_metric_sum_aggs)
+        assert callable(build_common_filters)
+        assert callable(build_having_filter)
+        assert callable(build_derived_having_filter)
+        assert callable(build_where_dimension_filter)
+        assert callable(build_cross_level_up_filter)
+        assert callable(build_cross_level_down_filter_step1)
+        assert callable(build_full_filter)
+        assert callable(build_single_series_trend)
+        assert callable(build_multi_series_trend)
+        assert callable(build_entity_table)
+        assert callable(build_top_n_entities)
+        assert callable(build_period_comparison_summary)
+        assert callable(build_audience_distribution)
+        assert callable(build_summary)
+        assert callable(build_detail_list)
+        assert callable(extract_entity_ids)
+        assert callable(extract_trend_data)
+        assert callable(extract_entity_table_data)
+        assert callable(extract_summary_data)
+        assert callable(extract_comparison_data)
+        assert callable(extract_audience_data)
+        assert callable(extract_detail_data)
+
+
+def _check_es_available():
+    """Helper to check if Elasticsearch is available and elasticsearch package is installed"""
+    try:
+        from elasticsearch import Elasticsearch, exceptions
+        es = Elasticsearch()
+        es.info()
+        return True
+    except (ImportError, exceptions.ConnectionError, Exception):
+        return False
+
+
+class TestSchemaValidation:
+    """Test Elasticsearch DSL schema validation"""
+    @pytest.mark.skipif(not _check_es_available(), reason="Elasticsearch connection not available or elasticsearch package not installed")
+    def test_valid_dsl_passes_validation(self):
+        """Test that a valid DSL query passes validation"""
+        from src.nl_dsl.dsl_templates.common import validate_es_dsl
+        from src.nl_dsl.dsl_templates import build_common_filters, build_base_metric_sum_aggs
+
+        # Build a simple valid DSL
+        dsl = {
+            "query": {
+                "bool": {
+                    "filter": build_common_filters(
+                        advertiser_ids=["1"],
+                        start_date="2024-01-01",
+                        end_date="2024-01-02"
+                    )
+                }
+            },
+            "size": 0,
+            "aggs": build_base_metric_sum_aggs(["cost", "clicks"])
+        }
+
+        valid, error = validate_es_dsl(dsl)
+        assert valid is True
+        assert error is None
+
+    @pytest.mark.skipif(not _check_es_available(), reason="Elasticsearch connection not available or elasticsearch package not installed")
+    def test_invalid_dsl_fails_validation(self):
+        """Test that an invalid DSL query fails validation"""
+        from src.nl_dsl.dsl_templates.common import validate_es_dsl
+
+        # Build an invalid DSL (invalid field name)
+        dsl = {
+            "query": {
+                "bool": {
+                    "filter": [
+                        {"terms": {"invalid_field_name": ["1"]}},
+                        {"range": {"data_date": {"gte": "2024-01-01", "lte": "2024-01-02"}}}
+                    ]
+                }
+            },
+            "size": 0
+        }
+
+        valid, error = validate_es_dsl(dsl)
+        assert valid is False
+        assert error is not None

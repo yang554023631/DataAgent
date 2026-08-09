@@ -138,3 +138,33 @@ def build_common_filters(
         filters.append({"terms": {"data_type": data_types}})
 
     return filters
+
+
+def validate_es_dsl(dsl: Dict[str, Any], index: str = "ad_stat_data") -> tuple[bool, str | None]:
+    """
+    Validate an Elasticsearch DSL query using the indices.validate_query API.
+
+    Args:
+        dsl: The DSL query dictionary to validate
+        index: The Elasticsearch index to validate against
+
+    Returns:
+        (is_valid: bool, error_message: str | None)
+
+    Raises:
+        ImportError: If elasticsearch package is not installed
+        ConnectionError: If cannot connect to Elasticsearch (handled in tests for skipping)
+    """
+    from elasticsearch import Elasticsearch, exceptions
+
+    # Try to create an Elasticsearch client
+    es = Elasticsearch()
+
+    try:
+        # Perform validation
+        response = es.indices.validate_query(index=index, body=dsl)
+        return response["valid", response.get("error", "Unknown error")]
+    except exceptions.ConnectionError as e:
+        raise ConnectionError(f"Failed to connect to Elasticsearch: {e}") from e
+    except Exception as e:
+        return False, str(e)
