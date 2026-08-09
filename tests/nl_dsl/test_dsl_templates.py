@@ -186,3 +186,97 @@ class TestCommonHelpers:
             "impressions": "sum_impressions>value"
         }
         assert cpm_bucket["script"] == "params.cost / params.impressions * 1000"
+
+
+class TestFilterTemplates:
+    def test_having_filter_basic(self):
+        from src.nl_dsl.dsl_templates.filter_templates import build_having_filter
+        dsl = build_having_filter(
+            advertiser_ids=["6"],
+            start_date="2026-04-01",
+            end_date="2026-04-30",
+            metric="cost",
+            operator=">",
+            threshold=10,
+            group_by_level="campaign",
+        )
+        # 结构校验
+        assert "query" in dsl
+        assert "bool" in dsl["query"]
+        assert "filter" in dsl["query"]["bool"]
+        assert dsl["size"] == 0
+        assert "by_campaign" in dsl["aggs"]
+        assert dsl["aggs"]["by_campaign"]["terms"]["field"] == "campaign_id"
+        assert "metric_sum" in dsl["aggs"]["by_campaign"]["aggs"]
+        assert "having_filter" in dsl["aggs"]["by_campaign"]["aggs"]
+        # 广告主过滤
+        filters = dsl["query"]["bool"]["filter"]
+        assert any("advertiser_id" in str(f) for f in filters)
+        # data_type 过滤
+        assert any("data_type" in str(f) for f in filters)
+
+    def test_derived_having_filter(self):
+        from src.nl_dsl.dsl_templates.filter_templates import build_derived_having_filter
+        dsl = build_derived_having_filter(
+            advertiser_ids=["6"],
+            start_date="2026-04-01",
+            end_date="2026-04-30",
+            metric="ctr",
+            operator=">",
+            threshold=0.05,
+            group_by_level="campaign",
+        )
+        aggs = dsl["aggs"]["by_campaign"]["aggs"]
+        assert "sum_clicks" in aggs
+        assert "sum_impressions" in aggs
+        assert "ctr" in aggs
+        assert "bucket_script" in aggs["ctr"]
+        assert "having_filter" in aggs
+
+    def test_where_dimension_filter(self):
+        from src.nl_dsl.dsl_templates.filter_templates import build_where_dimension_filter
+        dsl = build_where_dimension_filter(
+            advertiser_ids=["6"],
+            level="campaign",
+            conditions=[
+                {"field": "status", "operator": "=", "value": "enabled"},
+                {"field": "create_time", "operator": ">=", "value": "2026-01-01"},
+            ],
+        )
+        assert dsl["size"] == 0
+        assert "by_campaign" in dsl["aggs"]
+        filters = dsl["query"]["bool"]["filter"]
+        assert len(filters) >= 2  # advertiser + conditions
+
+    def test_cross_level_up_filter(self):
+        from src.nl_dsl.dsl_templates.filter_templates import build_cross_level_up_filter
+        dsl = build_cross_level_up_filter(
+            advertiser_ids=["6"],
+            low_level="creative",
+            low_level_field="creative_name",
+            low_level_value="618",
+            low_level_operator="contains",
+            target_level="campaign",
+            index="creative",
+        )
+        assert "match" in str(dsl["query"]["bool"]["filter"])
+        assert "by_campaign" in dsl["aggs"]
+        assert dsl["aggs"]["by_campaign"]["terms"]["field"] == "campaign_id"
+
+    def test_cross_level_down_filter_two_step(self):
+        from src.nl_dsl.dsl_templates.filter_templates import build_cross_level_down_filter_step1
+        dsl = build_cross_level_down_filter_step1(
+            advertiser_ids=["6"],
+            high_level="campaign",
+            conditions=[{"field": "campaign_name", "operator": "contains", "value": "618"}],
+        )
+        assert "by_campaign" in dsl["aggs"]
+
+    def test_full_filter(self):
+        from src.nl_dsl.dsl_templates.filter_templates import build_full_filter
+        result = build_full_filter(
+            advertiser_ids=["6"],
+            level="campaign",
+        )
+        # 全量筛选返回 None 或空步骤（不需要查询，用 advertiser_id + level 直接过滤即可）
+        assert result is None or result["steps"] == []
