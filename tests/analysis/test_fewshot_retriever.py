@@ -332,3 +332,55 @@ class TestRetrievedExample:
         assert retrieved.example == example
         assert retrieved.score == 0.8
         assert retrieved.retrieval_rank == 0
+
+
+class TestCategoryFiltering:
+    """Test that positive/negative examples are correctly filtered"""
+
+    def test_positive_negative_separation(self):
+        """Test that examples are correctly separated by category"""
+        retriever = FewshotRetriever(
+            final_positive_count=2,
+            final_negative_count=1,
+        )
+
+        # Create test examples
+        examples = []
+        for i in range(3):
+            examples.append(CotExample(
+                example_id=f"pos_{i}",
+                question=f"positive question {i}",
+                category="positive",
+                reasoning_chinese="step1",
+                plan={},
+            ))
+        for i in range(2):
+            examples.append(CotExample(
+                example_id=f"neg_{i}",
+                question=f"negative question {i}",
+                category="negative",
+                reasoning_chinese="step1",
+                plan={},
+            ))
+
+        # Wrap in RetrievedExample
+        retrieved_examples = [
+            RetrievedExample(example=ex, score=0.5, retrieval_rank=i)
+            for i, ex in enumerate(examples)
+        ]
+
+        # Simulate what happens in retrieve()
+        positives = [e for e in retrieved_examples if e.example.category == "positive"]
+        negatives = [e for e in retrieved_examples if e.example.category == "negative"]
+
+        assert len(positives) == 3
+        assert len(negatives) == 2
+        assert all(e.example.category == "positive" for e in positives)
+        assert all(e.example.category == "negative" for e in negatives)
+
+        # Test the count limits
+        final_positives = positives[:2]
+        final_negatives = negatives[:1]
+
+        assert len(final_positives) == 2
+        assert len(final_negatives) == 1

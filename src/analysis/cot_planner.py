@@ -50,6 +50,7 @@ from src.analysis.prompts import (
 )
 from src.analysis.intent_analyzer import IntentAnalyzer, IntentAnalysisResult
 from src.analysis.fewshot_retriever import FewshotRetriever, get_fewshot_retriever
+from src.nl_dsl.dsl_templates.common import DERIVED_METRICS
 
 
 class CotResultStatus(str, Enum):
@@ -381,7 +382,7 @@ class CotPlanner:
 
     def _validate_plan(self, plan: AnalysisPlanResult) -> List[str]:
         """
-        Validate the analysis plan.
+        Validate the analysis plan and auto-add base metrics for derived metrics.
 
         Returns:
             List of validation errors (empty if valid)
@@ -407,6 +408,40 @@ class CotPlanner:
                 errors.append("metrics are required")
             if not plan.analysis_plan.time_range:
                 errors.append("time_range is required")
+
+            # Auto-add base metrics for derived metrics in analysis_plan
+            if plan.analysis_plan.metrics:
+                metrics_set = set(plan.analysis_plan.metrics)
+                for metric in list(metrics_set):  # Iterate over copy
+                    if metric in DERIVED_METRICS:
+                        base_metrics = DERIVED_METRICS[metric]["depends_on"]
+                        for base_metric in base_metrics:
+                            if base_metric not in metrics_set:
+                                plan.analysis_plan.metrics.append(base_metric)
+                                metrics_set.add(base_metric)
+                                logger.info(f"Auto-added base metric {base_metric} for derived metric {metric}")
+
+        # Auto-add base metrics for derived metrics in filter_plan (having conditions)
+        if plan.filter_plan and plan.filter_plan.steps:
+            for step in plan.filter_plan.steps:
+                if step.step_type == "having_filter" and step.conditions:
+                    for condition in step.conditions:
+                        # Condition might be a dict or a FilterCondition model
+                        if hasattr(condition, "metric"):
+                            metric = condition.metric
+                        else:
+                            metric = condition.get("metric") if hasattr(condition, "get") else None
+
+                        if metric and metric in DERIVED_METRICS:
+                            # Add base metrics to analysis_plan if not already there
+                            if plan.analysis_plan and plan.analysis_plan.metrics:
+                                metrics_set = set(plan.analysis_plan.metrics)
+                                base_metrics = DERIVED_METRICS[metric]["depends_on"]
+                                for base_metric in base_metrics:
+                                    if base_metric not in metrics_set:
+                                        plan.analysis_plan.metrics.append(base_metric)
+                                        metrics_set.add(base_metric)
+                                        logger.info(f"Auto-added base metric {base_metric} for having condition on {metric}")
 
         return errors
 

@@ -492,3 +492,162 @@ class TestCotPlanResult:
 
         assert result.status == CotResultStatus.PARSE_FAILED
         assert result.retry_count == 2
+
+
+class TestDerivedMetricsValidation:
+    """Test that derived metrics automatically add their base metrics"""
+
+    def test_derived_metrics_add_base_metrics_analysis_plan(self):
+        """Test that base metrics are auto-added for derived metrics in analysis_plan"""
+        planner = CotPlanner()
+
+        # Create a plan with CTR but no clicks/impressions
+        time_range = AnalysisTimeRange(
+            start_date="2026-08-01",
+            end_date="2026-08-08",
+        )
+        filter_plan = FilterPlan(
+            filter_type="none",
+            target_level="advertiser",
+            steps=[],
+        )
+        analysis_plan = AnalysisPlan(
+            analysis_type=AnalysisType.TIME_TREND,
+            chart_type=ChartType.LINE,
+            metrics=["ctr"],  # Only CTR, no base metrics
+            time_range=time_range,
+        )
+        plan = AnalysisPlanResult(
+            target_level=EntityLevel.ADVERTISER,
+            filter_plan=filter_plan,
+            analysis_plan=analysis_plan,
+        )
+
+        # Validate the plan
+        errors = planner._validate_plan(plan)
+
+        # Should have no errors
+        assert len(errors) == 0
+
+        # Should have auto-added clicks and impressions
+        assert "clicks" in plan.analysis_plan.metrics
+        assert "impressions" in plan.analysis_plan.metrics
+        assert "ctr" in plan.analysis_plan.metrics
+        # Order should preserve original metric first
+        assert plan.analysis_plan.metrics[0] == "ctr"
+
+    def test_multiple_derived_metrics(self):
+        """Test multiple derived metrics add all their base metrics"""
+        planner = CotPlanner()
+
+        time_range = AnalysisTimeRange(
+            start_date="2026-08-01",
+            end_date="2026-08-08",
+        )
+        filter_plan = FilterPlan(
+            filter_type="none",
+            target_level="advertiser",
+            steps=[],
+        )
+        analysis_plan = AnalysisPlan(
+            analysis_type=AnalysisType.TIME_TREND,
+            chart_type=ChartType.LINE,
+            metrics=["ctr", "cpc"],  # CTR and CPC
+            time_range=time_range,
+        )
+        plan = AnalysisPlanResult(
+            target_level=EntityLevel.ADVERTISER,
+            filter_plan=filter_plan,
+            analysis_plan=analysis_plan,
+        )
+
+        errors = planner._validate_plan(plan)
+
+        assert len(errors) == 0
+        assert "ctr" in plan.analysis_plan.metrics
+        assert "cpc" in plan.analysis_plan.metrics
+        assert "clicks" in plan.analysis_plan.metrics
+        assert "impressions" in plan.analysis_plan.metrics
+        assert "cost" in plan.analysis_plan.metrics
+
+    def test_derived_metrics_no_duplicates(self):
+        """Test that base metrics aren't added if already present"""
+        planner = CotPlanner()
+
+        time_range = AnalysisTimeRange(
+            start_date="2026-08-01",
+            end_date="2026-08-08",
+        )
+        filter_plan = FilterPlan(
+            filter_type="none",
+            target_level="advertiser",
+            steps=[],
+        )
+        analysis_plan = AnalysisPlan(
+            analysis_type=AnalysisType.TIME_TREND,
+            chart_type=ChartType.LINE,
+            metrics=["ctr", "clicks", "impressions"],  # Base metrics already present
+            time_range=time_range,
+        )
+        plan = AnalysisPlanResult(
+            target_level=EntityLevel.ADVERTISER,
+            filter_plan=filter_plan,
+            analysis_plan=analysis_plan,
+        )
+
+        metrics_before = len(plan.analysis_plan.metrics)
+        errors = planner._validate_plan(plan)
+
+        assert len(errors) == 0
+        # Should not add duplicates
+        assert len(plan.analysis_plan.metrics) == metrics_before
+        assert plan.analysis_plan.metrics.count("clicks") == 1
+        assert plan.analysis_plan.metrics.count("impressions") == 1
+
+    def test_derived_metrics_in_having_filter(self):
+        """Test that base metrics are added for derived metrics in having filters"""
+        from src.nl_dsl.models import FilterStep
+
+        planner = CotPlanner()
+
+        time_range = AnalysisTimeRange(
+            start_date="2026-08-01",
+            end_date="2026-08-08",
+        )
+
+        # Create a filter step with having condition on ctr
+        filter_step = FilterStep(
+            step_id="step_1",
+            step_type="having_filter",
+            level="campaign",
+            index="ad_stat_data",
+            conditions=[
+                {"field": "data_value", "operator": ">", "value": 0.05, "metric": "ctr"}
+            ],
+            output_field="campaign_id",
+        )
+
+        filter_plan = FilterPlan(
+            filter_type="having",
+            target_level="campaign",
+            steps=[filter_step],
+        )
+        analysis_plan = AnalysisPlan(
+            analysis_type=AnalysisType.ENTITY_TABLE,
+            chart_type=ChartType.TABLE,
+            metrics=["cost"],  # Only cost initially
+            time_range=time_range,
+        )
+        plan = AnalysisPlanResult(
+            target_level=EntityLevel.CAMPAIGN,
+            filter_plan=filter_plan,
+            analysis_plan=analysis_plan,
+        )
+
+        errors = planner._validate_plan(plan)
+
+        assert len(errors) == 0
+        # Should have added clicks and impressions for the CTR having filter
+        assert "clicks" in plan.analysis_plan.metrics
+        assert "impressions" in plan.analysis_plan.metrics
+        assert "cost" in plan.analysis_plan.metrics

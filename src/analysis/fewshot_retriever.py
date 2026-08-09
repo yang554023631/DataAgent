@@ -34,12 +34,6 @@ class RetrievedExample:
     retrieval_rank: int
 
 
-class ExampleCategory(str, Enum):
-    """Example category for filtering"""
-    POSITIVE = "positive"
-    NEGATIVE = "negative"
-
-
 class FewshotRetriever:
     """Few-shot Example Retriever with rule-based reranking"""
 
@@ -97,8 +91,8 @@ class FewshotRetriever:
         )
 
         # Step 4: Split into positive and negative, take top N of each
-        positives = [e for e in reranked if e.example.category == ExampleCategory.POSITIVE]
-        negatives = [e for e in reranked if e.example.category == ExampleCategory.NEGATIVE]
+        positives = [e for e in reranked if e.example.category == "positive"]
+        negatives = [e for e in reranked if e.example.category == "negative"]
 
         final_positives = positives[:self.final_positive_count]
         final_negatives = negatives[:self.final_negative_count]
