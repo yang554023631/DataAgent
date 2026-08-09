@@ -79,6 +79,7 @@ class FilterExecutor:
                     advertiser_ids=advertiser_ids,
                     time_range=time_range,
                     previous_entity_ids=current_entity_ids,
+                    previous_entity_level=current_level,
                 )
 
                 # 去重（向上汇总时）
@@ -102,7 +103,11 @@ class FilterExecutor:
 
                 # 更新当前实体 ID 列表和层级
                 current_entity_ids = entity_ids
-                current_level = step.level
+                # 确定输出层级（对于 cross_level_up/down，使用 output_field）
+                if step.step_type in ("cross_level_up", "cross_level_down"):
+                    current_level = step.output_field.replace("_id", "")
+                else:
+                    current_level = step.level
 
             except Exception as e:
                 logger.error(f"Step {step.step_id} failed: {str(e)}", exc_info=True)
@@ -128,6 +133,7 @@ class FilterExecutor:
         advertiser_ids: List[str],
         time_range: Dict[str, str],
         previous_entity_ids: Optional[List[Any]] = None,
+        previous_entity_level: Optional[str] = None,
     ) -> List[Any]:
         """
         执行单个筛选步骤（带重试）
@@ -137,6 +143,7 @@ class FilterExecutor:
             advertiser_ids: 广告主 ID 列表
             time_range: 时间范围
             previous_entity_ids: 上一步输出的实体 ID 列表
+            previous_entity_level: 上一步输出的实体层级
 
         Returns:
             筛选出的实体 ID 列表
@@ -151,6 +158,7 @@ class FilterExecutor:
                     advertiser_ids=advertiser_ids,
                     time_range=time_range,
                     previous_entity_ids=previous_entity_ids,
+                    previous_entity_level=previous_entity_level,
                 )
             except Exception as e:
                 last_exception = e
@@ -167,6 +175,7 @@ class FilterExecutor:
         advertiser_ids: List[str],
         time_range: Dict[str, str],
         previous_entity_ids: Optional[List[Any]] = None,
+        previous_entity_level: Optional[str] = None,
     ) -> List[Any]:
         """
         执行单个筛选步骤
@@ -176,16 +185,28 @@ class FilterExecutor:
             advertiser_ids: 广告主 ID 列表
             time_range: 时间范围
             previous_entity_ids: 上一步输出的实体 ID 列表
+            previous_entity_level: 上一步输出的实体层级
 
         Returns:
             筛选出的实体 ID 列表
         """
+        # 对于 cross_level_down，需要两个步骤
+        if step.step_type == "cross_level_down":
+            return self._execute_cross_level_down(
+                step=step,
+                advertiser_ids=advertiser_ids,
+                time_range=time_range,
+                previous_entity_ids=previous_entity_ids,
+                previous_entity_level=previous_entity_level,
+            )
+
         # 构建 DSL
         dsl = self._build_dsl_for_step(
             step=step,
             advertiser_ids=advertiser_ids,
             time_range=time_range,
             previous_entity_ids=previous_entity_ids,
+            previous_entity_level=previous_entity_level,
         )
 
         # 如果是全量筛选，直接返回
@@ -215,6 +236,7 @@ class FilterExecutor:
         advertiser_ids: List[str],
         time_range: Dict[str, str],
         previous_entity_ids: Optional[List[Any]] = None,
+        previous_entity_level: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         为筛选步骤构建 DSL
@@ -224,6 +246,7 @@ class FilterExecutor:
             advertiser_ids: 广告主 ID 列表
             time_range: 时间范围
             previous_entity_ids: 上一步输出的实体 ID 列表
+            previous_entity_level: 上一步输出的实体层级
 
         Returns:
             Elasticsearch DSL 查询
@@ -235,6 +258,7 @@ class FilterExecutor:
                 step=step,
                 advertiser_ids=advertiser_ids,
                 previous_entity_ids=previous_entity_ids,
+                previous_entity_level=previous_entity_level,
             )
         elif step_type == "having_filter":
             return self._build_having_filter_dsl(
@@ -242,18 +266,14 @@ class FilterExecutor:
                 advertiser_ids=advertiser_ids,
                 time_range=time_range,
                 previous_entity_ids=previous_entity_ids,
+                previous_entity_level=previous_entity_level,
             )
         elif step_type == "cross_level_up":
             return self._build_cross_level_up_dsl(
                 step=step,
                 advertiser_ids=advertiser_ids,
                 previous_entity_ids=previous_entity_ids,
-            )
-        elif step_type == "cross_level_down":
-            return self._build_cross_level_down_dsl(
-                step=step,
-                advertiser_ids=advertiser_ids,
-                previous_entity_ids=previous_entity_ids,
+                previous_entity_level=previous_entity_level,
             )
         elif step_type == "full_filter":
             return build_full_filter(advertiser_ids, step.level)
@@ -265,31 +285,10 @@ class FilterExecutor:
         step: FilterStep,
         advertiser_ids: List[str],
         previous_entity_ids: Optional[List[Any]] = None,
+        previous_entity_level: Optional[str] = None,
     ) -> Dict[str, Any]:
         """构建 where 筛选 DSL"""
-        dsl = build_where_dimension_filter(
-            advertiser_ids=advertiser_ids,
-            level=step.level,
-            conditions=[],  # 先构建基础 DSL
-            index=step.index,
-        )
-
-        # 如果有上一步的实体 ID，添加到过滤条件
-        if previous_entity_ids:
-            # 需要确定用哪个字段来过滤
-            # 这里假设上一步的输出字段可以映射到当前层级的字段
-            # 简化处理：直接添加到 query.bool.filter
-            for cond in dsl["query"]["bool"]["filter"]:
-                if isinstance(cond, dict) and "terms" in cond and "advertiser_id" in cond["terms"]:
-                    # 在 advertiser_id 条件后添加
-                    break
-            else:
-                # 添加到开头
-                dsl["query"]["bool"]["filter"].insert(0, {"terms": {"advertiser_id": advertiser_ids}})
-
-        # 处理步骤中的条件
-        # build_where_dimension_filter expects conditions in a specific format
-        # 我们需要把 FilterCondition 转换为字典格式
+        # 把 FilterCondition 转换为字典格式
         condition_dicts = []
         for cond in step.conditions:
             condition_dicts.append({
@@ -298,13 +297,24 @@ class FilterExecutor:
                 "value": cond.value,
             })
 
-        # 重新构建带条件的 DSL
-        if condition_dicts:
-            dsl = build_where_dimension_filter(
-                advertiser_ids=advertiser_ids,
-                level=step.level,
-                conditions=condition_dicts,
-                index=step.index,
+        # 构建带条件的 DSL
+        dsl = build_where_dimension_filter(
+            advertiser_ids=advertiser_ids,
+            level=step.level,
+            conditions=condition_dicts,
+            index=step.index,
+        )
+
+        # 如果有上一步的实体 ID，添加到过滤条件
+        if previous_entity_ids and previous_entity_level:
+            # 确定用哪个字段来过滤（上一步的层级对应的字段）
+            previous_level_field = LEVEL_TO_FIELD.get(
+                previous_entity_level,
+                f"{previous_entity_level}_id",
+            )
+            # 添加 terms 过滤条件
+            dsl["query"]["bool"]["filter"].append(
+                {"terms": {previous_level_field: previous_entity_ids}}
             )
 
         return dsl
@@ -315,6 +325,7 @@ class FilterExecutor:
         advertiser_ids: List[str],
         time_range: Dict[str, str],
         previous_entity_ids: Optional[List[Any]] = None,
+        previous_entity_level: Optional[str] = None,
     ) -> Dict[str, Any]:
         """构建 having 筛选 DSL"""
         # having 筛选通常只有一个条件（指标条件）
@@ -340,13 +351,15 @@ class FilterExecutor:
             group_by_level=step.level,
         )
 
-        # 如果有上一步的实体 ID，需要注入到过滤条件中
-        if previous_entity_ids:
-            # 这里需要修改 DSL，添加 terms 过滤
-            # 注意：这需要更复杂的逻辑来确定用哪个字段
-            # 简化处理：假设使用当前层级的 ID 字段
-            level_field = LEVEL_TO_FIELD.get(step.level, f"{step.level}_id")
-            dsl["query"]["bool"]["filter"].append({"terms": {level_field: previous_entity_ids}})
+        # 如果有上一步的实体 ID，添加到过滤条件
+        if previous_entity_ids and previous_entity_level:
+            previous_level_field = LEVEL_TO_FIELD.get(
+                previous_entity_level,
+                f"{previous_entity_level}_id",
+            )
+            dsl["query"]["bool"]["filter"].append(
+                {"terms": {previous_level_field: previous_entity_ids}}
+            )
 
         return dsl
 
@@ -355,6 +368,7 @@ class FilterExecutor:
         step: FilterStep,
         advertiser_ids: List[str],
         previous_entity_ids: Optional[List[Any]] = None,
+        previous_entity_level: Optional[str] = None,
     ) -> Dict[str, Any]:
         """构建跨层级向上筛选 DSL（从低层级到高层级）"""
         # 提取条件
@@ -375,25 +389,34 @@ class FilterExecutor:
         )
 
         # 如果有上一步的实体 ID，添加到过滤条件
-        if previous_entity_ids:
-            # 假设上一步的输出字段是当前低层级的 ID
-            low_level_field = LEVEL_TO_FIELD.get(step.level, f"{step.level}_id")
-            dsl["query"]["bool"]["filter"].append({"terms": {low_level_field: previous_entity_ids}})
+        if previous_entity_ids and previous_entity_level:
+            previous_level_field = LEVEL_TO_FIELD.get(
+                previous_entity_level,
+                f"{previous_entity_level}_id",
+            )
+            dsl["query"]["bool"]["filter"].append(
+                {"terms": {previous_level_field: previous_entity_ids}}
+            )
 
         return dsl
 
-    def _build_cross_level_down_dsl(
+    def _execute_cross_level_down(
         self,
         step: FilterStep,
         advertiser_ids: List[str],
+        time_range: Dict[str, str],
         previous_entity_ids: Optional[List[Any]] = None,
-    ) -> Dict[str, Any]:
-        """构建跨层级向下筛选 DSL（从高层级到低层级）"""
-        # 这通常是两步：
-        # 1. 先查高层级实体 ID（用 where 条件）
-        # 2. 再查低层级实体（用 terms 过滤高层级 ID）
+        previous_entity_level: Optional[str] = None,
+    ) -> List[Any]:
+        """执行跨层级向下筛选（两步查询）
 
-        # build_cross_level_down_filter_step1 用于第一步
+        Step 1: 过滤高层级实体得到高层级 ID
+        Step 2: 用高层级 ID 过滤低层级实体得到低层级 ID
+        """
+        # 目标层级从 output_field 推断
+        target_level = step.output_field.replace("_id", "")
+
+        # ====== 第一步: 过滤高层级实体 ======
         condition_dicts = []
         for cond in step.conditions:
             condition_dicts.append({
@@ -402,10 +425,9 @@ class FilterExecutor:
                 "value": cond.value,
             })
 
-        # 确定高层级（从 output_field 推断或从 step.level）
         high_level = step.level
 
-        dsl = build_cross_level_down_filter_step1(
+        dsl_step1 = build_cross_level_down_filter_step1(
             advertiser_ids=advertiser_ids,
             high_level=high_level,
             conditions=condition_dicts,
@@ -413,8 +435,49 @@ class FilterExecutor:
         )
 
         # 如果有上一步的实体 ID，添加到过滤条件
-        if previous_entity_ids:
-            high_level_field = LEVEL_TO_FIELD.get(high_level, f"{high_level}_id")
-            dsl["query"]["bool"]["filter"].append({"terms": {high_level_field: previous_entity_ids}})
+        if previous_entity_ids and previous_entity_level:
+            previous_level_field = LEVEL_TO_FIELD.get(
+                previous_entity_level,
+                f"{previous_entity_level}_id",
+            )
+            dsl_step1["query"]["bool"]["filter"].append(
+                {"terms": {previous_level_field: previous_entity_ids}}
+            )
 
-        return dsl
+        # 执行第一步查询
+        index_step1 = dsl_step1.pop("index", step.index)
+        response_step1 = self.es_client.search(index=index_step1, body=dsl_step1)
+
+        # 提取高层级 ID
+        high_level_ids = extract_entity_ids(response_step1, f"by_{high_level}")
+
+        if not high_level_ids:
+            return []
+
+        # ====== 第二步: 查询低层级实体 ======
+        # 构建第二步 DSL: 查询目标层级，用高层级 ID 过滤
+        high_level_field = LEVEL_TO_FIELD.get(high_level, f"{high_level}_id")
+
+        dsl_step2 = {
+            "index": target_level,  # 目标层级索引
+            "query": {
+                "bool": {
+                    "filter": [
+                        {"terms": {"advertiser_id": advertiser_ids}},
+                        {"terms": {high_level_field: high_level_ids}},
+                    ]
+                }
+            },
+            "size": 0,
+            "aggs": {
+                f"by_{target_level}": {
+                    "terms": {"field": LEVEL_TO_FIELD.get(target_level, f"{target_level}_id"), "size": 1000}
+                }
+            },
+        }
+
+        # 执行第二步查询
+        response_step2 = self.es_client.search(index=target_level, body=dsl_step2)
+
+        # 提取目标层级 ID
+        return extract_entity_ids(response_step2, f"by_{target_level}")

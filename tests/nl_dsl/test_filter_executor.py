@@ -322,6 +322,20 @@ class TestFilterExecutor:
         assert len(result.trace) == 2
         assert all(t["status"] == "success" for t in result.trace)
 
+        # 验证第二步的 DSL 包含了第一步的 campaign_ids 作为 terms 过滤
+        assert mock_es_client.search.call_count == 2
+        # 获取第二步的调用参数
+        step2_call = mock_es_client.search.call_args_list[1]
+        step2_dsl = step2_call[1]["body"]
+        # 检查是否有 terms: {campaign_id: [101, 102]}
+        has_campaign_terms = False
+        for filter_cond in step2_dsl["query"]["bool"]["filter"]:
+            if isinstance(filter_cond, dict) and "terms" in filter_cond:
+                if "campaign_id" in filter_cond["terms"]:
+                    assert set(filter_cond["terms"]["campaign_id"]) == {101, 102}
+                    has_campaign_terms = True
+        assert has_campaign_terms, "Step 2 should include terms filter for campaign_ids from step 1"
+
     def test_execute_with_retry_success(self, filter_executor, mock_es_client, sample_time_range):
         """测试重试成功"""
         filter_plan = FilterPlan(
@@ -469,16 +483,32 @@ class TestFilterExecutor:
             ],
         )
 
-        mock_es_client.search.return_value = {
-            "aggregations": {
-                "by_campaign": {
-                    "buckets": [
-                        {"key": 101, "doc_count": 10},
-                        {"key": 102, "doc_count": 5},
-                    ],
+        # Mock ES responses
+        mock_es_client.search.side_effect = [
+            # 第一步: 返回 campaign_ids
+            {
+                "aggregations": {
+                    "by_campaign": {
+                        "buckets": [
+                            {"key": 101, "doc_count": 10},
+                            {"key": 102, "doc_count": 5},
+                        ],
+                    },
                 },
             },
-        }
+            # 第二步: 返回 ad_group_ids
+            {
+                "aggregations": {
+                    "by_ad_group": {
+                        "buckets": [
+                            {"key": 201, "doc_count": 3},
+                            {"key": 202, "doc_count": 2},
+                            {"key": 203, "doc_count": 1},
+                        ],
+                    },
+                },
+            },
+        ]
 
         result = filter_executor.execute(
             filter_plan=filter_plan,
@@ -486,5 +516,22 @@ class TestFilterExecutor:
             time_range=sample_time_range,
         )
 
-        assert result.entity_ids == [101, 102]
-        assert result.entity_level == "campaign"  # 因为 step_1 的 level 是 campaign
+        assert result.entity_ids == [201, 202, 203]
+        assert result.total_count == 3
+        # 检查结果层级是否正确（从 output_field 推断）
+        assert result.entity_level == "ad_group"
+
+        # 验证两步查询
+        assert mock_es_client.search.call_count == 2
+
+        # 验证第二步查询包含第一步的 campaign_ids
+        step2_call = mock_es_client.search.call_args_list[1]
+        assert step2_call[1]["index"] == "ad_group"
+        step2_dsl = step2_call[1]["body"]
+        has_campaign_terms = False
+        for filter_cond in step2_dsl["query"]["bool"]["filter"]:
+            if isinstance(filter_cond, dict) and "terms" in filter_cond:
+                if "campaign_id" in filter_cond["terms"]:
+                    assert set(filter_cond["terms"]["campaign_id"]) == {101, 102}
+                    has_campaign_terms = True
+        assert has_campaign_terms, "Cross level down step 2 should include terms filter for campaign_ids"
