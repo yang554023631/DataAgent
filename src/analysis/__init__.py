@@ -26,6 +26,9 @@ from .cot_planner import (
     ClarificationRequest,
     get_cot_planner,
 )
+from .report_formatter import (
+    ReportFormatter,
+)
 from .models import (
     # Enums
     EntityLevel,
@@ -84,6 +87,8 @@ __all__ = [
     "CotResultStatus",
     "ClarificationRequest",
     "get_cot_planner",
+    # Report Formatter
+    "ReportFormatter",
     # Enums
     "EntityLevel",
     "FilterType",
