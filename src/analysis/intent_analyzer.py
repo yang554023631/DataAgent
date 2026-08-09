@@ -67,8 +67,6 @@ AD_LEVEL_MAP = {
     "creative": ["创意", "素材", "creative", "creatives"],
 }
 
-logger = logging.getLogger(__name__)
-
 
 # ==================== 内部时间解析类 ====================
 

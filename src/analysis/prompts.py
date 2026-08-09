@@ -65,16 +65,26 @@ COT_SYSTEM_PROMPT = """你是广告数据分析专家，擅长将用户的自然
 
 ## 输出格式要求
 
-如果信息完整，直接输出分析计划：
+如果信息完整，直接输出分析计划（完全按照 AnalysisPlanResult 模型格式）：
 {
     "target_level": "campaign",
     "filter_plan": {
         "filter_type": "where",
-        "filter_steps": [
+        "target_level": "campaign",
+        "steps": [
             {
-                "field": "data_date",
-                "operator": ">=",
-                "value": "2026-08-01"
+                "step_id": "step_1",
+                "step_type": "where_filter",
+                "level": "campaign",
+                "index": "ad_stat_data",
+                "conditions": [
+                    {
+                        "field": "data_date",
+                        "operator": ">=",
+                        "value": "2026-08-01"
+                    }
+                ],
+                "output_field": "campaign_id"
             }
         ]
     },
@@ -87,12 +97,16 @@ COT_SYSTEM_PROMPT = """你是广告数据分析专家，擅长将用户的自然
             "end_date": "2026-08-07",
             "granularity": "day"
         },
+        "compare_time_range": null,
+        "time_granularity": "day",
+        "audience_dimension": null,
         "group_by": "data_date",
         "order_by": "data_date",
         "order_dir": "asc",
         "limit": 100,
         "quality_checks": []
     },
+    "reasoning": null,
     "field_context": {
         "advertiser_ids": [123],
         "time_range": {
@@ -101,8 +115,13 @@ COT_SYSTEM_PROMPT = """你是广告数据分析专家，擅长将用户的自然
             "granularity": "day"
         },
         "target_level": "campaign",
-        "metrics": ["impressions", "clicks", "ctr"]
-    }
+        "metrics": ["impressions", "clicks", "ctr"],
+        "audience_dimension": null,
+        "compare_time_range": null,
+        "entity_ids": null,
+        "additional_fields": {}
+    },
+    "quality_checks": []
 }
 
 如果信息缺失，输出澄清请求：
