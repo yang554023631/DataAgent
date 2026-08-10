@@ -374,6 +374,15 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
         const defaultColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
         const seriesConfig = report?.chart_config?.series || [];
 
+        // Build name-to-color map from chart_config.series for correct matching
+        // regardless of series order in data vs config
+        const seriesColorMap: Record<string, string> = {};
+        seriesConfig.forEach((s) => {
+          if (s.name && s.color) {
+            seriesColorMap[s.name] = s.color;
+          }
+        });
+
         const multiLineOption: EChartsOption = {
           tooltip: {
             trigger: 'axis',
@@ -405,19 +414,22 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
             type: 'value',
             axisLabel: { fontSize: 11 },
           },
-          series: seriesNames.map((sName, idx) => ({
-            name: sName,
-            type: 'line',
-            smooth: true,
-            data: xValues.map(xVal => dataMap[xVal]?.[sName] ?? null),
-            lineStyle: {
-              color: seriesConfig[idx]?.color || defaultColors[idx % defaultColors.length],
-              width: 2,
-            },
-            itemStyle: {
-              color: seriesConfig[idx]?.color || defaultColors[idx % defaultColors.length],
-            },
-          })),
+          series: seriesNames.map((sName, idx) => {
+            const color = seriesColorMap[sName] || defaultColors[idx % defaultColors.length];
+            return {
+              name: sName,
+              type: 'line',
+              smooth: true,
+              data: xValues.map(xVal => dataMap[xVal]?.[sName] ?? null),
+              lineStyle: {
+                color,
+                width: 2,
+              },
+              itemStyle: {
+                color,
+              },
+            };
+          }),
         };
 
         return (

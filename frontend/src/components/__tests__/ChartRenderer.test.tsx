@@ -302,5 +302,53 @@ describe('ChartRenderer', () => {
 
       expect(container.querySelector('.echarts-for-react')).toBeInTheDocument();
     });
+
+    it('multi-series line chart matches colors by name, not by index', () => {
+      // Config has series in a different order than data iteration
+      const chartConfig = {
+        type: 'line' as const,
+        title: '各计划消耗趋势',
+        x_axis: { field: 'date', label: '日期' },
+        y_axis: { field: 'cost', label: '消耗' },
+        series_field: 'campaign_name',
+        series: [
+          { name: '计划B', color: '#10b981' },  // Plan B first in config
+          { name: '计划A', color: '#3b82f6' },  // Plan A second in config
+        ],
+      };
+      // Data order: 计划A comes first alphabetically / by insertion
+      const data = [
+        { date: '2026-04-01', campaign_name: '计划A', cost: 100 },
+        { date: '2026-04-01', campaign_name: '计划B', cost: 80 },
+        { date: '2026-04-02', campaign_name: '计划A', cost: 120 },
+        { date: '2026-04-02', campaign_name: '计划B', cost: 90 },
+      ];
+
+      const { container } = render(
+        <ChartRenderer
+          report={{ chart_config: chartConfig, is_comparison: false }}
+          data={data}
+          groupBy={['campaign_name']}
+          metrics={['cost']}
+        />
+      );
+
+      const chart = screen.getByTestId('echarts-mock');
+      const option = JSON.parse(chart.dataset.option || '{}');
+
+      // Find series by name and verify correct color
+      const planASeries = option.series.find((s: any) => s.name === '计划A');
+      const planBSeries = option.series.find((s: any) => s.name === '计划B');
+
+      expect(planASeries).toBeDefined();
+      expect(planBSeries).toBeDefined();
+      // Plan A should get color #3b82f6 (matching its name in config),
+      // not the color at index 0 of the config array
+      expect(planASeries.lineStyle.color).toBe('#3b82f6');
+      expect(planASeries.itemStyle.color).toBe('#3b82f6');
+      // Plan B should get color #10b981 (matching its name in config)
+      expect(planBSeries.lineStyle.color).toBe('#10b981');
+      expect(planBSeries.itemStyle.color).toBe('#10b981');
+    });
   })
 })

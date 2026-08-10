@@ -194,27 +194,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const result = await apiService.submitClarification(sessionId, selectedValue);
 
-      const finalReport = result.result?.final_report;
-      const finalReportV2 = result.result?.final_report;
-      if (finalReportV2) {
-        set(state => ({
-          messages: [...state.messages, {
-            role: 'assistant',
-            content: '',
-            finalReportV2: finalReportV2 as FinalReportV2,
-            finalReport,
-          }],
-          isLoading: false,
-        }));
-      } else if (finalReport) {
-        set(state => ({
-          messages: [...state.messages, {
-            role: 'assistant',
-            content: '',
-            finalReport,
-          }],
-          isLoading: false,
-        }));
+      const report = result.result?.final_report;
+      if (report) {
+        // V2 format has report_type field; assign accordingly
+        if ('report_type' in report) {
+          set(state => ({
+            messages: [...state.messages, {
+              role: 'assistant',
+              content: '',
+              finalReportV2: report as FinalReportV2,
+            }],
+            isLoading: false,
+          }));
+        } else {
+          set(state => ({
+            messages: [...state.messages, {
+              role: 'assistant',
+              content: '',
+              finalReport: report,
+            }],
+            isLoading: false,
+          }));
+        }
       } else {
         const resultMessage = JSON.stringify(result.result, null, 2);
         set(state => ({
@@ -250,16 +251,28 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // Quality HITL uses the same clarification endpoint with action values
       const result = await apiService.submitClarification(sessionId, action);
 
-      const finalReport = result.result?.final_report;
-      if (finalReport) {
-        set(state => ({
-          messages: [...state.messages, {
-            role: 'assistant' as const,
-            content: '',
-            finalReportV2: finalReport as FinalReportV2,
-          }],
-          isLoading: false,
-        }));
+      const report = result.result?.final_report;
+      if (report) {
+        // V2 format has report_type field; assign accordingly
+        if ('report_type' in report) {
+          set(state => ({
+            messages: [...state.messages, {
+              role: 'assistant' as const,
+              content: '',
+              finalReportV2: report as FinalReportV2,
+            }],
+            isLoading: false,
+          }));
+        } else {
+          set(state => ({
+            messages: [...state.messages, {
+              role: 'assistant' as const,
+              content: '',
+              finalReport: report,
+            }],
+            isLoading: false,
+          }));
+        }
       } else {
         const resultMessage = JSON.stringify(result.result, null, 2);
         set(state => ({

@@ -280,7 +280,8 @@ export const apiService = {
 };
 
 // Helper: dispatch parsed SSE event to appropriate handler
-function dispatchEvent(
+// Exported for testing
+export function dispatchEvent(
   event: any,
   handlers: StreamEventHandlers,
   _stepLabels: Record<string, string>
@@ -316,7 +317,8 @@ function dispatchEvent(
   }
 }
 
-function detectHitlType(event: any): 'cot_clarification' | 'quality_hitl' {
+// Exported for testing
+export function detectHitlType(event: any): 'cot_clarification' | 'quality_hitl' {
   // Heuristic: quality HITL has quality_issues or options with "continue"/"rephrase"
   if (event.quality_issues?.length > 0) return 'quality_hitl';
   const values = (event.options || []).map((o: any) => o.value);
