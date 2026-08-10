@@ -227,6 +227,7 @@ export const apiService = {
 
         const decoder = new TextDecoder();
         let buffer = '';
+        let eventData = '';
 
         while (true) {
           const { done, value } = await reader.read();
@@ -239,7 +240,6 @@ export const apiService = {
           // Keep the last (possibly incomplete) line in buffer
           buffer = lines.pop() || '';
 
-          let eventData = '';
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               eventData += line.slice(6);
@@ -283,7 +283,7 @@ export const apiService = {
 function dispatchEvent(
   event: any,
   handlers: StreamEventHandlers,
-  stepLabels: Record<string, string>
+  _stepLabels: Record<string, string>
 ) {
   switch (event.type) {
     case 'step_start':
