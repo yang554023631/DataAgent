@@ -2,10 +2,25 @@
 
 > **版本**: v1.1
 > **日期**: 2026-08-09
-> **状态**: Draft
+> **状态**: Implemented (Phase 1-5 complete)
 > **范围**: 报表分析链路 — 从意图识别到图表数据生成的全流程重构
 >
 > **v1.1 更新（2026-08-09）**：补充 7 项设计决策 — 系统集成方案、错误处理与降级策略、性能与 SSE、Few-Shot 向量检索方案、跨层级筛选执行细节、派生指标筛选实现、四层测试与 Mock 策略
+
+---
+
+## 实施状态
+
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| Phase 1 | DSL 模板库 | ✅ 已完成 |
+| Phase 2 | 执行器 + 质量检查 | ✅ 已完成 |
+| Phase 3 | CoT Planner + 模型 | ✅ 已完成 |
+| Phase 4 | analysis_node + Graph 集成 | ✅ 已完成 |
+| Phase 5 | 前端变更 | ✅ 已完成 |
+| Phase 6 | 集成测试 + 冒烟 + 文档 | ✅ 已完成 |
+
+**总计 6 个阶段全部完成**。
 
 ---
 
@@ -1232,6 +1247,99 @@ tests/nl_dsl/test_cot_examples/
 | 前端图表类型不足 | 部分分析形态渲染不了 | 1. MVP 实现 4 种（多系列折线/饼图/KPI卡片/表格）；2. 其他降级为表格展示 |
 | 跨层级筛选 ID 过多 | terms 查询过大 | 500 ID 软上限 + Top N 截断 + 报告提示 |
 | 质量校验 HITL 打断流程 | 用户体验差 | 1. 合理阈值（趋势图 >20 条线才触发）；2. 提供快捷选项减少用户输入成本 |
+
+---
+
+## 十六、已实现功能清单
+
+> 基于设计文档各章节，标记已实现（✅）与未实现（❌）的功能项。
+
+### 一、背景与目标
+- ✅ 引入 CoT（链式思维）驱动的分析规划器
+- ✅ 建立结构化筛选计划和分析计划
+- ✅ 增加查询后质量校验
+- ✅ 与 LangGraph 架构兼容，平滑替换现有链路
+
+### 二、整体架构
+- ✅ 两阶段分析：筛选阶段 + 分析阶段
+- ✅ analysis_node 全量替换现有报表链路
+- ✅ 顶层 intent_classifier 保留（三类意图分发）
+- ✅ analysis_node 内部 6 个模块：IntentAnalyzer → CotPlanner → FilterExecutor → AnalysisExecutor → QualityChecker → ReportFormatter
+- ✅ Graph 路由：intent_classifier → analysis_node → END
+- ✅ 新增状态字段：analysis_plan、field_context、filter_result、chart_data、cot_reasoning、execution_trace、final_report
+
+### 三、结构化计划定义
+- ✅ FilterPlan 模型（filter_type / target_level / steps / entity_ids）
+- ✅ FilterStep 模型（step_id / step_type / level / index / conditions / output_field）
+- ✅ FilterCondition 模型（field / operator / value / dimension_slice）
+- ✅ AnalysisPlan 模型（analysis_type / chart_type / metrics / time_range / quality_checks 等）
+- ✅ QualityCheck 模型（check_type / threshold / action）
+
+### 四、筛选模型
+- ✅ none 型筛选（全量实体）
+- ✅ where 型筛选（属性/维度过滤）
+- ✅ having 型筛选（指标聚合后过滤）
+- ✅ cross_level 跨层级筛选（自下而上 + 自上而下）
+- ✅ mixed 混合筛选（多条件组合执行）
+
+### 五、分析形态
+- ✅ entity_table（实体指标表）
+- ✅ time_trend（时间趋势）
+- ✅ period_comparison（周期对比）
+- ✅ audience_distribution（受众分布）
+- ✅ summary（单值汇总 / KPI 卡片）
+- ✅ 衍生指标计算（CTR / CVR / ROI / 环比变化率）
+- ✅ 质量校验规则（max_series_count / max_rows / max_categories / min_data_points / all_zero / empty_result）
+
+### 六、CoT 推理流程
+- ✅ 6 步推理链条（问题理解 → 筛选识别 → 分析识别 → 信息完整性检查 → 质量校验规划 → 生成结构化计划）
+- ✅ 先推理过程再结构化 JSON 输出格式
+
+### 七、Few-Shot 示例库
+- ✅ 8 个核心示例（覆盖主要筛选+分析组合）
+- ✅ 向量检索方案（pgvector，动态检索 Top 示例）
+- ✅ 规则重排策略（同分析类型优先 / 同筛选复杂度优先）
+- ✅ 负面示例机制
+- ✅ 失败闭环流程
+
+### 八、错误处理与降级策略
+- ✅ LLM 调用重试策略（最多 1 次重试）
+- ✅ 空结果自查（静态校验组 + ES 轻量查询组）
+- ✅ 全局兜底错误报告（结构化 error 类型 + 建议 + 推荐查询）
+- ✅ CoT 失败静默降级为规则模板匹配
+
+### 九、性能优化与 SSE
+- ✅ SSE 流式进度推送（步骤级事件）
+- ✅ 6 个步骤进度：intent_analyze → cot_planner → filter_execute → analysis_execute → quality_check → report_format
+- ✅ 断线重连机制
+- ❌ P0 模板快速通道（延期，上线后根据数据决定）
+
+### 十、执行引擎设计
+- ✅ 筛选计划执行器（逐步执行 + 失败重试）
+- ✅ 跨层级筛选执行（terms + ID 列表，去重，500 软上限）
+- ✅ 派生指标筛选（bucket_script + bucket_selector）
+- ✅ 分析计划执行器（查询 + 质量校验 + 调整重试）
+- ✅ 统一图表数据输出格式
+
+### 十一、HITL 澄清机制
+- ✅ 两阶段澄清判断（筛选阶段 + 分析阶段）
+- ✅ 信息缺失型 HITL（缺字段自动澄清）
+- ✅ 质量型 HITL（超阈值提示用户选择）
+- ✅ 字段共享池（避免重复询问）
+- ✅ 语义前缀映射（澄清回流）
+- ✅ 澄清回流方案（两种 HITL 均触发完整 CoT 重跑）
+
+### 十二、测试与 Mock 策略
+- ✅ 四层测试架构（L1 单元 / L2 Schema 验证 / L3 Mock 集成 / L4 冒烟）
+- ✅ DSL 安全校验器（DslValidator）
+- ✅ Few-Shot 示例验证（每个示例对应测试用例）
+- ✅ ES Mock 策略
+- ✅ LLM Mock 策略
+
+### 十三、实施路径
+- ✅ 阶段一：核心框架（模型 + Planner + 执行器 + 质量校验 + Graph 接入）
+- ✅ 阶段二：场景覆盖（5 种分析形态 + 4 种筛选类型 + 示例 + HITL）
+- ✅ 阶段三：质量与体验（质量校验 + 错误降级 + 前端图表 + 性能优化）
 
 ---
 
