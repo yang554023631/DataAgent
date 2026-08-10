@@ -301,12 +301,23 @@ class QualityChecker:
 
         # 如果图表数据是全零或无图表数据，检查表数据
         if (all_zero or not has_data) and data_table and data_table.rows:
+            # Before ReportFormatter formatting:
+            # - data_table is original AnalysisDataTable
+            # - .columns = list[dict] [{"key": "...", "label": "..."}]
+            # - .rows = list[dict] {key: value}
             for row in data_table.rows:
-                for key, value in row.items():
-                    if "_id" in key or "_name" in key or key in ("date", "category", "metric", "period", "change_pct", "percentage"):
+                # row is dict: {key: value}
+                for col_key, value in row.items():
+                    # Skip ID/name columns (they shouldn't be checked for zero)
+                    if "_id" in col_key.lower() or "_name" in col_key.lower() or col_key.lower() in ("date", "category", "metric", "period", "change_pct", "percentage"):
                         continue
                     has_data = True
+                    # Check if value is non-zero
                     if isinstance(value, (int, float)) and value != 0:
+                        all_zero = False
+                        break
+                    # If it's a dict {value: x} (shouldn't happen anymore, but handle it)
+                    if isinstance(value, dict) and "value" in value and isinstance(value["value"], (int, float)) and value["value"] != 0:
                         all_zero = False
                         break
                 if not all_zero:

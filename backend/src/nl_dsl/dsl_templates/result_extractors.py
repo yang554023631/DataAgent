@@ -99,8 +99,18 @@ def extract_entity_table_data(es_response: Dict[str, Any], level: str) -> Dict[A
                 continue
             # Handle both sum aggregations and derived metrics
             if agg_key.startswith("sum_"):
-                metrics_data[agg_key[4:]] = agg_val["value"]
+                # sum_{metric} in DSL: {filter: ..., aggs: {value: {sum: {}}}}
+                # In ES result: filter aggregation does NOT preserve the 'aggs' key,
+                # the inner aggregation is directly at the top level.
+                # So structure is: {doc_count: ..., value: {value: 12345}}
+                if "value" in agg_val and isinstance(agg_val["value"], dict) and "value" in agg_val["value"]:
+                    # Correct path: agg_val['value']['value']
+                    metrics_data[agg_key[4:]] = agg_val["value"]["value"]
+                elif "value" in agg_val and not isinstance(agg_val["value"], dict):
+                    # Fallback: if already flattened (value is directly a number)
+                    metrics_data[agg_key[4:]] = agg_val["value"]
             elif "value" in agg_val:
+                # Derived metrics (bucket_script) already puts value directly here
                 metrics_data[agg_key] = agg_val["value"]
 
         result[entity_id] = metrics_data

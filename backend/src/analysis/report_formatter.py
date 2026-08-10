@@ -98,7 +98,8 @@ class ReportFormatter:
         highlights = cls._generate_highlights(
             data=data,
             metrics=analysis_plan.metrics,
-            quality_result=quality_result
+            quality_result=quality_result,
+            data_table=data_table
         )
 
         # 6. 准备质量信息
@@ -300,12 +301,7 @@ class ReportFormatter:
             rows = data_table.get("rows", [])
         # 如果是对象格式
         else:
-            columns = []
-            for col in getattr(data_table, "columns", []):
-                if isinstance(col, dict):
-                    columns.append(col.get("label", col.get("key", str(col))))
-                else:
-                    columns.append(str(col))
+            columns = getattr(data_table, "columns", [])
             rows = getattr(data_table, "rows", [])
 
         # 格式化行数据
@@ -314,8 +310,9 @@ class ReportFormatter:
             # 如果行是字典，提取值并格式化
             if isinstance(row, dict):
                 formatted_row = []
-                for col in (row.keys() if columns == [] else [c.get("key", c) if isinstance(c, dict) else c for c in columns]):
-                    # 如果列是字典，获取key
+                # 遍历原始 columns，每个 column 保留 key 用于取值，只在取值后用 label 显示
+                for col in columns:
+                    # 如果列是字典，获取 key 用于取值
                     col_key = col.get("key", col) if isinstance(col, dict) else col
                     value = row.get(col_key)
                     # 格式化百分比字段
@@ -363,7 +360,7 @@ class ReportFormatter:
             else:
                 formatted_rows.append(row)
 
-        # 处理列格式
+        # 处理列格式 - 只提取 label 给前端显示（表头）
         formatted_columns = []
         for col in columns:
             if isinstance(col, dict):
@@ -381,7 +378,8 @@ class ReportFormatter:
         cls,
         data: List[Dict[str, Any]],
         metrics: List[str],
-        quality_result: QualityResult
+        quality_result: QualityResult,
+        data_table: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, str]]:
         """生成亮点（基于规则）"""
         highlights = []
@@ -412,10 +410,15 @@ class ReportFormatter:
 
         # 4. 如果没有任何亮点，添加默认提示
         if not highlights:
-            if data:
+            # 如果 data 为空但 data_table 有数据，使用 data_table 的行数
+            total_records = len(data)
+            if total_records == 0 and data_table and "rows" in data_table:
+                total_records = len(data_table["rows"])
+
+            if total_records > 0:
                 highlights.append({
                     "type": "info",
-                    "text": "✅ 数据加载完成，共 {} 条记录".format(len(data))
+                    "text": "✅ 数据加载完成，共 {} 条记录".format(total_records)
                 })
             else:
                 highlights.append({
@@ -564,7 +567,12 @@ class ReportFormatter:
             "total_entities": filter_result.total_count,
             "metrics": analysis_plan.metrics,
             "analysis_type": analysis_plan.analysis_type.value if hasattr(analysis_plan.analysis_type, "value") else analysis_plan.analysis_type,
-            "chart_type": analysis_plan.chart_type.value if hasattr(analysis_plan.chart_type, "value") else analysis_plan.chart_type,
+            "chart_type": (
+                analysis_plan.chart_config.type.value if hasattr(analysis_plan.chart_config, "type") and hasattr(analysis_plan.chart_config.type, "value")
+                else analysis_plan.chart_config.type if analysis_plan.chart_config is not None and hasattr(analysis_plan.chart_config, "type")
+                else analysis_plan.chart_config if analysis_plan.chart_config is not None
+                else "table"
+            ),
             "time_range": {
                 "start_date": analysis_plan.time_range.start_date,
                 "end_date": analysis_plan.time_range.end_date,
