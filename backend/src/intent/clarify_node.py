@@ -178,7 +178,10 @@ async def clarify_node(state: dict) -> dict:
             return result_updates
 
     # 没有回退，继续当前层
-    if current_category == "report":
+    if clarification_type in ["cot_clarification", "quality_hitl"]:
+        # 分析相关澄清，回到 analysis 节点
+        result_updates["clarify_next"] = "continue_analysis"
+    elif current_category == "report":
         result_updates["clarify_next"] = "continue_report"
     elif current_category == "knowledge":
         result_updates["clarify_next"] = "continue_knowledge"

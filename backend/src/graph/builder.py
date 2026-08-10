@@ -2,7 +2,8 @@ from langgraph.graph import StateGraph, END
 from .state import AdReportState
 from .nodes import (
     nlu_node, hitl_node, planner_node, executor_node, insight_node, analyst_node, reporter_node,
-    intent_classifier_node, report_intent_node, clarify_node_entry, reject_node_entry, nl_dsl_node
+    intent_classifier_node, report_intent_node, clarify_node_entry, reject_node_entry, nl_dsl_node,
+    analysis_node
 )
 from src.rag.agents import rag_retrieve_node, rag_answer_node
 
@@ -26,6 +27,7 @@ def build_graph():
     graph.add_node("analyst", analyst_node)
     graph.add_node("reporter", reporter_node)
     graph.add_node("nl_dsl", nl_dsl_node)
+    graph.add_node("analysis", analysis_node)
 
     # ========== 设置入口 ==========
     graph.set_entry_point("intent_classifier")
@@ -67,6 +69,7 @@ def build_graph():
         report_intent 之后的条件路由：
         - needs_clarification → clarify
         - final_report 已存在 → reporter（直接返回广告查询结果）
+        - query_route == "analysis" → analysis（CoT 分析）
         - query_route == "nl_dsl" → nl_dsl
         - 其他 → planner（结构化路径）
         """
@@ -74,6 +77,8 @@ def build_graph():
             return "clarify"
         if state.get("final_report"):
             return "reporter"
+        if state.get("query_route") == "analysis":
+            return "analysis"
         if state.get("query_route") == "nl_dsl":
             return "nl_dsl"
         return "planner"
@@ -86,6 +91,7 @@ def build_graph():
             "planner": "planner",
             "reporter": "reporter",
             "nl_dsl": "nl_dsl",
+            "analysis": "analysis",
         }
     )
 
@@ -95,6 +101,7 @@ def build_graph():
         clarify 之后的条件路由：
         - reentry_top → intent_classifier
         - continue_report → report_intent
+        - continue_analysis → analysis
         - continue_knowledge → rag_retrieve
         - max_reentry_exceeded → reject（重置）
         """
@@ -104,6 +111,8 @@ def build_graph():
             return "intent_classifier"
         elif clarify_next == "continue_report":
             return "report_intent"
+        elif clarify_next == "continue_analysis":
+            return "analysis"
         elif clarify_next == "continue_knowledge":
             return "rag_retrieve"
         else:  # max_reentry_exceeded
@@ -117,6 +126,7 @@ def build_graph():
         {
             "intent_classifier": "intent_classifier",
             "report_intent": "report_intent",
+            "analysis": "analysis",
             "rag_retrieve": "rag_retrieve",
             "reject": "reject",
         }
@@ -148,6 +158,26 @@ def build_graph():
 
     # ========== 5.5 NL→DSL 流程 ==========
     graph.add_edge("nl_dsl", "reporter")
+
+    # ========== 5.6 Analysis 流程 ==========
+    def route_after_analysis(state: dict) -> str:
+        """
+        analysis_node 之后的条件路由：
+        - needs_clarification → clarify
+        - 其他 → reporter（已经生成 final_report）
+        """
+        if state.get("needs_clarification", False):
+            return "clarify"
+        return "reporter"
+
+    graph.add_conditional_edges(
+        "analysis",
+        route_after_analysis,
+        {
+            "clarify": "clarify",
+            "reporter": "reporter",
+        }
+    )
 
     # ========== 6. 拒答流程 ==========
     graph.add_edge("reject", END)
