@@ -345,4 +345,55 @@ describe('ChatMessage', () => {
       expect(screen.queryByText(/点击以下广告主名称即可查看对应数据/)).not.toBeInTheDocument()
     })
   })
+
+  describe('FinalReportV2 渲染', () => {
+    it('renders V2 success report with chart and data table', () => {
+      const v2Report = {
+        report_type: 'success' as const,
+        title: '消耗趋势分析 (2026-04-01 ~ 2026-04-30)',
+        chart_config: { type: 'line' as const, title: '消耗趋势' },
+        data: [
+          { date: '2026-04-01', cost: 100 },
+          { date: '2026-04-02', cost: 150 },
+        ],
+        data_table: {
+          columns: ['日期', '消耗'],
+          rows: [['2026-04-01', '¥100.00'], ['2026-04-02', '¥150.00']],
+        },
+        highlights: [
+          { type: 'info' as const, text: '📊 共 2 条数据记录' },
+        ],
+        next_queries: ['查看更多数据'],
+      };
+
+      render(
+        <ChatMessage message={{ role: 'assistant', content: '', finalReportV2: v2Report }} />
+      );
+
+      expect(screen.getByText('消耗趋势分析 (2026-04-01 ~ 2026-04-30)')).toBeInTheDocument();
+      expect(screen.getByTestId('highlight-list-mock')).toBeInTheDocument();
+      expect(screen.getByText(/查看更多数据/)).toBeInTheDocument();
+    });
+
+    it('renders V2 error report', () => {
+      const errorReport = {
+        report_type: 'error' as const,
+        title: '错误',
+        error_type: 'query_failed',
+        message: '未能生成有效的分析结果',
+        reason: '筛选条件过严',
+        data_table: { columns: [], rows: [] },
+        highlights: [],
+        next_queries: [],
+        suggestions: ['放宽筛选条件'],
+      };
+
+      render(
+        <ChatMessage message={{ role: 'assistant', content: '', finalReportV2: errorReport }} />
+      );
+
+      expect(screen.getByText('未能生成有效的分析结果')).toBeInTheDocument();
+      expect(screen.getByText(/筛选条件过严/)).toBeInTheDocument();
+    });
+  })
 })

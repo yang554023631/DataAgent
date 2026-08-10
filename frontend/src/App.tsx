@@ -3,12 +3,15 @@ import { useChatStore } from './stores/chatStore';
 import ChatMessage from './components/ChatMessage';
 import ChatInput from './components/ChatInput';
 import ClarificationModal from './components/ClarificationModal';
+import StepProgress from './components/StepProgress';
 
 function App() {
   const {
     sessionId,
     messages,
     isLoading,
+    isStreaming,
+    currentSteps,
     showClarification,
     clarification,
     initSession,
@@ -43,7 +46,15 @@ function App() {
           ))}
           <div ref={messagesEndRef} />
 
-          {isLoading && (
+          {isStreaming && currentSteps.length > 0 && (
+            <div className="flex justify-start mb-4">
+              <div className="max-w-[80%] w-full">
+                <StepProgress steps={currentSteps} title="正在分析..." />
+              </div>
+            </div>
+          )}
+
+          {isLoading && !isStreaming && (
             <div className="flex justify-end mb-4">
               <div className="bg-blue-600 text-white rounded-lg px-4 py-2">
                 思考中...
