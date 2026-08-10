@@ -1481,7 +1481,7 @@ async def analysis_node(state: dict) -> dict:
             # 创建一个空的 QualityResult
             from src.nl_dsl.quality_checker import QualityResult as QCResult
             from src.analysis.models import QualityIssue
-            quality_result = QCResult(issues=[])
+            quality_result = QCResult(passed=True, issues=[])
             updates["quality_result"] = quality_result.model_dump()
         else:
             step_start = time.time()
