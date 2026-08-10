@@ -6,6 +6,13 @@ interface QualityIssueListProps {
   issues: QualityIssueV2[];
 }
 
+const formatValue = (val: any): string => {
+  if (val === undefined || val === null) return '-';
+  if (typeof val === 'number') return String(val);
+  if (typeof val === 'object') return JSON.stringify(val);
+  return String(val);
+};
+
 export const QualityIssueList: React.FC<QualityIssueListProps> = ({ issues }) => {
   if (!issues || issues.length === 0) return null;
 
@@ -47,9 +54,9 @@ export const QualityIssueList: React.FC<QualityIssueListProps> = ({ issues }) =>
               <div className="text-sm font-medium">{issue.message}</div>
               {(issue.threshold !== undefined || issue.actual !== undefined) && (
                 <div className="text-xs mt-1 opacity-80">
-                  {issue.threshold !== undefined && <span>阈值：{JSON.stringify(issue.threshold)}</span>}
+                  {issue.threshold !== undefined && <span>阈值：{formatValue(issue.threshold)}</span>}
                   {issue.threshold !== undefined && issue.actual !== undefined && <span className="mx-2">|</span>}
-                  {issue.actual !== undefined && <span>实际：{JSON.stringify(issue.actual)}</span>}
+                  {issue.actual !== undefined && <span>实际：{formatValue(issue.actual)}</span>}
                 </div>
               )}
             </div>

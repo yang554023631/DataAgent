@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Clarification } from '../services/api';
+import { Clarification, QualityIssueV2 } from '../services/api';
 import { QualityIssueList } from './QualityIssueList';
 
 interface ClarificationModalProps {
   clarification: Clarification;
   hitlType?: 'cot_clarification' | 'quality_hitl' | null;
-  qualityIssues?: any[];
+  qualityIssues?: QualityIssueV2[];
   onSubmit: (selectedValue: string) => void;
   onClose: () => void;
 }
