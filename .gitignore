@@ -55,3 +55,6 @@ yarn-error.log*
 review_summary.txt
 *.tmp
 *.temp
+
+# Temporary pytest config
+pytest.ini

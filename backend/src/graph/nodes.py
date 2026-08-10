@@ -1162,12 +1162,13 @@ async def analysis_node(state: dict) -> dict:
     2. CotPlanner - CoT 推理 + 结构化计划生成
     3. FilterExecutor - 执行筛选计划，获取实体 ID
     4. AnalysisExecutor - 执行分析计划，获取图表数据
-    5. QualityChecker - 验证结果质量
+    5. QualityChecker - 验证结果质量（可跳过）
     6. ReportFormatter - 包装最终报告
 
     支持 HITL（人机交互）：
     - 如果 CotPlanner 返回 clarification_request，设置 needs_clarification 并返回
     - 如果 QualityChecker 建议 HITL，也可以触发
+    - 处理澄清后的重新进入（cot_clarification 和 quality_hitl）
     """
     import time
     from src.tools.custom_report_client import es_client
@@ -1199,6 +1200,26 @@ async def analysis_node(state: dict) -> dict:
     advertiser_ids = state.get("advertiser_ids", [])
     report_intent = state.get("report_intent_result", {})
 
+    # 检查是否是澄清后重新进入
+    pending_clarification_input = state.get("pending_clarification_input")
+    clarification_type = state.get("clarification", {}).get("type")
+    is_reentry = pending_clarification_input is not None and clarification_type in ["cot_clarification", "quality_hitl"]
+
+    # 从 state 中恢复之前的上下文（如果是重新进入）
+    previous_field_context = None
+    if is_reentry and state.get("field_context"):
+        try:
+            previous_field_context = FieldContext(**state["field_context"])
+        except Exception as e:
+            logger.warning(f"Failed to reconstruct previous field_context: {e}")
+            previous_field_context = None
+
+    # 质量 HITL：检查是否选择继续（跳过 QualityChecker）
+    skip_quality_check = False
+    if clarification_type == "quality_hitl" and pending_clarification_input == "continue":
+        skip_quality_check = True
+        logger.info("[AnalysisNode] Quality HITL: user chose to continue, skipping QualityChecker")
+
     # 初始化执行追踪
     execution_trace: List[Dict[str, Any]] = []
     start_time = time.time()
@@ -1208,7 +1229,8 @@ async def analysis_node(state: dict) -> dict:
         "execution_trace": execution_trace,
         "error": None,
         "needs_clarification": False,
-        "hitl_request": None
+        "hitl_request": None,
+        "pending_clarification_input": None  # 清除待处理的澄清输入
     }
 
     try:
@@ -1251,17 +1273,31 @@ async def analysis_node(state: dict) -> dict:
             # 继续执行 - CotPlanner 可以处理没有 field_context 的情况
             field_context = None
 
+        # 如果是重新进入且有之前的 field_context，优先使用之前的（结合新的）
+        if is_reentry and previous_field_context:
+            # 合并：保留之前的上下文，但使用新提取的字段（如果有）
+            if field_context:
+                # 简单的合并策略：如果新的 field_context 有字段，优先使用新的
+                merged_metrics = list(set((previous_field_context.metrics or []) + (field_context.metrics or [])))
+                previous_field_context.metrics = merged_metrics
+                if field_context.target_level:
+                    previous_field_context.target_level = field_context.target_level
+                if field_context.time_range:
+                    previous_field_context.time_range = field_context.time_range
+            field_context = previous_field_context
+            logger.info("[AnalysisNode] Re-entry: using merged previous field_context")
+
         # ========== 步骤 2: CotPlanner - 生成分析计划 ==========
         step_start = time.time()
         execution_trace.append({"step": "cot_planner", "status": "started"})
         logger.info(f"[AnalysisNode] Step 2: CotPlanner started")
 
         cot_planner = get_cot_planner()
-        cot_result = await cot_planner.plan(
+        cot_result = cot_planner.plan(
             user_input=user_input,
             conversation_history=conversation_history,
             field_context=field_context,
-            advertiser_ids=advertiser_ids
+            advertisers=[]  # TODO: pass actual advertiser dicts if needed
         )
 
         if cot_result.status == CotResultStatus.NEEDS_CLARIFICATION:
@@ -1436,71 +1472,82 @@ async def analysis_node(state: dict) -> dict:
         })
         logger.info(f"[AnalysisNode] Step 4: AnalysisExecutor completed")
 
-        # ========== 步骤 5: QualityChecker - 质量检查 ==========
-        step_start = time.time()
-        execution_trace.append({"step": "quality_checker", "status": "started"})
-        logger.info(f"[AnalysisNode] Step 5: QualityChecker started")
+        # ========== 步骤 5: QualityChecker - 质量检查（可跳过） ==========
+        quality_result = None
+        if skip_quality_check:
+            step_start = time.time()
+            execution_trace.append({"step": "quality_checker", "status": "skipped"})
+            logger.info("[AnalysisNode] Step 5: QualityChecker skipped (user chose to continue)")
+            # 创建一个空的 QualityResult
+            from src.nl_dsl.quality_checker import QualityResult as QCResult
+            from src.analysis.models import QualityIssue
+            quality_result = QCResult(issues=[])
+            updates["quality_result"] = quality_result.model_dump()
+        else:
+            step_start = time.time()
+            execution_trace.append({"step": "quality_checker", "status": "started"})
+            logger.info(f"[AnalysisNode] Step 5: QualityChecker started")
 
-        quality_checker = QualityChecker()
-        quality_result = quality_checker.check(
-            analysis_result=analysis_result
-        )
+            quality_checker = QualityChecker()
+            quality_result = quality_checker.check(
+                analysis_result=analysis_result
+            )
 
-        updates["quality_result"] = quality_result.model_dump()
+            updates["quality_result"] = quality_result.model_dump()
 
-        # 检查是否需要 HITL
-        needs_hitl = any(
-            issue.severity == "error" and issue.suggested_action == "hitl"
-            for issue in quality_result.issues
-        )
+            # 检查是否需要 HITL
+            needs_hitl = any(
+                issue.severity == "error" and issue.suggested_action == "hitl"
+                for issue in quality_result.issues
+            )
 
-        if needs_hitl:
-            # 质量检查建议 HITL
-            hitl_request = {
-                "question": "数据质量存在问题，是否继续查看结果？",
-                "missing_fields": [],
-                "options": [
-                    {"value": "continue", "label": "继续查看结果"},
-                    {"value": "rephrase", "label": "重新表述问题"}
-                ],
-                "quality_issues": [
-                    {"type": issue.check_type.value, "message": issue.message, "severity": issue.severity}
-                    for issue in quality_result.issues
-                ]
-            }
-
-            updates.update({
-                "needs_clarification": True,
-                "clarification": build_clarification_state({
-                    "type": "quality_hitl",
+            if needs_hitl:
+                # 质量检查建议 HITL
+                hitl_request = {
                     "question": "数据质量存在问题，是否继续查看结果？",
+                    "missing_fields": [],
                     "options": [
                         {"value": "continue", "label": "继续查看结果"},
                         {"value": "rephrase", "label": "重新表述问题"}
                     ],
-                    "allow_custom_input": False,
-                    "missing_fields": []
-                }).get("clarification"),
-                "hitl_request": hitl_request
-            })
+                    "quality_issues": [
+                        {"type": issue.check_type.value, "message": issue.message, "severity": issue.severity}
+                        for issue in quality_result.issues
+                    ]
+                }
+
+                updates.update({
+                    "needs_clarification": True,
+                    "clarification": build_clarification_state({
+                        "type": "quality_hitl",
+                        "question": "数据质量存在问题，是否继续查看结果？",
+                        "options": [
+                            {"value": "continue", "label": "继续查看结果"},
+                            {"value": "rephrase", "label": "重新表述问题"}
+                        ],
+                        "allow_custom_input": False,
+                        "missing_fields": []
+                    }).get("clarification"),
+                    "hitl_request": hitl_request
+                })
+
+                execution_trace.append({
+                    "step": "quality_checker",
+                    "status": "hitl_required",
+                    "duration_ms": int((time.time() - step_start) * 1000),
+                    "issue_count": len(quality_result.issues)
+                })
+                logger.info(f"[AnalysisNode] Step 5: QualityChecker suggests HITL")
+                return updates
 
             execution_trace.append({
                 "step": "quality_checker",
-                "status": "hitl_required",
+                "status": "success",
                 "duration_ms": int((time.time() - step_start) * 1000),
-                "issue_count": len(quality_result.issues)
+                "issue_count": len(quality_result.issues),
+                "warning_count": len([i for i in quality_result.issues if i.severity == "warning"])
             })
-            logger.info(f"[AnalysisNode] Step 5: QualityChecker suggests HITL")
-            return updates
-
-        execution_trace.append({
-            "step": "quality_checker",
-            "status": "success",
-            "duration_ms": int((time.time() - step_start) * 1000),
-            "issue_count": len(quality_result.issues),
-            "warning_count": len([i for i in quality_result.issues if i.severity == "warning"])
-        })
-        logger.info(f"[AnalysisNode] Step 5: QualityChecker completed with {len(quality_result.issues)} issues")
+            logger.info(f"[AnalysisNode] Step 5: QualityChecker completed with {len(quality_result.issues)} issues")
 
         # ========== 步骤 6: ReportFormatter - 生成最终报告 ==========
         step_start = time.time()

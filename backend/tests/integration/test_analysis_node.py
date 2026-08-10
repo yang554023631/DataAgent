@@ -1,17 +1,41 @@
 """测试 analysis_node - CoT 分析节点集成测试"""
 import sys
 import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+import importlib.util
+
+# Step 1: Import backend/src modules first (as "backend_src")
+backend_src_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
+spec = importlib.util.spec_from_file_location("backend_src", os.path.join(backend_src_dir, "__init__.py"))
+backend_src = importlib.util.module_from_spec(spec)
+sys.modules["backend_src"] = backend_src
+spec.loader.exec_module(backend_src)
+
+# Now import backend's graph.nodes using importlib
+spec_graph = importlib.util.spec_from_file_location("backend_src.graph.nodes", os.path.join(backend_src_dir, "graph", "nodes.py"))
+backend_graph_nodes = importlib.util.module_from_spec(spec_graph)
+spec_graph.loader.exec_module(backend_graph_nodes)
+analysis_node = backend_graph_nodes.analysis_node
+
+# Import backend's nl_dsl models
+spec_nl_dsl_models = importlib.util.spec_from_file_location("backend_src.nl_dsl.models", os.path.join(backend_src_dir, "nl_dsl", "models.py"))
+backend_nl_dsl_models = importlib.util.module_from_spec(spec_nl_dsl_models)
+spec_nl_dsl_models.loader.exec_module(backend_nl_dsl_models)
+FilterResult = backend_nl_dsl_models.FilterResult
+NlDslAnalysisResult = backend_nl_dsl_models.AnalysisResult
+AnalysisDataTable = backend_nl_dsl_models.AnalysisDataTable
+QualityResult = backend_nl_dsl_models.QualityResult
+QualityIssue = backend_nl_dsl_models.QualityIssue
+QualityCheckType = backend_nl_dsl_models.QualityCheckType
+QualityAction = backend_nl_dsl_models.QualityAction
+
+# Step 2: Now import project root's src modules
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+sys.path.insert(0, project_root)
 
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 
-# 导入节点
-from backend.src.graph.nodes import analysis_node
-
-# 导入模型
 from src.analysis.models import (
     AnalysisPlanResult,
     AnalysisPlan,
@@ -27,15 +51,6 @@ from src.analysis.models import (
     EmptyCheckErrorType
 )
 from src.analysis.cot_planner import CotResultStatus
-from src.nl_dsl.models import (
-    FilterResult,
-    AnalysisResult as NlDslAnalysisResult,
-    AnalysisDataTable,
-    QualityResult,
-    QualityIssue,
-    QualityCheckType,
-    QualityAction
-)
 
 
 @pytest.mark.asyncio
@@ -78,7 +93,7 @@ async def test_analysis_node_success_path():
         mock_intent_analyzer.analyze.return_value = mock_intent_result
 
         # 2. Mock CotPlanner
-        mock_cot_planner = AsyncMock()
+        mock_cot_planner = MagicMock()
         mock_cot_planner_factory.return_value = mock_cot_planner
         mock_analysis_plan = AnalysisPlan(
             analysis_type=AnalysisType.TIME_TREND,
@@ -188,7 +203,7 @@ async def test_analysis_node_hitl_from_cot_planner():
         mock_intent_analyzer.analyze.return_value = mock_intent_result
 
         # 2. Mock CotPlanner 返回需要澄清
-        mock_cot_planner = AsyncMock()
+        mock_cot_planner = MagicMock()
         mock_cot_planner_factory.return_value = mock_cot_planner
         mock_cot_result = MagicMock()
         mock_cot_result.status = CotResultStatus.NEEDS_CLARIFICATION
@@ -250,7 +265,7 @@ async def test_analysis_node_error_handling():
         mock_intent_analyzer.analyze.return_value = mock_intent_result
 
         # 2. Mock CotPlanner
-        mock_cot_planner = AsyncMock()
+        mock_cot_planner = MagicMock()
         mock_cot_planner_factory.return_value = mock_cot_planner
         mock_analysis_plan = AnalysisPlan(
             analysis_type=AnalysisType.TIME_TREND,
@@ -325,7 +340,7 @@ async def test_analysis_node_empty_result():
         mock_intent_analyzer.analyze.return_value = mock_intent_result
 
         # 2. Mock CotPlanner
-        mock_cot_planner = AsyncMock()
+        mock_cot_planner = MagicMock()
         mock_cot_planner_factory.return_value = mock_cot_planner
         mock_analysis_plan = AnalysisPlan(
             analysis_type=AnalysisType.TIME_TREND,
@@ -390,3 +405,334 @@ async def test_analysis_node_empty_result():
 
         # 验证 format_empty_result 被正确调用
         mock_report_formatter.format_empty_result.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_analysis_node_cot_clarification_reentry():
+    """测试 analysis_node 处理 cot_clarification 后重新进入"""
+    # 准备状态：包含待处理的澄清输入和之前的上下文
+    state = {
+        "user_input": "查看广告主 123 的数据，广告主: 456",  # clarify_node 已更新 user_input
+        "conversation_history": [],
+        "advertiser_ids": ["123"],
+        "session_id": "test-session-cot-reentry",
+        "pending_clarification_input": "456",
+        "clarification": {"type": "cot_clarification"},
+        "field_context": FieldContext(
+            advertiser_ids=[123],
+            metrics=["cost"],
+            target_level=EntityLevel.CAMPAIGN
+        ).model_dump()
+    }
+
+    # Mock 所有依赖组件
+    with patch('src.analysis.intent_analyzer.create_intent_analyzer') as mock_intent_analyzer_factory, \
+         patch('src.analysis.cot_planner.get_cot_planner') as mock_cot_planner_factory, \
+         patch('src.nl_dsl.filter_executor.FilterExecutor') as mock_filter_executor_class, \
+         patch('src.nl_dsl.empty_checker.EmptyResultChecker') as mock_empty_checker_class, \
+         patch('src.nl_dsl.analysis_executor.AnalysisExecutor') as mock_analysis_executor_class, \
+         patch('src.nl_dsl.quality_checker.QualityChecker') as mock_quality_checker_class, \
+         patch('src.analysis.report_formatter.ReportFormatter') as mock_report_formatter_class:
+
+        # 1. Mock IntentAnalyzer
+        mock_intent_analyzer = MagicMock()
+        mock_intent_analyzer_factory.return_value = mock_intent_analyzer
+        mock_new_field_context = FieldContext(
+            advertiser_ids=[456],
+            metrics=["cost"],
+            time_range=AnalysisTimeRange(start_date="2025-01-01", end_date="2025-01-07"),
+            target_level=EntityLevel.CAMPAIGN
+        )
+        mock_intent_result = MagicMock()
+        mock_intent_result.field_context = mock_new_field_context
+        mock_intent_analyzer.analyze.return_value = mock_intent_result
+
+        # 2. Mock CotPlanner
+        mock_cot_planner = MagicMock()
+        mock_cot_planner_factory.return_value = mock_cot_planner
+        mock_analysis_plan = AnalysisPlan(
+            analysis_type=AnalysisType.TIME_TREND,
+            chart_type=ChartType.LINE,
+            metrics=["cost"],
+            time_range=AnalysisTimeRange(start_date="2025-01-01", end_date="2025-01-07")
+        )
+        mock_analysis_plan_result = AnalysisPlanResult(
+            target_level=EntityLevel.CAMPAIGN,
+            filter_plan=FilterPlan(filter_type=FilterType.NONE, target_level=EntityLevel.CAMPAIGN, steps=[]),
+            analysis_plan=mock_analysis_plan
+        )
+        mock_cot_result = MagicMock()
+        mock_cot_result.status = CotResultStatus.SUCCESS
+        mock_cot_result.plan = mock_analysis_plan_result
+        mock_cot_result.reasoning = CotReasoning(steps=[], summary="分析消耗趋势")
+        mock_cot_planner.plan.return_value = mock_cot_result
+
+        # 3. Mock FilterExecutor
+        mock_filter_executor = MagicMock()
+        mock_filter_executor_class.return_value = mock_filter_executor
+        mock_filter_result = FilterResult(
+            entity_ids=[1, 2, 3],
+            entity_level="campaign",
+            total_count=3
+        )
+        mock_filter_executor.execute.return_value = mock_filter_result
+
+        # 4. Mock EmptyResultChecker
+        mock_empty_checker = MagicMock()
+        mock_empty_checker_class.return_value = mock_empty_checker
+        mock_empty_check_result = EmptyCheckResult(found_error=False)
+        mock_empty_checker.async_check = AsyncMock(return_value=mock_empty_check_result)
+
+        # 5. Mock AnalysisExecutor
+        mock_analysis_executor = MagicMock()
+        mock_analysis_executor_class.return_value = mock_analysis_executor
+        mock_analysis_result = NlDslAnalysisResult(
+            success=True,
+            data_table=AnalysisDataTable(columns=[], rows=[])
+        )
+        mock_analysis_executor.execute.return_value = mock_analysis_result
+
+        # 6. Mock QualityChecker
+        mock_quality_checker = MagicMock()
+        mock_quality_checker_class.return_value = mock_quality_checker
+        mock_quality_result = QualityResult(passed=True, issues=[], warnings=[])
+        mock_quality_checker.check.return_value = mock_quality_result
+
+        # 7. Mock ReportFormatter
+        mock_report_formatter = MagicMock()
+        mock_report_formatter_class.return_value = mock_report_formatter
+        mock_final_report = {
+            "report_type": "success",
+            "title": "时间趋势分析 (2025-01-01 ~ 2025-01-07)",
+            "highlights": [{"type": "info", "text": "✅ 数据加载完成"}]
+        }
+        mock_report_formatter.format.return_value = mock_final_report
+
+        # 执行测试
+        result = await analysis_node(state)
+
+        # 验证结果
+        assert "final_report" in result
+        assert result["final_report"] == mock_final_report
+        assert "pending_clarification_input" in result and result["pending_clarification_input"] is None  # 应被清除
+        assert "execution_trace" in result
+
+        # 验证 CotPlanner 被调用时传入了合并后的 field_context
+        call_args = mock_cot_planner.plan.call_args
+        passed_field_context = call_args.kwargs.get("field_context")
+        assert passed_field_context is not None
+        # 验证合并后的 advertiser_ids 包含之前和新的
+        assert 123 in passed_field_context.advertiser_ids
+        assert 456 in passed_field_context.advertiser_ids
+
+
+@pytest.mark.asyncio
+async def test_analysis_node_quality_hitl_continue():
+    """测试 quality_hitl 后用户选择 continue，跳过 QualityChecker"""
+    state = {
+        "user_input": "查看广告主 123 最近 7 天的消耗趋势",
+        "conversation_history": [],
+        "advertiser_ids": ["123"],
+        "session_id": "test-session-quality-continue",
+        "pending_clarification_input": "continue",
+        "clarification": {"type": "quality_hitl"}
+    }
+
+    # Mock 所有依赖组件
+    with patch('src.analysis.intent_analyzer.create_intent_analyzer') as mock_intent_analyzer_factory, \
+         patch('src.analysis.cot_planner.get_cot_planner') as mock_cot_planner_factory, \
+         patch('src.nl_dsl.filter_executor.FilterExecutor') as mock_filter_executor_class, \
+         patch('src.nl_dsl.empty_checker.EmptyResultChecker') as mock_empty_checker_class, \
+         patch('src.nl_dsl.analysis_executor.AnalysisExecutor') as mock_analysis_executor_class, \
+         patch('src.nl_dsl.quality_checker.QualityChecker') as mock_quality_checker_class, \
+         patch('src.analysis.report_formatter.ReportFormatter') as mock_report_formatter_class:
+
+        # 1. Mock IntentAnalyzer
+        mock_intent_analyzer = MagicMock()
+        mock_intent_analyzer_factory.return_value = mock_intent_analyzer
+        mock_field_context = FieldContext(
+            advertiser_ids=[123],
+            metrics=["cost"],
+            time_range=AnalysisTimeRange(start_date="2025-01-01", end_date="2025-01-07"),
+            target_level=EntityLevel.CAMPAIGN
+        )
+        mock_intent_result = MagicMock()
+        mock_intent_result.field_context = mock_field_context
+        mock_intent_analyzer.analyze.return_value = mock_intent_result
+
+        # 2. Mock CotPlanner
+        mock_cot_planner = MagicMock()
+        mock_cot_planner_factory.return_value = mock_cot_planner
+        mock_analysis_plan = AnalysisPlan(
+            analysis_type=AnalysisType.TIME_TREND,
+            chart_type=ChartType.LINE,
+            metrics=["cost"],
+            time_range=AnalysisTimeRange(start_date="2025-01-01", end_date="2025-01-07")
+        )
+        mock_analysis_plan_result = AnalysisPlanResult(
+            target_level=EntityLevel.CAMPAIGN,
+            filter_plan=FilterPlan(filter_type=FilterType.NONE, target_level=EntityLevel.CAMPAIGN, steps=[]),
+            analysis_plan=mock_analysis_plan
+        )
+        mock_cot_result = MagicMock()
+        mock_cot_result.status = CotResultStatus.SUCCESS
+        mock_cot_result.plan = mock_analysis_plan_result
+        mock_cot_result.reasoning = CotReasoning(steps=[], summary="分析消耗趋势")
+        mock_cot_planner.plan.return_value = mock_cot_result
+
+        # 3. Mock FilterExecutor
+        mock_filter_executor = MagicMock()
+        mock_filter_executor_class.return_value = mock_filter_executor
+        mock_filter_result = FilterResult(
+            entity_ids=[1, 2, 3],
+            entity_level="campaign",
+            total_count=3
+        )
+        mock_filter_executor.execute.return_value = mock_filter_result
+
+        # 4. Mock EmptyResultChecker
+        mock_empty_checker = MagicMock()
+        mock_empty_checker_class.return_value = mock_empty_checker
+        mock_empty_check_result = EmptyCheckResult(found_error=False)
+        mock_empty_checker.async_check = AsyncMock(return_value=mock_empty_check_result)
+
+        # 5. Mock AnalysisExecutor
+        mock_analysis_executor = MagicMock()
+        mock_analysis_executor_class.return_value = mock_analysis_executor
+        mock_analysis_result = NlDslAnalysisResult(
+            success=True,
+            data_table=AnalysisDataTable(columns=[], rows=[])
+        )
+        mock_analysis_executor.execute.return_value = mock_analysis_result
+
+        # 6. Mock QualityChecker (应该不会被调用)
+        mock_quality_checker = MagicMock()
+        mock_quality_checker_class.return_value = mock_quality_checker
+
+        # 7. Mock ReportFormatter
+        mock_report_formatter = MagicMock()
+        mock_report_formatter_class.return_value = mock_report_formatter
+        mock_final_report = {
+            "report_type": "success",
+            "title": "时间趋势分析 (2025-01-01 ~ 2025-01-07)",
+            "highlights": [{"type": "info", "text": "✅ 数据加载完成"}]
+        }
+        mock_report_formatter.format.return_value = mock_final_report
+
+        # 执行测试
+        result = await analysis_node(state)
+
+        # 验证结果
+        assert "final_report" in result
+        assert result["final_report"] == mock_final_report
+        assert "pending_clarification_input" in result and result["pending_clarification_input"] is None
+
+        # 验证 QualityChecker.check 没有被调用
+        mock_quality_checker.check.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_analysis_node_quality_hitl_rephrase():
+    """测试 quality_hitl 后用户选择 rephrase，重新执行完整流程"""
+    state = {
+        "user_input": "查看广告主 123 最近 14 天的消耗趋势",  # clarify_node 已更新 user_input
+        "conversation_history": [],
+        "advertiser_ids": ["123"],
+        "session_id": "test-session-quality-rephrase",
+        "pending_clarification_input": "rephrase",
+        "clarification": {"type": "quality_hitl"}
+    }
+
+    # Mock 所有依赖组件
+    with patch('src.analysis.intent_analyzer.create_intent_analyzer') as mock_intent_analyzer_factory, \
+         patch('src.analysis.cot_planner.get_cot_planner') as mock_cot_planner_factory, \
+         patch('src.nl_dsl.filter_executor.FilterExecutor') as mock_filter_executor_class, \
+         patch('src.nl_dsl.empty_checker.EmptyResultChecker') as mock_empty_checker_class, \
+         patch('src.nl_dsl.analysis_executor.AnalysisExecutor') as mock_analysis_executor_class, \
+         patch('src.nl_dsl.quality_checker.QualityChecker') as mock_quality_checker_class, \
+         patch('src.analysis.report_formatter.ReportFormatter') as mock_report_formatter_class:
+
+        # 1. Mock IntentAnalyzer
+        mock_intent_analyzer = MagicMock()
+        mock_intent_analyzer_factory.return_value = mock_intent_analyzer
+        mock_field_context = FieldContext(
+            advertiser_ids=[123],
+            metrics=["cost"],
+            time_range=AnalysisTimeRange(start_date="2025-01-01", end_date="2025-01-14"),
+            target_level=EntityLevel.CAMPAIGN
+        )
+        mock_intent_result = MagicMock()
+        mock_intent_result.field_context = mock_field_context
+        mock_intent_analyzer.analyze.return_value = mock_intent_result
+
+        # 2. Mock CotPlanner
+        mock_cot_planner = MagicMock()
+        mock_cot_planner_factory.return_value = mock_cot_planner
+        mock_analysis_plan = AnalysisPlan(
+            analysis_type=AnalysisType.TIME_TREND,
+            chart_type=ChartType.LINE,
+            metrics=["cost"],
+            time_range=AnalysisTimeRange(start_date="2025-01-01", end_date="2025-01-14")
+        )
+        mock_analysis_plan_result = AnalysisPlanResult(
+            target_level=EntityLevel.CAMPAIGN,
+            filter_plan=FilterPlan(filter_type=FilterType.NONE, target_level=EntityLevel.CAMPAIGN, steps=[]),
+            analysis_plan=mock_analysis_plan
+        )
+        mock_cot_result = MagicMock()
+        mock_cot_result.status = CotResultStatus.SUCCESS
+        mock_cot_result.plan = mock_analysis_plan_result
+        mock_cot_result.reasoning = CotReasoning(steps=[], summary="分析消耗趋势")
+        mock_cot_planner.plan.return_value = mock_cot_result
+
+        # 3. Mock FilterExecutor
+        mock_filter_executor = MagicMock()
+        mock_filter_executor_class.return_value = mock_filter_executor
+        mock_filter_result = FilterResult(
+            entity_ids=[1, 2, 3],
+            entity_level="campaign",
+            total_count=3
+        )
+        mock_filter_executor.execute.return_value = mock_filter_result
+
+        # 4. Mock EmptyResultChecker
+        mock_empty_checker = MagicMock()
+        mock_empty_checker_class.return_value = mock_empty_checker
+        mock_empty_check_result = EmptyCheckResult(found_error=False)
+        mock_empty_checker.async_check = AsyncMock(return_value=mock_empty_check_result)
+
+        # 5. Mock AnalysisExecutor
+        mock_analysis_executor = MagicMock()
+        mock_analysis_executor_class.return_value = mock_analysis_executor
+        mock_analysis_result = NlDslAnalysisResult(
+            success=True,
+            data_table=AnalysisDataTable(columns=[], rows=[])
+        )
+        mock_analysis_executor.execute.return_value = mock_analysis_result
+
+        # 6. Mock QualityChecker (应该被调用)
+        mock_quality_checker = MagicMock()
+        mock_quality_checker_class.return_value = mock_quality_checker
+        mock_quality_result = QualityResult(passed=True, issues=[], warnings=[])
+        mock_quality_checker.check.return_value = mock_quality_result
+
+        # 7. Mock ReportFormatter
+        mock_report_formatter = MagicMock()
+        mock_report_formatter_class.return_value = mock_report_formatter
+        mock_final_report = {
+            "report_type": "success",
+            "title": "时间趋势分析 (2025-01-01 ~ 2025-01-14)",
+            "highlights": [{"type": "info", "text": "✅ 数据加载完成"}]
+        }
+        mock_report_formatter.format.return_value = mock_final_report
+
+        # 执行测试
+        result = await analysis_node(state)
+
+        # 验证结果
+        assert "final_report" in result
+        assert result["final_report"] == mock_final_report
+        assert "pending_clarification_input" in result and result["pending_clarification_input"] is None
+
+        # 验证 QualityChecker.check 被调用
+        mock_quality_checker.check.assert_called_once()
