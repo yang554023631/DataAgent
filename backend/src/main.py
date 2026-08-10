@@ -11,6 +11,7 @@ from src.config.settings import settings
 from src.config.logging_config import setup_logging
 from src.api.middleware import RequestTracingMiddleware
 from src.api.sessions import router as sessions_router
+from src.api.streaming import router as streaming_router
 
 # 初始化日志（在所有模块导入之后、app 创建之前）
 setup_logging()
@@ -29,6 +30,7 @@ app.add_middleware(
 )
 
 app.include_router(sessions_router)
+app.include_router(streaming_router)
 
 @app.get("/health")
 async def health_check():
