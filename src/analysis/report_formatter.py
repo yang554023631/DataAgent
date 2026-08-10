@@ -371,6 +371,32 @@ class ReportFormatter:
             else:
                 formatted_columns.append(str(col))
 
+        # Final validation: ensure output matches what frontend DataTable expects
+        # Frontend expects:
+        # - columns: string[] (header labels)
+        # - rows: any[][] (each row is list of cell values, length == len(columns))
+        if not isinstance(formatted_columns, list):
+            logger.error("_format_analysis_data_table: columns is not a list, returning empty")
+            return {"columns": [], "rows": []}
+        if len(formatted_columns) == 0:
+            logger.warning("_format_analysis_data_table: empty columns list")
+
+        if not isinstance(formatted_rows, list):
+            logger.error("_format_analysis_data_table: rows is not a list, returning empty")
+            return {"columns": formatted_columns, "rows": []}
+        if len(formatted_rows) == 0:
+            logger.warning("_format_analysis_data_table: empty rows list")
+
+        # Check each row has correct length
+        for i, row in enumerate(formatted_rows):
+            if not isinstance(row, list):
+                logger.error(f"_format_analysis_data_table: row {i} is not a list, skipping")
+                formatted_rows[i] = []  # clear invalid row
+            if len(row) != len(formatted_columns):
+                logger.warning(
+                    f"_format_analysis_data_table: row {i} has {len(row)} cells, expected {len(formatted_columns)}, skipping"
+                )
+
         return {
             "columns": formatted_columns,
             "rows": formatted_rows
