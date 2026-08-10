@@ -111,9 +111,9 @@ config = {
 DEFAULT_TEST_CASES: List[Dict[str, Any]] = [
     {
         "id": 1,
-        "name": "Simple time trend",
-        "query_template": "广告主{advertiser_id}最近7天的消耗趋势",
-        "description": "无过滤条件的单指标时间趋势分析"
+        "name": "Simple time trend (April)",
+        "query_template": "id为{advertiser_id}的广告主4月份的消耗趋势",
+        "description": "4月份单指标时间趋势分析，预期返回一条非全零趋势线"
     },
     {
         "id": 2,
@@ -207,21 +207,43 @@ async def run_single_test(test_case: Dict[str, Any], advertiser_id: str, verbose
             status = "error"
 
         # 提取分析类型
-        analysis_type = test_result.get("field_context", {}).get("analysis_type", "unknown")
+        analysis_type = "unknown"
+        if "analysis_plan" in test_result and "analysis_plan" in test_result["analysis_plan"]:
+            analysis_type = test_result["analysis_plan"]["analysis_plan"].get("analysis_type", "unknown")
 
-        # 提取数据点数量
+        # 提取数据点数量 - 结构: chart_data (AnalysisResult) -> chart_data (dict) -> data
         data_points = 0
-        if "analysis_result" in test_result:
-            if "data" in test_result["analysis_result"]:
-                data_points = len(test_result["analysis_result"]["data"])
+        if "chart_data" in test_result:
+            if "chart_data" in test_result["chart_data"] and "data" in test_result["chart_data"]["chart_data"]:
+                data_points = len(test_result["chart_data"]["chart_data"]["data"])
 
-        # 检查是否有图表配置
-        has_chart_config = "chart_config" in test_result
+        # 检查是否有图表配置 - chart_config 在 chart_data.chart_config 中
+        has_chart_config = False
+        if "chart_data" in test_result:
+            if "chart_data" in test_result["chart_data"] and "chart_config" in test_result["chart_data"]["chart_data"]:
+                has_chart_config = test_result["chart_data"]["chart_data"]["chart_config"] is not None
 
         # 收集错误信息
         error_msg = None
         if test_result.get("error"):
             error_msg = str(test_result["error"])
+
+        # 检查是否所有数据点都是0（针对趋势测试）
+        all_zero = False
+        if data_points > 0 and "chart_data" in test_result:
+            chart_data = test_result["chart_data"].get("chart_data", {}).get("data", [])
+            if chart_data:
+                # 检查第一个metric是否全为0
+                first_point = chart_data[0]
+                # 获取第一个数值key（排除date）
+                numeric_keys = [k for k in first_point.keys() if k != "date"]
+                if numeric_keys:
+                    metric_key = numeric_keys[0]
+                    all_values = [point[metric_key] for point in chart_data if metric_key in point]
+                    all_zero = all(v == 0 for v in all_values)
+                    if all_zero:
+                        error_msg = "所有数据点都为0，预期应该有非零值"
+                        status = "error"
 
         # 构建详细结果
         detailed_result = {
@@ -232,6 +254,7 @@ async def run_single_test(test_case: Dict[str, Any], advertiser_id: str, verbose
             "analysis_type": analysis_type,
             "data_points": data_points,
             "has_chart_config": has_chart_config,
+            "all_zero": all_zero,
             "response_time": round(elapsed_time, 2),
             "error_message": error_msg
         }

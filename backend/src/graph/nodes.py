@@ -1244,8 +1244,6 @@ async def analysis_node(state: dict) -> dict:
             intent_result = intent_analyzer.analyze(
                 user_input=user_input,
                 conversation_history=conversation_history,
-                advertiser_ids=advertiser_ids,
-                report_intent=report_intent
             )
 
             field_context = intent_result.field_context
@@ -1345,8 +1343,11 @@ async def analysis_node(state: dict) -> dict:
             # 生成错误报告
             report_formatter = ReportFormatter()
             final_report = report_formatter.format_error(
-                error_message="无法生成分析计划，请尝试重新表述您的问题",
-                user_input=user_input
+                error_type="cot_planning_error",
+                message="无法生成分析计划，请尝试重新表述您的问题",
+                reason=error_msg,
+                suggestions=["尝试用更简单的方式描述您的需求", "确认指标和时间范围是否正确"],
+                recommended_queries=["查看近7天的广告报表", "按计划维度分析数据"]
             )
 
             updates.update({
@@ -1602,8 +1603,11 @@ async def analysis_node(state: dict) -> dict:
             from src.analysis.report_formatter import ReportFormatter
             report_formatter = ReportFormatter()
             final_report = report_formatter.format_error(
-                error_message=f"分析过程中发生错误: {str(e)}",
-                user_input=user_input
+                error_type="analysis_error",
+                message="分析过程中发生错误",
+                reason=str(e),
+                suggestions=["请稍后重试", "尝试用更简单的方式描述您的需求"],
+                recommended_queries=["查看近7天的广告报表", "按计划维度分析数据"]
             )
         except:
             # 如果 ReportFormatter 也失败，返回简单的错误报告

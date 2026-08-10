@@ -454,35 +454,20 @@ class ReportIntentAnalyzer:
 
     def _determine_query_route(self, result: ReportIntentResult, user_input: str) -> Tuple[str, str, str]:
         """
-        判断走结构化路径还是 NL→DSL 路径
+        判断查询路由
+
+        v1.3.0 之后所有报表查询统一走 CoT analysis_node，
+        旧的 structured / nl_dsl 路径保留但不再作为默认路由。
 
         Returns:
             (route: str, reason: str, analysis_type: str)
-            route: "structured" / "nl_dsl"
-            analysis_type: "standard_report" / "exploratory_query" / ...
+            route: "analysis" （CoT 分析节点）
+            analysis_type: 从 result 中推断的分析类型
         """
-        # 启发式规则：关键词匹配
-        nl_dsl_keywords = [
-            "列表", "有哪些", "包含", "所有", "全部",
-            "大于", "小于", "超过", "低于", "高于",
-            "排名", "top", "前",
-            "明细", "详情",
-        ]
+        # 推断分析类型（供 analysis_node 参考，实际以 CotPlanner 判断为准）
+        analysis_type = "time_trend" if result.group_by and "date" in result.group_by else "standard_report"
 
-        user_input_lower = user_input.lower()
-        for kw in nl_dsl_keywords:
-            if kw in user_input_lower:
-                return "nl_dsl", f"命中关键词: {kw}", "exploratory_query"
-
-        # 检查是否有复杂过滤
-        if result.filters and len(result.filters) > 3:
-            return "nl_dsl", "过滤条件较多（>3个）", "exploratory_query"
-
-        # 检查是否有 having 类语义（简单判断：filters 中有数值比较型过滤且针对指标）
-        # 这里暂时简化，后续可完善
-
-        # 默认走结构化
-        return "structured", "标准指标+维度，结构化可表达", "standard_report"
+        return "analysis", "v1.3 CoT 分析引擎", analysis_type
 
     # ---- 主入口 ----
 
