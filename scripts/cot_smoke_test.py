@@ -68,8 +68,8 @@ from typing import List, Dict, Any, Optional
 
 # 添加 backend 目录到 Python 路径
 script_dir = Path(__file__).parent
-backend_dir = script_dir / "backend"
-sys.path.insert(0, str(backend_dir))
+backend_dir = script_dir / "../backend"
+sys.path.insert(0, str(backend_dir.resolve()))
 
 # 加载 .env 文件
 try:
@@ -81,10 +81,13 @@ except ImportError:
 # 检查必要的环境变量
 required_env_vars = [
     "ES_URL",
-    "ES_USER",
-    "ES_PASSWORD",
     "LLM_API_KEY",
     "LLM_ENDPOINT"
+]
+# ES_USER 和 ES_PASSWORD 是可选的（本地开发 ES 通常不需要认证）
+optional_env_vars = [
+    "ES_USER",
+    "ES_PASSWORD",
 ]
 missing_vars = [var for var in required_env_vars if not os.getenv(var)]
 if missing_vars:

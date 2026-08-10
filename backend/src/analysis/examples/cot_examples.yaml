@@ -1,0 +1,664 @@
+# CoT Few-Shot Examples
+# 10 positive examples + 3 negative examples
+
+examples:
+  # ===========================================================================
+  # Positive Examples (10)
+  # ===========================================================================
+
+  - example_id: ex01_simple_trend
+    question: 广告主6最近7天的消耗趋势
+    category: positive
+    analysis_type: time_trend
+    filter_type: none
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6最近7天的消耗趋势，这是一个典型的时间趋势分析。
+
+      Step 2: 筛选识别
+        不需要筛选，目标层级是广告主整体汇总，filter_type为none。
+
+      Step 3: 分析识别
+        这是time_trend类型分析，图表类型用line折线图，指标是cost，按天粒度。
+
+      Step 4: 信息完整性检查
+        广告主ID:6，时间范围:最近7天，指标:cost，信息完整，不需要澄清。
+
+      Step 5: 质量校验规划
+        数据点至少2个才展示趋势，少于2个只显示警告。
+
+      Step 6: 生成结构化计划
+        输出FilterPlan和AnalysisPlan的JSON格式。
+    plan:
+      target_level: advertiser
+      filter_plan:
+        filter_type: none
+        target_level: advertiser
+        steps: []
+      analysis_plan:
+        analysis_type: time_trend
+        chart_type: line
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-08-02"
+          end_date: "2026-08-08"
+        time_granularity: day
+        quality_checks:
+          - check_type: min_data_points
+            threshold: 2
+            action: warn
+
+  - example_id: ex02_entity_table_where
+    question: 广告主6下，创建时间在2026年之后的广告计划，4月份的消耗和点击
+    category: positive
+    analysis_type: entity_table
+    filter_type: where
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6下，创建时间在2026年之后的广告计划，4月份的消耗和点击数据。
+
+      Step 2: 筛选识别
+        筛选类型是where型，目标层级是campaign，条件是create_time >= 2026-01-01。
+
+      Step 3: 分析识别
+        这是entity_table类型分析，图表类型用bar柱状图，指标是cost和click。
+
+      Step 4: 信息完整性检查
+        广告主ID:6，时间范围:4月份，指标:cost、click，筛选条件完整。
+
+      Step 5: 质量校验规划
+        结果超过100条则截断Top 100。
+
+      Step 6: 生成结构化计划
+        输出FilterPlan和AnalysisPlan。
+    plan:
+      target_level: campaign
+      filter_plan:
+        filter_type: where
+        target_level: campaign
+        steps:
+          - step_id: step_1
+            step_type: where_filter
+            level: campaign
+            index: campaign
+            conditions:
+              - field: advertiser_id
+                operator: "="
+                value: 6
+              - field: create_time
+                operator: ">="
+                value: "2026-01-01"
+            output_field: campaign_id
+      analysis_plan:
+        analysis_type: entity_table
+        chart_type: bar
+        metrics: ["cost", "click"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        group_by: campaign_id
+        quality_checks:
+          - check_type: max_rows
+            threshold: 100
+            action: trim_top
+
+  - example_id: ex03_entity_table_having
+    question: 广告主6 4月份消耗大于10的广告计划有哪些
+    category: positive
+    analysis_type: entity_table
+    filter_type: having
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6下，4月份消耗大于10的广告计划列表。
+
+      Step 2: 筛选识别
+        筛选类型是having型，目标层级是campaign，条件是消耗>10。
+
+      Step 3: 分析识别
+        这是entity_table类型分析，图表类型用bar柱状图，指标是cost。
+
+      Step 4: 信息完整性检查
+        广告主ID:6，时间范围:4月份，指标:cost，阈值:10，完整。
+
+      Step 5: 质量校验规划
+        结果超过100条则截断Top 100。
+
+      Step 6: 生成结构化计划
+        输出FilterPlan和AnalysisPlan。
+    plan:
+      target_level: campaign
+      filter_plan:
+        filter_type: having
+        target_level: campaign
+        steps:
+          - step_id: step_1
+            step_type: having_filter
+            level: campaign
+            index: ad_stat_data
+            conditions:
+              - field: data_value
+                operator: ">"
+                value: 10
+                metric: cost
+            output_field: campaign_id
+      analysis_plan:
+        analysis_type: entity_table
+        chart_type: bar
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        group_by: campaign_id
+        quality_checks:
+          - check_type: max_rows
+            threshold: 100
+            action: trim_top
+
+  - example_id: ex04_multi_series_trend
+    question: 广告主6下4月份消耗>10的广告计划的4月份的消耗的趋势图
+    category: positive
+    analysis_type: time_trend
+    filter_type: having
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6下，4月份消耗>10的广告计划的消耗趋势图。
+
+      Step 2: 筛选识别
+        筛选类型是having型，目标层级是campaign，条件是消耗>10。
+
+      Step 3: 分析识别
+        这是time_trend类型分析，多系列折线图，系列维度是campaign_id。
+
+      Step 4: 信息完整性检查
+        广告主ID:6，时间范围:4月份，指标:cost，筛选条件完整。
+
+      Step 5: 质量校验规划
+        系列数超过20条需要人工介入，同时检查数据点至少2个。
+
+      Step 6: 生成结构化计划
+        输出FilterPlan和AnalysisPlan。
+    plan:
+      target_level: campaign
+      filter_plan:
+        filter_type: having
+        target_level: campaign
+        steps:
+          - step_id: step_1
+            step_type: having_filter
+            level: campaign
+            index: ad_stat_data
+            conditions:
+              - field: data_value
+                operator: ">"
+                value: 10
+                metric: cost
+            output_field: campaign_id
+      analysis_plan:
+        analysis_type: time_trend
+        chart_type: line
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        time_granularity: day
+        group_by: campaign_id
+        quality_checks:
+          - check_type: max_series_count
+            threshold: 20
+            action: hitl
+          - check_type: min_data_points
+            threshold: 2
+            action: warn
+
+  - example_id: ex05_cross_level_up
+    question: 广告主6下，创意名包含618的广告计划，4月份的消耗
+    category: positive
+    analysis_type: entity_table
+    filter_type: cross_level
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6下，创意名包含618的广告计划，4月份的消耗。
+
+      Step 2: 筛选识别
+        筛选类型是cross_level，从creative层级向上到campaign层级。
+
+      Step 3: 分析识别
+        这是entity_table类型分析，图表类型用bar柱状图，指标是cost。
+
+      Step 4: 信息完整性检查
+        广告主ID:6，时间范围:4月份，指标:cost，筛选条件完整。
+
+      Step 5: 质量校验规划
+        结果超过100条则截断Top 100。
+
+      Step 6: 生成结构化计划
+        输出FilterPlan和AnalysisPlan。
+    plan:
+      target_level: campaign
+      filter_plan:
+        filter_type: cross_level
+        target_level: campaign
+        steps:
+          - step_id: step_1
+            step_type: cross_level_up
+            level: creative
+            index: creative
+            conditions:
+              - field: advertiser_id
+                operator: "="
+                value: 6
+              - field: creative_name
+                operator: contains
+                value: "618"
+            output_field: campaign_id
+      analysis_plan:
+        analysis_type: entity_table
+        chart_type: bar
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        group_by: campaign_id
+        quality_checks:
+          - check_type: max_rows
+            threshold: 100
+            action: trim_top
+
+  - example_id: ex06_period_comparison
+    question: 广告主6 4月的消耗和3月比怎么样
+    category: positive
+    analysis_type: period_comparison
+    filter_type: none
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想对比广告主6 4月份和3月份的消耗情况。
+
+      Step 2: 筛选识别
+        不需要筛选，目标层级是广告主整体汇总。
+
+      Step 3: 分析识别
+        这是period_comparison类型分析，图表类型用bar柱状图。
+
+      Step 4: 信息完整性检查
+        广告主ID:6，本期4月，对比期3月，指标cost，完整。
+
+      Step 5: 质量校验规划
+        检查数据是否全为0，全为0则警告。
+
+      Step 6: 生成结构化计划
+        输出FilterPlan和AnalysisPlan。
+    plan:
+      target_level: advertiser
+      filter_plan:
+        filter_type: none
+        target_level: advertiser
+        steps: []
+      analysis_plan:
+        analysis_type: period_comparison
+        chart_type: bar
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        compare_time_range:
+          compare_start_date: "2026-03-01"
+          compare_end_date: "2026-03-31"
+        quality_checks:
+          - check_type: all_zero
+            threshold: 0
+            action: warn
+
+  - example_id: ex07_audience_distribution
+    question: 广告主6 4月份的消耗按性别分布
+    category: positive
+    analysis_type: audience_distribution
+    filter_type: none
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6 4月份的消耗按性别分布情况。
+
+      Step 2: 筛选识别
+        不需要筛选，目标层级是广告主整体汇总。
+
+      Step 3: 分析识别
+        这是audience_distribution类型分析，图表类型用pie饼图，受众维度是gender。
+
+      Step 4: 信息完整性检查
+        广告主ID:6，时间范围:4月，受众维度:gender，指标默认cost，完整。
+
+      Step 5: 质量校验规划
+        分类超过8个则合并"其他"。
+
+      Step 6: 生成结构化计划
+        输出FilterPlan和AnalysisPlan。
+    plan:
+      target_level: advertiser
+      filter_plan:
+        filter_type: none
+        target_level: advertiser
+        steps: []
+      analysis_plan:
+        analysis_type: audience_distribution
+        chart_type: pie
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        audience_dimension: gender
+        quality_checks:
+          - check_type: max_categories
+            threshold: 8
+            action: trim_others
+
+  - example_id: ex08_summary
+    question: 广告主6 4月份的核心数据
+    category: positive
+    analysis_type: summary
+    filter_type: none
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6 4月份的核心指标汇总数据。
+
+      Step 2: 筛选识别
+        不需要筛选，目标层级是广告主整体汇总。
+
+      Step 3: 分析识别
+        这是summary类型分析，图表类型用kpi_card卡片，指标用默认核心指标集。
+
+      Step 4: 信息完整性检查
+        广告主ID:6，时间范围:4月，完整，指标用默认集。
+
+      Step 5: 质量校验规划
+        检查数据是否全为0，全为0则警告。
+
+      Step 6: 生成结构化计划
+        输出FilterPlan和AnalysisPlan。
+    plan:
+      target_level: advertiser
+      filter_plan:
+        filter_type: none
+        target_level: advertiser
+        steps: []
+      analysis_plan:
+        analysis_type: summary
+        chart_type: kpi_card
+        metrics: ["cost", "impression", "click", "ctr"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        quality_checks:
+          - check_type: all_zero
+            threshold: 0
+            action: warn
+
+  - example_id: ex09_mixed_filter
+    question: 广告主6下，状态启用且4月份消耗>100的广告计划的消耗趋势
+    category: positive
+    analysis_type: time_trend
+    filter_type: mixed
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6下，状态启用且4月份消耗>100的广告计划的消耗趋势。
+
+      Step 2: 筛选识别
+        筛选类型是mixed，包含where筛选（状态启用）和having筛选（消耗>100）。
+
+      Step 3: 分析识别
+        这是time_trend类型分析，多系列折线图，系列维度是campaign_id。
+
+      Step 4: 信息完整性检查
+        广告主ID:6，筛选条件完整，指标cost，时间范围4月。
+
+      Step 5: 质量校验规划
+        系列数超过20条需要人工介入，同时检查数据点至少2个。
+
+      Step 6: 生成结构化计划
+        输出FilterPlan和AnalysisPlan。
+    plan:
+      target_level: campaign
+      filter_plan:
+        filter_type: mixed
+        target_level: campaign
+        steps:
+          - step_id: step_1
+            step_type: where_filter
+            level: campaign
+            index: campaign
+            conditions:
+              - field: advertiser_id
+                operator: "="
+                value: 6
+              - field: status
+                operator: "="
+                value: enabled
+            output_field: campaign_id
+          - step_id: step_2
+            step_type: having_filter
+            level: campaign
+            index: ad_stat_data
+            conditions:
+              - field: data_value
+                operator: ">"
+                value: 100
+                metric: cost
+            output_field: campaign_id
+      analysis_plan:
+        analysis_type: time_trend
+        chart_type: line
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        time_granularity: day
+        group_by: campaign_id
+        quality_checks:
+          - check_type: max_series_count
+            threshold: 20
+            action: hitl
+          - check_type: min_data_points
+            threshold: 2
+            action: warn
+
+  - example_id: ex10_cross_level_down
+    question: 广告主6下，消耗前10的广告计划对应的创意列表
+    category: positive
+    analysis_type: entity_table
+    filter_type: cross_level
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6下，消耗前10的广告计划对应的创意列表。
+
+      Step 2: 筛选识别
+        筛选类型是cross_level，先从campaign层级筛选消耗前10，再向下到creative层级。
+
+      Step 3: 分析识别
+        这是entity_table类型分析，图表类型用table表格，指标是cost。
+
+      Step 4: 信息完整性检查
+        广告主ID:6，筛选条件完整，信息齐全。
+
+      Step 5: 质量校验规划
+        结果超过100条则截断。
+
+      Step 6: 生成结构化计划
+        输出FilterPlan和AnalysisPlan。
+    plan:
+      target_level: creative
+      filter_plan:
+        filter_type: cross_level
+        target_level: creative
+        steps:
+          - step_id: step_1
+            step_type: having_filter
+            level: campaign
+            index: ad_stat_data
+            conditions:
+              - field: data_value
+                operator: ">"
+                value: 0
+                metric: cost
+            output_field: campaign_id
+            limit: 10
+          - step_id: step_2
+            step_type: cross_level_down
+            level: creative
+            index: creative
+            conditions: []
+            output_field: creative_id
+      analysis_plan:
+        analysis_type: entity_table
+        chart_type: table
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        group_by: creative_id
+        quality_checks:
+          - check_type: max_rows
+            threshold: 100
+            action: trim_top
+
+  # ===========================================================================
+  # Negative Examples (3)
+  # ===========================================================================
+
+  - example_id: neg01_where_having_confusion
+    question: 广告主6下消耗>10的广告计划
+    category: negative
+    analysis_type: entity_table
+    filter_type: having
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6下消耗>10的广告计划列表。
+
+      Step 2: 筛选识别（错误）
+        错误做法：这里应该用having筛选，因为是基于聚合指标的筛选，但错误地用了where筛选。
+
+      Step 3: 分析识别
+        这是entity_table类型分析，指标是cost。
+
+      Step 4: 问题说明
+        错误点：把"消耗>10"放在where条件里，但where只能过滤行级属性，不能过滤聚合指标。
+        正确做法：应该用having_filter，基于ad_stat_data的聚合结果筛选campaign_id。
+    notes: |
+      错误点：混淆了where和having的使用场景。
+      问题："消耗>10"是聚合指标筛选，错误地使用了where_filter。
+      正确做法：应该使用having_filter，在ad_stat_data索引上按campaign_id聚合后筛选。
+    plan:
+      target_level: campaign
+      filter_plan:
+        filter_type: where
+        target_level: campaign
+        steps:
+          - step_id: step_1
+            step_type: where_filter  # 错误：应该是having_filter
+            level: campaign
+            index: campaign  # 错误：应该是ad_stat_data
+            conditions:
+              - field: advertiser_id
+                operator: "="
+                value: 6
+              - field: cost
+                operator: ">"
+                value: 10  # 错误：campaign表没有cost字段
+            output_field: campaign_id
+      analysis_plan:
+        analysis_type: entity_table
+        chart_type: bar
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        group_by: campaign_id
+
+  - example_id: neg02_cross_level_direction_wrong
+    question: 广告主6下，创意名包含618的广告计划
+    category: negative
+    analysis_type: entity_table
+    filter_type: cross_level
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6下，创意名包含618的广告计划。
+
+      Step 2: 筛选识别（错误）
+        错误做法：跨层级方向搞反了，试图从campaign向下到creative，但条件在creative上。
+
+      Step 3: 分析识别
+        这是entity_table类型分析。
+
+      Step 4: 问题说明
+        错误点：条件在creative层级，目标是campaign层级，应该用cross_level_up（从下往上），而不是cross_level_down。
+        正确做法：先查creative表找创意名包含618的，然后聚合得到campaign_id列表。
+    notes: |
+      错误点：跨层级方向错误。
+      问题：试图用cross_level_down从campaign到creative，但筛选条件在creative上，目标是campaign。
+      正确做法：使用cross_level_up，从creative层级向上聚合得到campaign_id。
+    plan:
+      target_level: campaign
+      filter_plan:
+        filter_type: cross_level
+        target_level: campaign
+        steps:
+          - step_id: step_1
+            step_type: cross_level_down  # 错误：应该是cross_level_up
+            level: campaign  # 错误：应该是creative
+            index: campaign
+            conditions:
+              - field: advertiser_id
+                operator: "="
+                value: 6
+              - field: creative_name  # 错误：campaign表没有creative_name
+                operator: contains
+                value: "618"
+            output_field: campaign_id
+      analysis_plan:
+        analysis_type: entity_table
+        chart_type: bar
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        group_by: campaign_id
+
+  - example_id: neg03_trend_filter_in_analysis
+    question: 广告主6下4月份消耗>10的广告计划的消耗趋势
+    category: negative
+    analysis_type: time_trend
+    filter_type: having
+    reasoning_chinese: |
+      Step 1: 问题理解
+        用户想查看广告主6下4月份消耗>10的广告计划的消耗趋势。
+
+      Step 2: 筛选识别（错误）
+        错误做法：没有单独的筛选计划，试图在分析查询中直接过滤。
+
+      Step 3: 分析识别
+        这是time_trend类型分析。
+
+      Step 4: 问题说明
+        错误点：把筛选逻辑混在分析步骤里，应该先单独执行筛选计划得到实体ID，再执行分析。
+        正确做法：先执行having_filter得到campaign_id列表，然后分析查询用这个ID列表过滤。
+    notes: |
+      错误点：筛选和分析混在一起。
+      问题：没有单独的FilterPlan，试图在AnalysisPlan里同时做筛选和分析。
+      正确做法：1)先执行FilterPlan筛选出符合条件的campaign_id；2)再执行AnalysisPlan，用筛选出的ID列表进行趋势分析。
+    plan:
+      target_level: campaign
+      filter_plan:
+        filter_type: none  # 错误：应该是having
+        target_level: campaign
+        steps: []  # 错误：应该有筛选步骤
+      analysis_plan:
+        analysis_type: time_trend
+        chart_type: line
+        metrics: ["cost"]
+        time_range:
+          start_date: "2026-04-01"
+          end_date: "2026-04-30"
+        time_granularity: day
+        group_by: campaign_id
+        # 错误：把筛选条件混在分析配置里
+        having_condition:
+          field: cost
+          operator: ">"
+          value: 10
