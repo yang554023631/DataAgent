@@ -75,7 +75,7 @@ const StepProgress: React.FC<StepProgressProps> = ({ steps, title = '正在分�
           <div key={step.id} className="flex items-start gap-3 relative">
             {/* Connector line */}
             {index < steps.length - 1 && (
-              <div className="absolute left-[15px] top-7 bottom-0 w-0.5 bg-gray-200" style={{ marginTop: 0 }} />
+              <div className="absolute left-[12px] top-7 bottom-0 w-0.5 bg-gray-200" style={{ marginTop: 0 }} />
             )}
             {/* Step circle */}
             <div className="relative z-10">
@@ -89,7 +89,7 @@ const StepProgress: React.FC<StepProgressProps> = ({ steps, title = '正在分�
             {/* Step label */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <span data-status={step.status} className={`text-sm ${getLabelStyles(step.status)}`}>
+                <span className={`text-sm ${getLabelStyles(step.status)}`}>
                   {step.label}
                 </span>
                 {step.durationMs !== undefined && step.status === 'success' && (
