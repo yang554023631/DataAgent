@@ -249,9 +249,9 @@ class AnalysisExecutor:
         """执行实体表格分析"""
         trace.append({"step": "entity_table", "status": "started"})
 
-        group_by_level = analysis_plan.group_by_level or entity_level
+        group_by_level = analysis_plan.group_by or entity_level
         if not group_by_level:
-            raise ValueError("Entity table analysis requires group_by_level")
+            raise ValueError("Entity table analysis requires group_by (group by level)")
 
         dsl = build_entity_table(
             advertiser_ids=advertiser_ids,

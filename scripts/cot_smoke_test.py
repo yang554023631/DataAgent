@@ -118,8 +118,8 @@ DEFAULT_TEST_CASES: List[Dict[str, Any]] = [
     {
         "id": 2,
         "name": "Entity table with where filter",
-        "query_template": "广告主{advertiser_id}下状态为投放中的广告计划4月份的消耗和点击",
-        "description": "带where过滤条件的实体表格分析"
+        "query_template": "广告主6下未删除的广告计划4月份的消耗和点击",
+        "description": "带where过滤条件的实体表格分析，预期返回campaign列表，含名称/ID、消耗、点击汇总，不全为0"
     },
     {
         "id": 3,
@@ -189,7 +189,7 @@ async def run_single_test(test_case: Dict[str, Any], advertiser_id: str, verbose
         "user_input": query,
         "advertiser_ids": [advertiser_id],
         "conversation_history": [],
-        "report_intent": {}
+        "report_intent": {},
     }
 
     try:
@@ -209,41 +209,79 @@ async def run_single_test(test_case: Dict[str, Any], advertiser_id: str, verbose
         # 提取分析类型
         analysis_type = "unknown"
         if "analysis_plan" in test_result and "analysis_plan" in test_result["analysis_plan"]:
-            analysis_type = test_result["analysis_plan"]["analysis_plan"].get("analysis_type", "unknown")
+            ap = test_result["analysis_plan"]["analysis_plan"]
+            analysis_type = ap.get("analysis_type", "unknown")
 
-        # 提取数据点数量 - 结构: chart_data (AnalysisResult) -> chart_data (dict) -> data
+        # 提取数据点数量
+        # - 趋势分析: chart_data 包含 chart_data.data (data points list)
+        # - 实体表格: chart_data 包含 data_table.rows (table rows list)
+        # test_result: analysis_node output
+        # test_result['chart_data'] = AnalysisResult.model_dump()
         data_points = 0
         if "chart_data" in test_result:
-            if "chart_data" in test_result["chart_data"] and "data" in test_result["chart_data"]["chart_data"]:
-                data_points = len(test_result["chart_data"]["chart_data"]["data"])
+            if "data" in test_result["chart_data"]:
+                data_points = len(test_result["chart_data"]["data"])
+            if "data_table" in test_result["chart_data"] and "rows" in test_result["chart_data"]["data_table"]:
+                data_points = len(test_result["chart_data"]["data_table"]["rows"])
 
-        # 检查是否有图表配置 - chart_config 在 chart_data.chart_config 中
+        # 检查是否有图表配置 - chart_config directly in chart_data for trend
         has_chart_config = False
         if "chart_data" in test_result:
-            if "chart_data" in test_result["chart_data"] and "chart_config" in test_result["chart_data"]["chart_data"]:
-                has_chart_config = test_result["chart_data"]["chart_data"]["chart_config"] is not None
+            if "chart_config" in test_result["chart_data"]:
+                has_chart_config = test_result["chart_data"]["chart_config"] is not None
 
         # 收集错误信息
         error_msg = None
         if test_result.get("error"):
             error_msg = str(test_result["error"])
 
-        # 检查是否所有数据点都是0（针对趋势测试）
+        # 检查是否所有数据点都是0
         all_zero = False
-        if data_points > 0 and "chart_data" in test_result:
-            chart_data = test_result["chart_data"].get("chart_data", {}).get("data", [])
-            if chart_data:
-                # 检查第一个metric是否全为0
-                first_point = chart_data[0]
-                # 获取第一个数值key（排除date）
-                numeric_keys = [k for k in first_point.keys() if k != "date"]
-                if numeric_keys:
-                    metric_key = numeric_keys[0]
-                    all_values = [point[metric_key] for point in chart_data if metric_key in point]
-                    all_zero = all(v == 0 for v in all_values)
-                    if all_zero:
-                        error_msg = "所有数据点都为0，预期应该有非零值"
-                        status = "error"
+        if data_points > 0 and status == "success":
+            # 趋势分析：检查趋势数据（在 chart_data.data）
+            if "data" in test_result["chart_data"]:
+                chart_data = test_result["chart_data"].get("data", [])
+                if chart_data:
+                    # 检查第一个metric是否全为0
+                    first_point = chart_data[0]
+                    # 获取第一个数值key（排除date）
+                    numeric_keys = [k for k in first_point.keys() if k != "date"]
+                    if numeric_keys:
+                        metric_key = numeric_keys[0]
+                        all_values = [point[metric_key] for point in chart_data if metric_key in point]
+                        all_zero = all(v == 0 for v in all_values)
+                        if all_zero:
+                            error_msg = "所有数据点都为0，预期应该有非零值"
+                            status = "error"
+            # 实体表格：检查数据不全为0（在 data_table.rows）
+            # test_result["chart_data"] = AnalysisResult.model_dump()
+            # data_table 直接在 chart_data 下
+            if "data_table" in test_result["chart_data"]:
+                data_table = test_result["chart_data"].get("data_table", {}).get("rows", [])
+                if data_table:
+                    # 获取所有数值单元格的值
+                    # 每行直接是 cell 数组，cell 可以是:
+                    # - string/int/float (直接值)
+                    # - {"value": int/float} (对指标值)
+                    numeric_values = []
+                    for row in data_table:
+                        for cell in row:
+                            if isinstance(cell, (int, float)):
+                                numeric_values.append(cell)
+                            elif isinstance(cell, dict) and "value" in cell:
+                                val = cell["value"]
+                                if isinstance(val, (int, float)):
+                                    numeric_values.append(val)
+                    if numeric_values:
+                        all_zero = all(v == 0 for v in numeric_values)
+                        if all_zero:
+                            error_msg = "表格中所有数值都为0，预期应该有非零值"
+                            status = "error"
+
+        # 对于实体表格，额外检查至少有一行数据
+        if analysis_type == "entity_table" and data_points == 0 and status == "success":
+            error_msg = "实体表格期望至少返回一条数据，但结果为空"
+            status = "error"
 
         # 构建详细结果
         detailed_result = {
@@ -256,8 +294,11 @@ async def run_single_test(test_case: Dict[str, Any], advertiser_id: str, verbose
             "has_chart_config": has_chart_config,
             "all_zero": all_zero,
             "response_time": round(elapsed_time, 2),
-            "error_message": error_msg
+            "error_message": error_msg,
         }
+
+        if verbose:
+            detailed_result["raw_response"] = test_result
 
         if verbose:
             detailed_result["raw_response"] = test_result

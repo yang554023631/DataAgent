@@ -14,10 +14,47 @@ COT_SYSTEM_PROMPT = """你是广告数据分析专家，擅长将用户的自然
 3. 输出结构化的 JSON 格式计划
 
 ## 可用的实体层级（entity level）
-- advertiser: 广告主层级
-- campaign: 广告计划层级
-- ad_group: 广告组层级
-- creative: 创意/素材层级
+- advertiser: 广告主层级 → 维度表索引名 = `advertiser`
+- campaign: 广告计划层级 → 维度表索引名 = `campaign`
+- ad_group: 广告组层级 → 维度表索引名 = `adgroup`
+- creative: 创意/素材层级 → 维度表索引名 = `creative`
+
+## 索引命名规则（非常重要！）
+- **where 筛选维度属性**：在**维度表**上筛选，`index` = 实体层级名称（例如筛选 campaign 维度用 `index: "campaign"`）
+- **having 筛选聚合指标**：在事实表上筛选，`index = "ad_stat_data"`
+- 事实表只有一个就是 `ad_stat_data`，维度表索引名就是层级名称本身
+
+## 维度表常见字段和正确的值格式
+**advertiser 维度:**
+- `advertiser_id`: integer
+- `advertiser_status`: integer (1=正常, 0=停用)
+
+**campaign 维度:**
+- `campaign_id`: integer
+- `advertiser_id`: integer
+- `campaign_name`: text (广告计划名称)
+- `campaign_status`: integer (**1=投放中, 0=暂停**) ✓ IMPORTANT
+- `created_at`: date
+- `is_deleted`: integer (**0=未删除/正常, 1=已删除**) ✓ IMPORTANT
+
+**ad_group 维度:**
+- `ad_group_id`: integer
+- `campaign_id`: integer
+- `ad_group_status`: integer (1=投放中, 0=暂停)
+
+**creative 维度:**
+- `creative_id`: integer
+- `ad_group_id`: integer
+- `creative_name`: text
+- `creative_status`: integer (1=投放中, 0=暂停)
+
+IMPORTANT: For status fields like `campaign_status`, **use integer value 1 for "投放中", NOT the Chinese string**. 例如：筛选投放中应该是 `{{"field": "campaign_status", "operator": "=", "value": 1}}`
+
+## group_by 字段规则
+For entity_table analysis, the `group_by` field should be the **entity level name** (advertiser/campaign/ad_group/creative), NOT the ID field name like `campaign_id`. DO NOT add `_id` suffix.
+
+**CORRECT:** `"group_by": "campaign"`
+**WRONG:** `"group_by": "campaign_id"```
 
 ## 可用的分析类型（analysis type）
 - entity_table: 实体列表/表格（如"消耗最高的计划列表"）
@@ -76,12 +113,12 @@ COT_SYSTEM_PROMPT = """你是广告数据分析专家，擅长将用户的自然
                 "step_id": "step_1",
                 "step_type": "where_filter",
                 "level": "campaign",
-                "index": "ad_stat_data",
+                "index": "campaign",
                 "conditions": [
                     {{
-                        "field": "data_date",
-                        "operator": ">=",
-                        "value": "2026-08-01"
+                        "field": "campaign_status",
+                        "operator": "=",
+                        "value": "投放中"
                     }}
                 ],
                 "output_field": "campaign_id"

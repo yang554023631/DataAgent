@@ -129,7 +129,14 @@ def build_where_dimension_filter(
     if index is None:
         index = level
     level_field = get_level_field(level)
-    filters = [{"terms": {"advertiser_id": advertiser_ids}}]
+    # Convert advertiser_ids to integer if possible (dimension tables store integer IDs)
+    converted_advertiser_ids = []
+    for aid in advertiser_ids:
+        try:
+            converted_advertiser_ids.append(int(aid))
+        except ValueError:
+            converted_advertiser_ids.append(aid)
+    filters = [{"terms": {"advertiser_id": converted_advertiser_ids}}]
     for cond in conditions:
         filters.append(_build_field_condition(cond["field"], cond["operator"], cond["value"]))
 
@@ -161,12 +168,20 @@ def build_cross_level_up_filter(
     target_field = get_level_field(target_level)
     condition = _build_field_condition(low_level_field, low_level_operator, low_level_value)
 
+    # Convert advertiser_ids to integer if possible
+    converted_advertiser_ids = []
+    for aid in advertiser_ids:
+        try:
+            converted_advertiser_ids.append(int(aid))
+        except ValueError:
+            converted_advertiser_ids.append(aid)
+
     dsl = {
         "index": index,
         "query": {
             "bool": {
                 "filter": [
-                    {"terms": {"advertiser_id": advertiser_ids}},
+                    {"terms": {"advertiser_id": converted_advertiser_ids}},
                     condition,
                 ]
             }
@@ -191,7 +206,14 @@ def build_cross_level_down_filter_step1(
     if index is None:
         index = high_level
     high_field = get_level_field(high_level)
-    filters = [{"terms": {"advertiser_id": advertiser_ids}}]
+    # Convert advertiser_ids to integer if possible
+    converted_advertiser_ids = []
+    for aid in advertiser_ids:
+        try:
+            converted_advertiser_ids.append(int(aid))
+        except ValueError:
+            converted_advertiser_ids.append(aid)
+    filters = [{"terms": {"advertiser_id": converted_advertiser_ids}}]
     for cond in conditions:
         filters.append(_build_field_condition(cond["field"], cond["operator"], cond["value"]))
 
