@@ -6,13 +6,13 @@ from .prompts import (
     build_cot_user_prompt,
     build_field_context_section,
     build_advertisers_section,
-    build_few_shot_section
+    build_few_shot_section,
 )
 from .intent_analyzer import (
     IntentAnalyzer,
     IntentAnalysisResult,
     RuleBasedExtractor,
-    create_intent_analyzer
+    create_intent_analyzer,
 )
 from .fewshot_retriever import (
     FewshotRetriever,

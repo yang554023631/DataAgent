@@ -21,6 +21,8 @@ from src.nl_dsl.models import (
     QualityAction,
     QualityIssue,
     QualityResult,
+    EmptyCheckErrorType,
+    EmptyCheckResult,
 )
 
 # =============================================================================
@@ -204,4 +206,6 @@ __all__ = [
     "QualityAction",
     "QualityIssue",
     "QualityResult",
+    "EmptyCheckErrorType",
+    "EmptyCheckResult",
 ]

@@ -32,12 +32,15 @@ class ReportFormatter:
     @classmethod
     def format(
         cls,
-        analysis_plan_result: AnalysisPlanResult,
-        analysis_result: NlDslAnalysisResult,
-        quality_result: QualityResult,
-        filter_result: FilterResult,
-        user_input: str,
+        analysis_plan_result: AnalysisPlanResult = None,
+        analysis_result: NlDslAnalysisResult = None,
+        quality_result: QualityResult = None,
+        filter_result: FilterResult = None,
+        user_input: str = None,
         cot_reasoning: Optional[CotReasoning] = None,
+        # Backward compatibility parameters
+        analysis_plan: AnalysisPlan = None,
+        chart_data: Dict[str, Any] = None,
     ) -> Dict[str, Any]:
         """格式化分析结果为最终报告
 
@@ -52,8 +55,17 @@ class ReportFormatter:
         Returns:
             最终报告字典
         """
-        analysis_plan = analysis_plan_result.analysis_plan
-        chart_data = analysis_result.chart_data or {}
+        # Backward compatibility
+        if analysis_plan is None and analysis_plan_result is not None:
+            analysis_plan = analysis_plan_result.analysis_plan
+        if chart_data is None and analysis_result is not None:
+            chart_data = analysis_result.chart_data or {}
+        if chart_data is None:
+            chart_data = {}
+        if quality_result is None:
+            quality_result = QualityResult(passed=True)
+        if filter_result is None:
+            filter_result = FilterResult(entity_ids=[], entity_level="advertiser", total_count=0)
 
         # 1. 判断报告类型
         report_type = cls._determine_report_type(quality_result, chart_data)
@@ -77,7 +89,10 @@ class ReportFormatter:
         data = chart_data.get("data", [])
 
         # 4. 格式化数据表格
-        data_table = cls._format_analysis_data_table(analysis_result.data_table, analysis_plan.metrics)
+        if analysis_result is not None and analysis_result.data_table is not None:
+            data_table = cls._format_analysis_data_table(analysis_result.data_table, analysis_plan.metrics)
+        else:
+            data_table = cls._format_data_table(chart_data.get("data", []), analysis_plan.metrics if analysis_plan else [])
 
         # 5. 生成亮点
         highlights = cls._generate_highlights(
@@ -90,13 +105,21 @@ class ReportFormatter:
         quality_info = cls._format_quality_info(quality_result)
 
         # 7. 准备元数据
-        metadata = cls._generate_metadata(filter_result, analysis_plan)
+        if analysis_plan is not None and filter_result is not None:
+            metadata = cls._generate_metadata(filter_result, analysis_plan)
+        else:
+            metadata = {}
 
         # 8. CoT 推理摘要
-        cot_reasoning_summary = cls._summarize_cot_reasoning(cot_reasoning or analysis_plan_result.reasoning)
+        if cot_reasoning is None and analysis_plan_result is not None:
+            cot_reasoning = analysis_plan_result.reasoning
+        cot_reasoning_summary = cls._summarize_cot_reasoning(cot_reasoning)
 
         # 9. 生成推荐查询
-        next_queries = cls._generate_next_queries(analysis_plan, data)
+        if analysis_plan is not None:
+            next_queries = cls._generate_next_queries(analysis_plan, data)
+        else:
+            next_queries = []
 
         return {
             "report_type": report_type,
