@@ -395,5 +395,81 @@ describe('ChatMessage', () => {
       expect(screen.getByText('未能生成有效的分析结果')).toBeInTheDocument();
       expect(screen.getByText(/筛选条件过严/)).toBeInTheDocument();
     });
+
+    it('renders V2 empty report', () => {
+      const emptyReport = {
+        report_type: 'empty' as const,
+        title: '暂无数据',
+        data_table: { columns: [], rows: [] },
+        highlights: [],
+        next_queries: [],
+      };
+
+      render(
+        <ChatMessage message={{ role: 'assistant', content: '', finalReportV2: emptyReport }} />
+      );
+
+      expect(screen.getAllByText('暂无数据')).toHaveLength(2);
+      expect(screen.getByText(/未找到符合条件的数据/)).toBeInTheDocument();
+    });
+
+    it('renders V2 report with quality issues', () => {
+      const v2Report = {
+        report_type: 'success' as const,
+        title: '广告数据分析',
+        data_table: {
+          columns: ['日期', '点击量'],
+          rows: [['2026-04-01', 100]],
+        },
+        highlights: [],
+        next_queries: [],
+        quality_info: {
+          passed: false,
+          issues: [
+            { check_type: 'data_quality', severity: 'warning' as const, message: '数据样本量较小', suggested_action: '建议扩大时间范围' },
+            { check_type: 'hitl', severity: 'hitl_required' as const, message: '需要人工确认', suggested_action: '请确认分析维度' },
+          ],
+          warnings: [],
+          actions: [],
+        },
+      };
+
+      render(
+        <ChatMessage message={{ role: 'assistant', content: '', finalReportV2: v2Report }} />
+      );
+
+      expect(screen.getByText('数据样本量较小')).toBeInTheDocument();
+      expect(screen.getByText('需要人工确认')).toBeInTheDocument();
+    });
+
+    it('renders V2 report with metadata', () => {
+      const v2Report = {
+        report_type: 'success' as const,
+        title: '广告效果分析',
+        data_table: {
+          columns: ['广告主', '花费'],
+          rows: [['广告主A', 1000]],
+        },
+        highlights: [],
+        next_queries: [],
+        metadata: {
+          generated_at: '2026-08-10T10:00:00Z',
+          entity_level: '广告主',
+          total_entities: 1,
+          metrics: ['cost'],
+          analysis_type: '趋势分析',
+          chart_type: 'bar',
+          time_range: { start_date: '2026-04-01', end_date: '2026-04-30' },
+        },
+      };
+
+      render(
+        <ChatMessage message={{ role: 'assistant', content: '', finalReportV2: v2Report }} />
+      );
+
+      expect(screen.getByText(/分析类型：趋势分析/)).toBeInTheDocument();
+      expect(screen.getByText(/实体层级：广告主/)).toBeInTheDocument();
+      expect(screen.getByText(/实体数量：1/)).toBeInTheDocument();
+    });
   })
 })

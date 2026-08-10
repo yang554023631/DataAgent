@@ -1,5 +1,6 @@
 import ReactECharts from 'echarts-for-react';
 import type { EChartsOption } from 'echarts';
+import type { ChartConfigV2 } from '../services/api';
 
 interface ChartSeriesConfig {
   name: string;
@@ -18,7 +19,7 @@ interface ChartConfig {
 
 interface ChartRendererProps {
   report?: {
-    chart_config?: ChartConfig;
+    chart_config?: ChartConfig | ChartConfigV2;
     is_comparison?: boolean;
   };
   data?: any[];
@@ -43,8 +44,10 @@ const getMetricDisplayName = (metric: string): string => {
 
 const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [], metrics = [] }) => {
   // 对比查询图表渲染
-  if (report?.is_comparison && report.chart_config?.comparison_data) {
-    const { type, comparison_data } = report.chart_config;
+  if (report?.is_comparison && 'comparison_data' in (report.chart_config || {})) {
+    const chartConfig = report.chart_config as ChartConfig;
+    const { type, comparison_data } = chartConfig;
+    if (!comparison_data) return null;
     const { period1, period2 } = comparison_data;
 
     // 提取维度值和指标值
@@ -195,7 +198,9 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
   if (data && data.length > 1) {  // 至少2条数据才渲染图表
     // 使用后端传的 chart_config 来确定图表类型和指标
     const chartType = report?.chart_config?.type || 'bar';
-    const primaryMetric = report?.chart_config?.metrics?.[0] || 'clicks';
+    const primaryMetric = ('metrics' in (report?.chart_config || {})
+      ? (report?.chart_config as ChartConfig)?.metrics?.[0]
+      : undefined) || metrics?.[0] || 'clicks';
     const categories: string[] = [];
     const values: number[] = [];
 

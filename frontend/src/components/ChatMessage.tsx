@@ -146,7 +146,7 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
              message.finalReportV2.data.length > 0 && (
               <ChartRenderer
                 report={{
-                  chart_config: message.finalReportV2.chart_config as any,
+                  chart_config: message.finalReportV2.chart_config,
                   is_comparison: false,
                 }}
                 data={message.finalReportV2.data}
@@ -159,7 +159,7 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
             {message.finalReportV2.highlights?.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium mb-2">关键提示</h4>
-                <HighlightList highlights={message.finalReportV2.highlights as any} />
+                <HighlightList highlights={message.finalReportV2.highlights} />
               </div>
             )}
 
@@ -173,7 +173,7 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
                     <div
                       key={idx}
                       className={`p-3 rounded-lg border ${
-                        issue.severity === 'error'
+                        issue.severity === 'error' || issue.severity === 'hitl_required'
                           ? 'bg-red-50 border-red-200 text-red-800'
                           : issue.severity === 'warning'
                           ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
