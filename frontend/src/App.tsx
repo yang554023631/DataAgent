@@ -14,6 +14,8 @@ function App() {
     currentSteps,
     showClarification,
     clarification,
+    hitlType,
+    qualityIssues,
     initSession,
     sendMessage,
     submitClarification,
@@ -74,6 +76,8 @@ function App() {
       {showClarification && clarification && (
         <ClarificationModal
           clarification={clarification}
+          hitlType={hitlType}
+          qualityIssues={qualityIssues}
           onSubmit={submitClarification}
           onClose={closeClarification}
         />

@@ -2,7 +2,7 @@ import { MetricCard } from './MetricCard';
 import { HighlightList } from './HighlightList';
 import { DataTable } from './DataTable';
 import ChartRenderer from './ChartRenderer';
-import { InsightPanel } from './InsightPanel';
+import { QualityIssueList } from './QualityIssueList';
 import { FinalReport, FinalReportV2 } from '../services/api';
 
 interface ChatMessageProps {
@@ -163,30 +163,12 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
               </div>
             )}
 
-            {/* Quality Issues - Placeholder (will be replaced with QualityIssueList in Task 5.6) */}
+            {/* Quality Issues - Replaced with QualityIssueList component in Task 5.6 */}
             {message.finalReportV2.quality_info?.issues &&
              message.finalReportV2.quality_info.issues.length > 0 && (
               <div>
                 <h4 className="text-sm font-medium mb-2">质量提示</h4>
-                <div className="space-y-2">
-                  {message.finalReportV2.quality_info.issues.map((issue, idx) => (
-                    <div
-                      key={idx}
-                      className={`p-3 rounded-lg border ${
-                        issue.severity === 'error' || issue.severity === 'hitl_required'
-                          ? 'bg-red-50 border-red-200 text-red-800'
-                          : issue.severity === 'warning'
-                          ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
-                          : 'bg-blue-50 border-blue-200 text-blue-800'
-                      }`}
-                    >
-                      <div className="font-medium">{issue.message}</div>
-                      {issue.suggested_action && (
-                        <div className="text-sm mt-1">{issue.suggested_action}</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <QualityIssueList issues={message.finalReportV2.quality_info.issues} />
               </div>
             )}
 

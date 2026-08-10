@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import { Clarification } from '../services/api';
+import { QualityIssueList } from './QualityIssueList';
 
 interface ClarificationModalProps {
   clarification: Clarification;
+  hitlType?: 'cot_clarification' | 'quality_hitl' | null;
+  qualityIssues?: any[];
   onSubmit: (selectedValue: string) => void;
   onClose: () => void;
 }
 
-export default function ClarificationModal({ clarification, onSubmit, onClose }: ClarificationModalProps) {
+export default function ClarificationModal({ clarification, hitlType, qualityIssues, onSubmit, onClose }: ClarificationModalProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [customInput, setCustomInput] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -32,6 +35,14 @@ export default function ClarificationModal({ clarification, onSubmit, onClose }:
           {clarification.question}
         </h3>
 
+        {/* Quality issues section (for quality_hitl type) */}
+        {hitlType === 'quality_hitl' && qualityIssues && qualityIssues.length > 0 && (
+          <div className="mb-4">
+            <div className="text-sm font-medium text-gray-700 mb-2">质量问题：</div>
+            <QualityIssueList issues={qualityIssues} />
+          </div>
+        )}
+
         <div className="space-y-2 mb-6">
           {clarification.options.map((option) => (
             <button
@@ -48,7 +59,7 @@ export default function ClarificationModal({ clarification, onSubmit, onClose }:
           ))}
         </div>
 
-        {clarification.allow_custom_input && (
+        {clarification.allow_custom_input && hitlType !== 'quality_hitl' && (
           <div className="mb-6">
             <input
               type="text"
@@ -72,7 +83,7 @@ export default function ClarificationModal({ clarification, onSubmit, onClose }:
             disabled={(!selected && !customInput.trim()) || submitting}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {submitting ? '处理中...' : '确认'}
+            {submitting ? '处理中...' : hitlType === 'quality_hitl' ? '确认操作' : '确认'}
           </button>
         </div>
       </div>
