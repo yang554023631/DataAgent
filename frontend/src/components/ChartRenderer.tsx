@@ -8,13 +8,18 @@ interface ChartSeriesConfig {
 }
 
 interface ChartConfig {
-  type: 'line' | 'bar' | 'pie';
+  type: 'line' | 'bar' | 'pie' | 'kpi_card';
   series: ChartSeriesConfig[];
   metrics?: string[];
   comparison_data?: {
     period1: { name: string; color: string; data: any[] };
     period2: { name: string; color: string; data: any[] };
   };
+  // ChartConfigV2 fields
+  title?: string;
+  x_axis?: { field: string; label: string };
+  y_axis?: { field: string; label: string };
+  series_field?: string;
 }
 
 interface ChartRendererProps {
@@ -194,10 +199,122 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
     }
   }
 
-  // 普通查询图表渲染
-  if (data && data.length > 1) {  // 至少2条数据才渲染图表
-    // 使用后端传的 chart_config 来确定图表类型和指标
-    const chartType = report?.chart_config?.type || 'bar';
+  // 使用后端传的 chart_config 来确定图表类型和指标
+  const chartType = report?.chart_config?.type || 'bar';
+
+  // KPI Card (summary)
+  if (chartType === 'kpi_card' && data && data.length > 0) {
+    // Auto-detect metric name and value fields
+    const nameField = Object.keys(data[0]).find(k =>
+      k.includes('name') || k.includes('metric') || k.includes('label')
+    ) || 'name';
+    const valueField = Object.keys(data[0]).find(k =>
+      k.includes('value') || k.includes('formatted') || ['cost', 'click', 'impression', 'ctr', 'cvr'].includes(k)
+    ) || 'value';
+    const formattedField = Object.keys(data[0]).find(k =>
+      k.includes('formatted') || k.includes('display')
+    );
+
+    return (
+      <div className="w-full bg-white rounded-lg shadow-sm p-4">
+        <h3 className="text-sm font-medium text-gray-700 mb-3">
+          {report?.chart_config?.title || '核心指标'}
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {data.map((item, idx) => {
+            const name = String(item[nameField] || `指标${idx + 1}`);
+            const value = formattedField && item[formattedField]
+              ? String(item[formattedField])
+              : (typeof item[valueField] === 'number'
+                ? item[valueField].toLocaleString()
+                : String(item[valueField] || '-'));
+            const color = report?.chart_config?.series?.[idx]?.color;
+            return (
+              <div
+                key={idx}
+                className="bg-gray-50 rounded-lg p-4 border border-gray-100"
+              >
+                <div className="text-sm text-gray-500 mb-1">{name}</div>
+                <div
+                  className="text-2xl font-bold"
+                  style={{ color: color || '#1f2937' }}
+                >
+                  {value}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // Pie chart
+  if (chartType === 'pie' && data && data.length > 0) {
+    const seriesField = report?.chart_config?.series_field || 'name';
+    const valueField = report?.chart_config?.y_axis?.field || metrics[0] || 'value';
+    const seriesConfig = report?.chart_config?.series || [];
+
+    const pieData = data.map((item, index) => ({
+      value: Number(item[valueField]) || 0,
+      name: String(item[seriesField] || item.name || `项${index + 1}`),
+      itemStyle: seriesConfig[index]?.color ? { color: seriesConfig[index].color } : undefined,
+    }));
+
+    const pieOption: EChartsOption = {
+      tooltip: {
+        trigger: 'item',
+        formatter: '{b}: {c} ({d}%)',
+      },
+      legend: {
+        orient: 'vertical',
+        right: '5%',
+        top: 'center',
+        textStyle: { fontSize: 12 },
+      },
+      series: [
+        {
+          name: getMetricDisplayName(valueField),
+          type: 'pie',
+          radius: ['40%', '70%'], // Ring chart
+          center: ['35%', '50%'],
+          avoidLabelOverlap: true,
+          itemStyle: {
+            borderRadius: 4,
+            borderColor: '#fff',
+            borderWidth: 2,
+          },
+          label: {
+            show: false,
+            position: 'center',
+          },
+          emphasis: {
+            label: {
+              show: true,
+              fontSize: 16,
+              fontWeight: 'bold',
+            },
+          },
+          labelLine: {
+            show: false,
+          },
+          data: pieData,
+        },
+      ],
+    };
+
+    return (
+      <div className="w-full min-h-[400px] bg-white rounded-lg shadow-sm p-4">
+        <h3 className="text-sm font-medium text-gray-700 mb-2">
+          {report?.chart_config?.title || getMetricDisplayName(valueField) + ' 分布'}
+        </h3>
+        <ReactECharts option={pieOption} style={{ height: '340px' }} />
+      </div>
+    );
+  }
+
+  // 普通查询图表渲染（至少2条数据才渲染图表）
+  if (data && data.length > 1) {
     const primaryMetric = ('metrics' in (report?.chart_config || {})
       ? (report?.chart_config as ChartConfig)?.metrics?.[0]
       : undefined) || metrics?.[0] || 'clicks';
@@ -229,67 +346,151 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
     const isTimeDimension = chartType === 'line';
 
     if (isTimeDimension) {
-      // 时间趋势用折线图
-      const lineOption: EChartsOption = {
-        tooltip: {
-          trigger: 'axis',
-        },
-        grid: {
-          left: 60,
-          right: 40,
-          top: 60,
-          bottom: 100,
-          containLabel: true,
-        },
-        xAxis: {
-          type: 'category',
-          boundaryGap: false,
-          data: categories,
-          axisLabel: {
-            rotate: 45,
-            interval: 0,
-            fontSize: 11,
+      // Check if multi-series (has series_field or multiple series in config)
+      const seriesField = report?.chart_config?.series_field;
+      const hasMultipleSeries = seriesField && report?.chart_config?.series && report.chart_config.series.length > 1;
+
+      if (hasMultipleSeries && seriesField) {
+        // Multi-series line chart
+        const xField = report?.chart_config?.x_axis?.field || dimensionColumns[0] || 'date';
+        const yField = report?.chart_config?.y_axis?.field || primaryMetric;
+
+        // Pivot data: group by x value, then by series name
+        const xValues: string[] = [];
+        const seriesNames: string[] = [];
+        const dataMap: Record<string, Record<string, number>> = {}; // xValue -> seriesName -> value
+
+        data.forEach((item) => {
+          const xVal = String(item[xField] || '');
+          const sName = String(item[seriesField] || '');
+
+          if (!xValues.includes(xVal)) xValues.push(xVal);
+          if (!seriesNames.includes(sName)) seriesNames.push(sName);
+
+          if (!dataMap[xVal]) dataMap[xVal] = {};
+          dataMap[xVal][sName] = Number(item[yField]) || 0;
+        });
+
+        const defaultColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+        const seriesConfig = report?.chart_config?.series || [];
+
+        const multiLineOption: EChartsOption = {
+          tooltip: {
+            trigger: 'axis',
           },
-        },
-        yAxis: {
-          type: 'value',
-          axisLabel: {
-            fontSize: 11,
+          legend: {
+            data: seriesNames,
+            type: 'scroll',
+            bottom: 0,
+            textStyle: { fontSize: 11 },
           },
-        },
-        series: [
-          {
-            name: getMetricDisplayName(primaryMetric),
-            type: 'line',
-            smooth: true,
-            data: values,
-            lineStyle: { color: '#3b82f6', width: 2 },
-            itemStyle: { color: '#3b82f6' },
-            areaStyle: {
-              color: {
-                type: 'linear',
-                x: 0,
-                y: 0,
-                x2: 0,
-                y2: 1,
-                colorStops: [
-                  { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
-                  { offset: 1, color: 'rgba(59, 130, 246, 0.05)' },
-                ],
-              },
+          grid: {
+            left: 60,
+            right: 40,
+            top: 30,
+            bottom: 80,
+            containLabel: true,
+          },
+          xAxis: {
+            type: 'category',
+            boundaryGap: false,
+            data: xValues,
+            axisLabel: {
+              rotate: 45,
+              interval: 0,
+              fontSize: 11,
             },
           },
-        ],
-      };
+          yAxis: {
+            type: 'value',
+            axisLabel: { fontSize: 11 },
+          },
+          series: seriesNames.map((sName, idx) => ({
+            name: sName,
+            type: 'line',
+            smooth: true,
+            data: xValues.map(xVal => dataMap[xVal]?.[sName] ?? null),
+            lineStyle: {
+              color: seriesConfig[idx]?.color || defaultColors[idx % defaultColors.length],
+              width: 2,
+            },
+            itemStyle: {
+              color: seriesConfig[idx]?.color || defaultColors[idx % defaultColors.length],
+            },
+          })),
+        };
 
-      return (
-        <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">
-            {getMetricDisplayName(primaryMetric)} 趋势
-          </h3>
-          <ReactECharts option={lineOption} style={{ height: '440px' }} />
-        </div>
-      );
+        return (
+          <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">
+              {report?.chart_config?.title || getMetricDisplayName(primaryMetric) + ' 趋势'}
+            </h3>
+            <ReactECharts option={multiLineOption} style={{ height: '440px' }} />
+          </div>
+        );
+      } else {
+        // 时间趋势用折线图 - 单系列
+        const lineOption: EChartsOption = {
+          tooltip: {
+            trigger: 'axis',
+          },
+          grid: {
+            left: 60,
+            right: 40,
+            top: 60,
+            bottom: 100,
+            containLabel: true,
+          },
+          xAxis: {
+            type: 'category',
+            boundaryGap: false,
+            data: categories,
+            axisLabel: {
+              rotate: 45,
+              interval: 0,
+              fontSize: 11,
+            },
+          },
+          yAxis: {
+            type: 'value',
+            axisLabel: {
+              fontSize: 11,
+            },
+          },
+          series: [
+            {
+              name: getMetricDisplayName(primaryMetric),
+              type: 'line',
+              smooth: true,
+              data: values,
+              lineStyle: { color: '#3b82f6', width: 2 },
+              itemStyle: { color: '#3b82f6' },
+              areaStyle: {
+                color: {
+                  type: 'linear',
+                  x: 0,
+                  y: 0,
+                  x2: 0,
+                  y2: 1,
+                  colorStops: [
+                    { offset: 0, color: 'rgba(59, 130, 246, 0.3)' },
+                    { offset: 1, color: 'rgba(59, 130, 246, 0.05)' },
+                  ],
+                },
+              },
+            },
+          ],
+        };
+
+        return (
+          <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-2">
+              {getMetricDisplayName(primaryMetric)} 趋势
+            </h3>
+            <ReactECharts option={lineOption} style={{ height: '440px' }} />
+          </div>
+        );
+      }
     }
 
     // 分类维度用柱状图

@@ -5,7 +5,7 @@ import ChartRenderer from '../ChartRenderer'
 // Mock echarts-for-react
 vi.mock('echarts-for-react', () => ({
   default: ({ option, style }: any) => (
-    <div data-testid="echarts-mock" data-option={JSON.stringify(option)} style={style}>
+    <div className="echarts-for-react" data-testid="echarts-mock" data-option={JSON.stringify(option)} style={style}>
       ECharts Mock
     </div>
   ),
@@ -219,5 +219,88 @@ describe('ChartRenderer', () => {
       )
       expect(screen.getByText('花费 分布')).toBeInTheDocument()
     })
+  })
+
+  describe('V2 图表类型支持', () => {
+    it('renders pie chart from V2 chart_config', () => {
+      const chartConfig = {
+        type: 'pie' as const,
+        title: '受众分布',
+        series: [
+          { name: '男', color: '#3b82f6' },
+          { name: '女', color: '#ec4899' },
+        ],
+      };
+      const data = [
+        { name: '男', value: 60 },
+        { name: '女', value: 40 },
+      ];
+
+      const { container } = render(
+        <ChartRenderer
+          report={{ chart_config: chartConfig, is_comparison: false }}
+          data={data}
+          groupBy={[]}
+          metrics={['value']}
+        />
+      );
+
+      // Should render a chart container
+      expect(container.querySelector('.echarts-for-react')).toBeInTheDocument();
+    });
+
+    it('renders KPI card chart type', () => {
+      const chartConfig = {
+        type: 'kpi_card' as const,
+      };
+      const data = [
+        { metric: '消耗', value: 1000, formatted: '¥1,000.00' },
+        { metric: '点击量', value: 500, formatted: '500' },
+        { metric: 'CTR', value: 0.05, formatted: '5.0%' },
+      ];
+
+      const { getByText } = render(
+        <ChartRenderer
+          report={{ chart_config: chartConfig, is_comparison: false }}
+          data={data}
+          groupBy={[]}
+          metrics={['value']}
+        />
+      );
+
+      expect(getByText('消耗')).toBeInTheDocument();
+      expect(getByText('点击量')).toBeInTheDocument();
+    });
+
+    it('renders multi-series line chart with series_field', () => {
+      const chartConfig = {
+        type: 'line' as const,
+        title: '各计划消耗趋势',
+        x_axis: { field: 'date', label: '日期' },
+        y_axis: { field: 'cost', label: '消耗' },
+        series_field: 'campaign_name',
+        series: [
+          { name: '计划A', color: '#3b82f6' },
+          { name: '计划B', color: '#10b981' },
+        ],
+      };
+      const data = [
+        { date: '2026-04-01', campaign_name: '计划A', cost: 100 },
+        { date: '2026-04-01', campaign_name: '计划B', cost: 80 },
+        { date: '2026-04-02', campaign_name: '计划A', cost: 120 },
+        { date: '2026-04-02', campaign_name: '计划B', cost: 90 },
+      ];
+
+      const { container } = render(
+        <ChartRenderer
+          report={{ chart_config: chartConfig, is_comparison: false }}
+          data={data}
+          groupBy={['campaign_name']}
+          metrics={['cost']}
+        />
+      );
+
+      expect(container.querySelector('.echarts-for-react')).toBeInTheDocument();
+    });
   })
 })
