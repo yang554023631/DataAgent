@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { apiService, Message, Clarification, FinalReportV2, StepStatus } from '../services/api';
+import { apiService, Message, Clarification, FinalReportV2, StepStatus, QualityIssueV2 } from '../services/api';
 import type { StepItem } from '../components/StepProgress';
 
 interface ChatState {
@@ -8,12 +8,12 @@ interface ChatState {
   isLoading: boolean;
   isStreaming: boolean;
   currentSteps: StepItem[];
-  streamingMessageId: number | null;
   showClarification: boolean;
   clarification: Clarification | null;
   hitlType: 'cot_clarification' | 'quality_hitl' | null;
-  qualityIssues: any[];
+  qualityIssues: QualityIssueV2[];
   error: string | null;
+  _streamCleanup?: () => void;
 
   initSession: () => Promise<void>;
   sendMessage: (content: string) => void;
@@ -28,7 +28,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isLoading: false,
   isStreaming: false,
   currentSteps: [],
-  streamingMessageId: null,
   showClarification: false,
   clarification: null,
   hitlType: null,
@@ -51,21 +50,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
         };
       });
     } catch (error) {
-      set({ error: 'Failed to create session' });
+      set({ error: '创建会话失败' });
     }
   },
 
   sendMessage: (content: string) => {
-    const { sessionId, isStreaming } = get();
-    if (!sessionId || isStreaming) return;
+    const { sessionId, isStreaming, _streamCleanup } = get();
+    if (!sessionId) return;
 
-    const messageId = Date.now();
+    // Clean up previous stream if active
+    if (isStreaming && _streamCleanup) {
+      _streamCleanup();
+    }
 
-    // Add user message
+    // Add user message and assistant placeholder atomically
     set(state => ({
-      messages: [...state.messages, { role: 'user' as const, content }],
+      messages: [
+        ...state.messages,
+        { role: 'user' as const, content },
+        { role: 'assistant' as const, content: '' }
+      ],
       isStreaming: true,
-      streamingMessageId: messageId,
       currentSteps: [
         { id: 'intent_analyzer', label: '理解查询意图', status: 'pending' },
         { id: 'cot_planner', label: '生成分析计划', status: 'pending' },
@@ -74,15 +79,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         { id: 'analysis_executor', label: '执行分析查询', status: 'pending' },
         { id: 'quality_checker', label: '质量校验', status: 'pending' },
       ],
-    }));
-
-    // Add a placeholder assistant message for the progress indicator
-    set(state => ({
-      messages: [...state.messages, {
-        role: 'assistant' as const,
-        content: '',
-        // Use a special marker for streaming in-progress
-      }],
+      _streamCleanup: undefined
     }));
 
     const cleanup = apiService.streamMessage(sessionId, content, {
@@ -120,7 +117,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           hitlType: event.hitl_type,
           qualityIssues: event.quality_issues || [],
           isStreaming: false,
-          streamingMessageId: null,
+          _streamCleanup: undefined
         }));
       },
       onFinalReport: (report: FinalReportV2) => {
@@ -139,8 +136,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ...state,
             messages,
             isStreaming: false,
-            streamingMessageId: null,
             currentSteps: [],
+            _streamCleanup: undefined
           };
         });
       },
@@ -158,19 +155,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ...state,
             messages,
             isStreaming: false,
-            streamingMessageId: null,
             currentSteps: [],
             error: message,
+            _streamCleanup: undefined
           };
         });
       },
       onComplete: () => {
-        set({ isStreaming: false, streamingMessageId: null });
+        set({ isStreaming: false, _streamCleanup: undefined });
       },
     });
 
-    // Store cleanup for potential abort (not exposed in UI yet)
-    (get() as any)._streamCleanup = cleanup;
+    // Store cleanup
+    set({ _streamCleanup: cleanup });
   },
 
   submitClarification: async (selectedValue: string) => {
@@ -179,7 +176,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
     // If it's a quality HITL, route to submitHitl logic
     if (hitlType === 'quality_hitl') {
-      get().submitHitl(selectedValue);
+      await get().submitHitl(selectedValue);
       return;
     }
 
@@ -229,7 +226,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }));
       }
     } catch (error) {
-      set({ isLoading: false, error: 'Failed to submit clarification' });
+      set({ isLoading: false, error: '提交失败，请重试' });
     }
   },
 
@@ -237,13 +234,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const { sessionId } = get();
     if (!sessionId) return;
 
-    set({
+    // Map action values to display labels
+    const displayLabel = action === 'continue' ? '继续查看结果' : action === 'rephrase' ? '重新表述问题' : action;
+
+    set(state => ({
       showClarification: false,
       clarification: null,
       hitlType: null,
       qualityIssues: [],
       isLoading: true,
-    });
+      messages: [...state.messages, { role: 'user', content: displayLabel }]
+    }));
 
     try {
       // Quality HITL uses the same clarification endpoint with action values
@@ -270,11 +271,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }));
       }
     } catch (error) {
-      set({ isLoading: false, error: 'Failed to submit HITL' });
+      set({ isLoading: false, error: '提交失败，请重试' });
     }
   },
 
   closeClarification: () => {
-    set({ showClarification: false, clarification: null });
+    set({
+      showClarification: false,
+      clarification: null,
+      hitlType: null,
+      qualityIssues: [],
+      isLoading: false
+    });
   },
 }));
