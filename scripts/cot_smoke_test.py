@@ -260,12 +260,13 @@ async def run_single_test(test_case: Dict[str, Any], advertiser_id: str, verbose
                 data_table = test_result["chart_data"].get("data_table", {}).get("rows", [])
                 if data_table:
                     # 获取所有数值单元格的值
-                    # 每行直接是 cell 数组，cell 可以是:
-                    # - string/int/float (直接值)
+                    # 每行是 dict: {column_key: cell_value}
+                    # cell_value can be:
+                    # - int/float (直接值)
                     # - {"value": int/float} (对指标值)
                     numeric_values = []
                     for row in data_table:
-                        for cell in row:
+                        for key, cell in row.items():
                             if isinstance(cell, (int, float)):
                                 numeric_values.append(cell)
                             elif isinstance(cell, dict) and "value" in cell:
