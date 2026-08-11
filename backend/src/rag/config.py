@@ -36,7 +36,7 @@ ARK_BASE_URL = os.getenv("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/
 ARK_EMBEDDING_BASE_URL = os.getenv("ARK_EMBEDDING_BASE_URL", "https://ark.cn-beijing.volces.com/api/coding/v3")
 ARK_API_KEY = os.getenv("ARK_API_KEY", "")
 ARK_EMBEDDING_MODEL = os.getenv("ARK_EMBEDDING_MODEL", "doubao-embedding-v1")
-ARK_LLM_MODEL = os.getenv("ARK_LLM_MODEL", "")
+ARK_LLM_MODEL = os.getenv("ARK_LLM_MODEL", "ep-20260807194303-xq99t")
 ARK_LITE_MODEL = os.getenv("ARK_LITE_MODEL", "ep-20260807194303-xq99t")
 
 # Reranker 配置
