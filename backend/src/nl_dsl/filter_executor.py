@@ -276,7 +276,7 @@ class FilterExecutor:
                 previous_entity_level=previous_entity_level,
             )
         elif step_type == "full_filter":
-            return build_full_filter(advertiser_ids, step.level)
+            return build_full_filter(advertiser_ids, step.level, step.index)
         else:
             raise ValueError(f"Unknown step type: {step_type}")
 
@@ -312,9 +312,16 @@ class FilterExecutor:
                 previous_entity_level,
                 f"{previous_entity_level}_id",
             )
+            # 转换实体 ID 为整数如果可能（因为 dimension tables 存储整数 ID）
+            converted_previous_ids = []
+            for eid in previous_entity_ids:
+                try:
+                    converted_previous_ids.append(int(eid))
+                except ValueError:
+                    converted_previous_ids.append(eid)
             # 添加 terms 过滤条件
             dsl["query"]["bool"]["filter"].append(
-                {"terms": {previous_level_field: previous_entity_ids}}
+                {"terms": {previous_level_field: converted_previous_ids}}
             )
 
         return dsl
@@ -357,8 +364,15 @@ class FilterExecutor:
                 previous_entity_level,
                 f"{previous_entity_level}_id",
             )
+            # 转换实体 ID 为整数如果可能（因为 dimension tables 存储整数 ID）
+            converted_previous_ids = []
+            for eid in previous_entity_ids:
+                try:
+                    converted_previous_ids.append(int(eid))
+                except ValueError:
+                    converted_previous_ids.append(eid)
             dsl["query"]["bool"]["filter"].append(
-                {"terms": {previous_level_field: previous_entity_ids}}
+                {"terms": {previous_level_field: converted_previous_ids}}
             )
 
         return dsl
@@ -394,8 +408,15 @@ class FilterExecutor:
                 previous_entity_level,
                 f"{previous_entity_level}_id",
             )
+            # 转换实体 ID 为整数如果可能（因为 dimension tables 存储整数 ID）
+            converted_previous_ids = []
+            for eid in previous_entity_ids:
+                try:
+                    converted_previous_ids.append(int(eid))
+                except ValueError:
+                    converted_previous_ids.append(eid)
             dsl["query"]["bool"]["filter"].append(
-                {"terms": {previous_level_field: previous_entity_ids}}
+                {"terms": {previous_level_field: converted_previous_ids}}
             )
 
         return dsl
@@ -458,12 +479,20 @@ class FilterExecutor:
         # 构建第二步 DSL: 查询目标层级，用高层级 ID 过滤
         high_level_field = LEVEL_TO_FIELD.get(high_level, f"{high_level}_id")
 
+        # Convert advertiser_ids to integer if possible (dimension tables store integer IDs)
+        converted_advertiser_ids = []
+        for aid in advertiser_ids:
+            try:
+                converted_advertiser_ids.append(int(aid))
+            except ValueError:
+                converted_advertiser_ids.append(aid)
+
         dsl_step2 = {
             "index": target_level,  # 目标层级索引
             "query": {
                 "bool": {
                     "filter": [
-                        {"terms": {"advertiser_id": advertiser_ids}},
+                        {"terms": {"advertiser_id": converted_advertiser_ids}},
                         {"terms": {high_level_field: high_level_ids}},
                     ]
                 }

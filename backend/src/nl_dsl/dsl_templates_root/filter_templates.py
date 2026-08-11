@@ -129,7 +129,14 @@ def build_where_dimension_filter(
     if index is None:
         index = level
     level_field = get_level_field(level)
-    filters = [{"terms": {"advertiser_id": advertiser_ids}}]
+    # Convert advertiser_ids to integer if possible (dimension tables store integer IDs)
+    converted_advertiser_ids = []
+    for aid in advertiser_ids:
+        try:
+            converted_advertiser_ids.append(int(aid))
+        except ValueError:
+            converted_advertiser_ids.append(aid)
+    filters = [{"terms": {"advertiser_id": converted_advertiser_ids}}]
     for cond in conditions:
         filters.append(_build_field_condition(cond["field"], cond["operator"], cond["value"]))
 
@@ -161,12 +168,20 @@ def build_cross_level_up_filter(
     target_field = get_level_field(target_level)
     condition = _build_field_condition(low_level_field, low_level_operator, low_level_value)
 
+    # Convert advertiser_ids to integer if possible
+    converted_advertiser_ids = []
+    for aid in advertiser_ids:
+        try:
+            converted_advertiser_ids.append(int(aid))
+        except ValueError:
+            converted_advertiser_ids.append(aid)
+
     dsl = {
         "index": index,
         "query": {
             "bool": {
                 "filter": [
-                    {"terms": {"advertiser_id": advertiser_ids}},
+                    {"terms": {"advertiser_id": converted_advertiser_ids}},
                     condition,
                 ]
             }
@@ -191,7 +206,14 @@ def build_cross_level_down_filter_step1(
     if index is None:
         index = high_level
     high_field = get_level_field(high_level)
-    filters = [{"terms": {"advertiser_id": advertiser_ids}}]
+    # Convert advertiser_ids to integer if possible
+    converted_advertiser_ids = []
+    for aid in advertiser_ids:
+        try:
+            converted_advertiser_ids.append(int(aid))
+        except ValueError:
+            converted_advertiser_ids.append(aid)
+    filters = [{"terms": {"advertiser_id": converted_advertiser_ids}}]
     for cond in conditions:
         filters.append(_build_field_condition(cond["field"], cond["operator"], cond["value"]))
 
@@ -211,13 +233,36 @@ def build_cross_level_down_filter_step1(
 def build_full_filter(
     advertiser_ids: List[str],
     level: str,
-) -> None:
-    """F6: 全量/无筛选 - 不需要专门的筛选查询，返回 None
+    index: str = None,
+) -> Dict[str, Any]:
+    """F6: 全量/无筛选 - 查询该广告主在当前层级下的所有实体
 
-    全量筛选意味着直接用 advertiser_id + 层级做过滤，
-    这部分过滤会被合并到分析查询的 query.bool.filter 里。
+    虽然最终分析查询会包含 advertiser_id 过滤，
+    但在筛选执行阶段我们仍然需要先获取所有实体ID才能进行下一步筛选。
     """
-    return None
+    if index is None:
+        index = level
+    level_field = get_level_field(level)
+    # Convert advertiser_ids to integer if possible (dimension tables store integer IDs)
+    converted_advertiser_ids = []
+    for aid in advertiser_ids:
+        try:
+            converted_advertiser_ids.append(int(aid))
+        except ValueError:
+            converted_advertiser_ids.append(aid)
+    filters = [{"terms": {"advertiser_id": converted_advertiser_ids}}]
+
+    dsl = {
+        "index": index,
+        "query": {"bool": {"filter": filters}},
+        "size": 0,
+        "aggs": {
+            f"by_{level}": {
+                "terms": {"field": level_field, "size": 1000}
+            }
+        },
+    }
+    return dsl
 
 
 def _build_field_condition(field: str, operator: str, value: Any) -> Dict[str, Any]:

@@ -124,31 +124,31 @@ DEFAULT_TEST_CASES: List[Dict[str, Any]] = [
     {
         "id": 3,
         "name": "Entity table with having filter",
-        "query_template": "广告主{advertiser_id}4月份消耗大于10的广告计划有哪些",
+        "query_template": "广告主{advertiser_id} 4月份消耗大于10的广告计划有哪些",
         "description": "带having过滤条件的实体表格分析"
     },
     {
         "id": 4,
         "name": "Period comparison",
-        "query_template": "广告主{advertiser_id}4月的消耗和3月比怎么样",
+        "query_template": "广告主{advertiser_id} 4月的消耗和3月比怎么样",
         "description": "周期对比分析"
     },
     {
         "id": 5,
         "name": "Audience distribution",
-        "query_template": "广告主{advertiser_id}4月份的消耗按性别分布",
+        "query_template": "广告主{advertiser_id} 4月份的消耗按性别分布",
         "description": "受众分布分析"
     },
     {
         "id": 6,
         "name": "Multi-series trend with having filter",
-        "query_template": "广告主{advertiser_id}4月份消耗>10的广告计划的消耗趋势图",
+        "query_template": "广告主{advertiser_id} 4月份消耗>10的广告计划的消耗趋势图",
         "description": "带having过滤的多序列时间趋势分析"
     },
     {
         "id": 7,
         "name": "Summary (KPI cards)",
-        "query_template": "广告主{advertiser_id}4月份的核心数据",
+        "query_template": "广告主{advertiser_id} 4月份的核心数据",
         "description": "核心KPI汇总分析"
     }
 ]

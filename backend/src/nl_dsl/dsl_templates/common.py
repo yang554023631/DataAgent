@@ -52,7 +52,7 @@ def is_derived_metric(metric: str) -> bool:
 
 def get_level_field(level: str) -> str:
     """Get the ID field name for a given entity level."""
-    return LEVEL_TO_FIELD[level]
+    return LEVEL_TO_FIELD.get(level, f"{level}_id")
 
 
 def build_time_filter(start_date: str, end_date: str, field: str = "data_date") -> Dict[str, Any]:

@@ -26,23 +26,35 @@ logger = logging.getLogger(__name__)
 MAX_REENTRY_COUNT = 3
 
 
-def build_clarification_state(clarification: ClarificationInfo) -> dict:
+def build_clarification_state(clarification: ClarificationInfo | dict) -> dict:
     """
     构建澄清状态（写入 state 供 interrupt 时前端展示）
 
     由各识别节点在需要澄清时调用，设置 needs_clarification=True
     这样 graph 到 clarify 节点前会中断，等待用户输入
     """
-    return {
-        "needs_clarification": True,
-        "clarification": {
-            "type": clarification.type,
-            "question": clarification.question,
-            "options": clarification.options,
-            "allow_custom_input": clarification.allow_custom_input,
-            "missing_fields": clarification.missing_fields,
-        },
-    }
+    if isinstance(clarification, dict):
+        return {
+            "needs_clarification": True,
+            "clarification": {
+                "type": clarification["type"],
+                "question": clarification["question"],
+                "options": clarification["options"],
+                "allow_custom_input": clarification["allow_custom_input"],
+                "missing_fields": clarification["missing_fields"],
+            },
+        }
+    else:
+        return {
+            "needs_clarification": True,
+            "clarification": {
+                "type": clarification.type,
+                "question": clarification.question,
+                "options": clarification.options,
+                "allow_custom_input": clarification.allow_custom_input,
+                "missing_fields": clarification.missing_fields,
+            },
+        }
 
 
 async def detect_intent_change(
