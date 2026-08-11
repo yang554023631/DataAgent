@@ -173,9 +173,35 @@ For entity_table analysis, the `group_by` field should be the **entity level nam
     }}
 }}
 
+## 必填字段检查清单（必须严格遵守）
+
+### 每个筛选步骤 (filter_plan.steps[*]) 必须包含以下所有字段：
+- `step_id`: 步骤ID，如 "step_1"
+- `step_type`: 步骤类型 (where_filter/having_filter/cross_level_up/cross_level_down/full_filter)
+- `level`: 当前处理的实体层级
+- `index`: 索引名称（维度表=层级名称，having筛选=ad_stat_data）
+- `conditions`: 筛选条件数组（即使只有一个条件也要用数组）
+- **`output_field`: 输出的实体ID字段名（如 campaign_id）** ✓ **必填，绝对不能省略**
+
+### field_context 字段注意事项：
+- 如果有 `compare_time_range`，它**必须**包含 `compare_start_date` 和 `compare_end_date`，不能用 `start_date`/`end_date`
+
+### analysis_plan 必须包含以下所有字段：
+- `analysis_type`: 分析类型
+- `chart_type`: 图表类型
+- `metrics`: 指标数组
+- `time_range`: 时间范围对象（包含 `start_date`, `end_date`, `granularity`）
+- `order_by`: 排序字段
+- **`order_dir`: 排序方向** - 如果用户没有指定，**默认输出 `"asc"`**，不能输出 null
+- `limit`: 返回结果数量限制（默认 100）
+- 如果是 `period_comparison` 分析类型，`compare_time_range` 对象**必须**包含 `compare_start_date` 和 `compare_end_date`，不能用 `start_date`/`end_date`
+
 ## 注意事项
 1. 所有思考和推理过程用中文
-2. 输出必须是严格的 JSON 格式
+2. **输出必须是严格的 JSON 格式**：
+   - 所有对象键必须用双引号 `"`，不能用单引号 `'`
+   - 不允许有尾随逗号 (trailing commas)
+   - 不允许在JSON外部添加任何解释、说明、思考文字，只输出JSON
 3. 如果用户的问题中缺少必要信息（如广告主、时间范围），优先返回澄清请求
 4. 日期格式统一使用 YYYY-MM-DD
 5. 衍生指标需要确保其依赖的基础指标也包含在 metrics 中

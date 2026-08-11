@@ -272,6 +272,25 @@ def _build_field_condition(field: str, operator: str, value: Any) -> Dict[str, A
             f"Invalid operator '{operator}'. Allowed operators: {', '.join(sorted(ALLOWED_FIELD_OPERATORS))}"
         )
 
+    # Try to convert to integer if it looks like an ID field (ends with _id)
+    # Because dimension tables store all IDs as integers in ES mapping
+    if field.endswith("_id"):
+        if isinstance(value, str):
+            try:
+                value = int(value)
+            except ValueError:
+                # keep as string if conversion fails
+                pass
+        elif isinstance(value, list):
+            # for "in" operator, convert each item to integer if possible
+            converted_values = []
+            for item in value:
+                try:
+                    converted_values.append(int(item))
+                except (ValueError, TypeError):
+                    converted_values.append(item)
+            value = converted_values
+
     if operator == "=":
         return {"term": {field: value}}
     elif operator == "in":

@@ -461,8 +461,15 @@ class FilterExecutor:
                 previous_entity_level,
                 f"{previous_entity_level}_id",
             )
+            # 转换实体 ID 为整数如果可能（因为 dimension tables 存储整数 ID）
+            converted_previous_ids = []
+            for eid in previous_entity_ids:
+                try:
+                    converted_previous_ids.append(int(eid))
+                except ValueError:
+                    converted_previous_ids.append(eid)
             dsl_step1["query"]["bool"]["filter"].append(
-                {"terms": {previous_level_field: previous_entity_ids}}
+                {"terms": {previous_level_field: converted_previous_ids}}
             )
 
         # 执行第一步查询
@@ -487,13 +494,21 @@ class FilterExecutor:
             except ValueError:
                 converted_advertiser_ids.append(aid)
 
+        # Convert high_level_ids to integer if possible
+        converted_high_level_ids = []
+        for hid in high_level_ids:
+            try:
+                converted_high_level_ids.append(int(hid))
+            except ValueError:
+                converted_high_level_ids.append(hid)
+
         dsl_step2 = {
             "index": target_level,  # 目标层级索引
             "query": {
                 "bool": {
                     "filter": [
                         {"terms": {"advertiser_id": converted_advertiser_ids}},
-                        {"terms": {high_level_field: high_level_ids}},
+                        {"terms": {high_level_field: converted_high_level_ids}},
                     ]
                 }
             },
@@ -506,7 +521,8 @@ class FilterExecutor:
         }
 
         # 执行第二步查询
-        response_step2 = self.es_client.search(index=target_level, body=dsl_step2)
+        index_step2 = dsl_step2.pop("index", target_level)
+        response_step2 = self.es_client.search(index=index_step2, body=dsl_step2)
 
         # 提取目标层级 ID
         return extract_entity_ids(response_step2, f"by_{target_level}")
