@@ -588,7 +588,7 @@ async def report_intent_node(state: dict) -> dict:
     existing_advertiser_ids = list(state.get("advertiser_ids") or [])
 
     # --- 澄清回填：上一轮是 missing_advertiser 澄清时，把用户选择的广告主直接填入 ---
-    clarification_info = state.get("clarification", {})
+    clarification_info = state.get("clarification") or {}
     last_clarification_type = clarification_info.get("type", "")
     pending_input = state.get("pending_clarification_input", "")
 
@@ -1202,7 +1202,7 @@ async def analysis_node(state: dict) -> dict:
 
     # 检查是否是澄清后重新进入
     pending_clarification_input = state.get("pending_clarification_input")
-    clarification_type = state.get("clarification", {}).get("type")
+    clarification_type = (state.get("clarification") or {}).get("type")
     is_reentry = pending_clarification_input is not None and clarification_type in ["cot_clarification", "quality_hitl"]
 
     # 从 state 中恢复之前的上下文（如果是重新进入）
