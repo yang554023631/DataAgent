@@ -175,6 +175,10 @@ For entity_table analysis, the `group_by` field should be the **entity level nam
 
 ## 必填字段检查清单（必须严格遵守）
 
+### filter_plan 必须包含以下所有字段：
+- `filter_type`: 筛选类型 (none/where/having/cross_level/mixed) ✓ **必填，绝对不能省略**
+- `target_level`: 最终目标实体层级 (advertiser/campaign/ad_group/creative) ✓ **必填，绝对不能省略**
+
 ### 每个筛选步骤 (filter_plan.steps[*]) 必须包含以下所有字段：
 - `step_id`: 步骤ID，如 "step_1"
 - `step_type`: 步骤类型 (where_filter/having_filter/cross_level_up/cross_level_down/full_filter)
