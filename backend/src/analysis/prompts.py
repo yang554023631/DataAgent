@@ -93,6 +93,14 @@ For entity_table analysis, the `group_by` field should be the **entity level nam
 - cross_level: 跨层级筛选
 - mixed: 混合筛选
 
+## 多步骤筛选规则（非常重要！必须严格遵守）
+当生成多步跨层级筛选计划时：
+1. 你只需要在每个步骤的 `conditions` 数组中填写**当前步骤特有的筛选条件**
+2. **不需要**你手动添加上一步输出实体ID的过滤条件
+3. 系统执行框架会**自动**将上一步输出的实体IDs作为 `terms` 过滤条件添加到下一步查询中
+4. **禁止**在 `conditions[].value` 中使用占位符写法（例如引用上一步结果的模板占位符）
+5. 占位符不会被系统替换，会直接导致Elasticsearch查询失败
+
 ## 质量检查规则
 在生成计划时，请考虑：
 1. 时间范围合理性：不要查询未来时间
@@ -286,7 +294,10 @@ def build_few_shot_section(examples: list) -> str:
         if example.get("reasoning_chinese"):
             lines.append(f"推理过程: {example['reasoning_chinese']}")
         if example.get("plan"):
-            lines.append(f"计划: {example['plan']}")
+            # No need to escape curly braces anymore because we use direct message objects
+            # not ChatPromptTemplate.from_messages, so template parsing doesn't happen
+            plan = example['plan']
+            lines.append(f"计划: {plan}")
 
     return "\n".join(lines) if lines else "（无示例）"
 

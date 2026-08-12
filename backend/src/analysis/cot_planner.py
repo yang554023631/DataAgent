@@ -235,13 +235,15 @@ class CotPlanner:
 
         # Build prompt template and invoke
         if HAS_LANGCHAIN:
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system_prompt),
-                ("human", user_prompt),
-            ])
+            # Use direct messages instead of template parsing because we've already fully formatted the prompts
+            # This avoids issues with curly braces in few-shot examples causing template variable parsing errors
+            from langchain_core.messages import SystemMessage, HumanMessage
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
 
-            chain = prompt | self.llm
-            response = chain.invoke({})
+            response = self.llm.invoke(messages)
             return response.content.strip()
         else:
             # Fallback to direct invocation if needed

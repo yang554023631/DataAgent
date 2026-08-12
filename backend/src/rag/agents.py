@@ -229,14 +229,15 @@ Reference documents:
 
         try:
             # 创建新的 LLM 实例并调用
+            from langchain_core.messages import SystemMessage, HumanMessage
             llm = _get_llm()
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", self.SYSTEM_PROMPT.format(context=context_str)),
-                ("human", f"用户问题: {query}"),
-            ])
-
-            chain = prompt | llm
-            response = chain.invoke({"query": query})
+            # Use direct messages instead of template parsing because context may contain curly braces from examples
+            system_content = self.SYSTEM_PROMPT.format(context=context_str)
+            messages = [
+                SystemMessage(content=system_content),
+                HumanMessage(content=query),
+            ]
+            response = llm.invoke(messages)
             answer = response.content.strip()
 
             # 检测 LLM 是否自己返回了兜底回答

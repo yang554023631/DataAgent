@@ -20,18 +20,18 @@ QUERY_PLANNING_SYSTEM_PROMPT = """你是一个 Elasticsearch 查询规划专家�
 
 ## 输出格式
 只输出 JSON，不要输出其他内容：
-{
+{{
   "steps": [
-    {
+    {{
       "step_id": "step_1",
       "description": "步骤描述",
       "index": "ad_stat_data",
       "output_fields": ["字段名1", "字段名2"],
       "purpose": "这一步的目的"
-    }
+    }}
   ],
-  "final_output": "step_1.output"
-}
+  "final_output": "step_1_output"
+}}
 """
 
 QUERY_PLANNING_USER_PROMPT = """请为以下问题生成查询计划：
@@ -104,10 +104,10 @@ REFLECTION_SYSTEM_PROMPT = """你是一个 Elasticsearch 查询调试专家。
 
 ## 输出格式
 只输出 JSON，不要输出其他内容：
-{
+{{
   "reflection": "修改原因的简短说明",
-  "fixed_dsl": {...修正后的完整 DSL...}
-}"""
+  "fixed_dsl": {{...修正后的完整 DSL...}}
+}}"""
 
 REFLECTION_USER_PROMPT = """## 原始 DSL
 {previous_dsl}
