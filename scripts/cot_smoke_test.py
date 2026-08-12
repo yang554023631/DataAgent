@@ -104,7 +104,7 @@ config = {
     "es_password": os.getenv("ES_PASSWORD"),
     "llm_api_key": os.getenv("LLM_API_KEY"),
     "llm_endpoint": os.getenv("LLM_ENDPOINT"),
-    "llm_model": os.getenv("LLM_MODEL", "gpt-4o")
+    "llm_model": os.getenv("LLM_MODEL", "gpt-4o"),
 }
 
 # 定义测试场景
@@ -340,120 +340,6 @@ async def run_single_test(test_case: Dict[str, Any], advertiser_id: str, verbose
         "retries": max_retries,
         "raw_response": last_result,
     }
-
-        # 提取分析类型
-        analysis_type = "unknown"
-        if "analysis_plan" in test_result and "analysis_plan" in test_result["analysis_plan"]:
-            ap = test_result["analysis_plan"]["analysis_plan"]
-            analysis_type = ap.get("analysis_type", "unknown")
-
-        # 提取数据点数量
-        # - 趋势分析: chart_data 包含 chart_data.data (data points list)
-        # - 实体表格: chart_data 包含 data_table.rows (table rows list)
-        # test_result: analysis_node output
-        # test_result['chart_data'] = AnalysisResult.model_dump()
-        data_points = 0
-        if "chart_data" in test_result:
-            if "data" in test_result["chart_data"]:
-                data_points = len(test_result["chart_data"]["data"])
-            if "data_table" in test_result["chart_data"] and "rows" in test_result["chart_data"]["data_table"]:
-                data_points = len(test_result["chart_data"]["data_table"]["rows"])
-
-        # 检查是否有图表配置 - chart_config directly in chart_data for trend
-        has_chart_config = False
-        if "chart_data" in test_result:
-            if "chart_config" in test_result["chart_data"]:
-                has_chart_config = test_result["chart_data"]["chart_config"] is not None
-
-        # 收集错误信息
-        error_msg = None
-        if test_result.get("error"):
-            error_msg = str(test_result["error"])
-
-        # 检查是否所有数据点都是0
-        all_zero = False
-        if data_points > 0 and status == "success":
-            # 趋势分析：检查趋势数据（在 chart_data.data）
-            if "data" in test_result["chart_data"]:
-                chart_data = test_result["chart_data"].get("data", [])
-                if chart_data:
-                    # 检查第一个metric是否全为0
-                    first_point = chart_data[0]
-                    # 获取第一个数值key（排除date）
-                    numeric_keys = [k for k in first_point.keys() if k != "date"]
-                    if numeric_keys:
-                        metric_key = numeric_keys[0]
-                        all_values = [point[metric_key] for point in chart_data if metric_key in point]
-                        all_zero = all(v == 0 for v in all_values)
-                        if all_zero:
-                            error_msg = "所有数据点都为0，预期应该有非零值"
-                            status = "error"
-            # 实体表格：检查数据不全为0（在 data_table.rows）
-            # test_result["chart_data"] = AnalysisResult.model_dump()
-            # data_table 直接在 chart_data 下
-            if "data_table" in test_result["chart_data"]:
-                data_table = test_result["chart_data"].get("data_table", {}).get("rows", [])
-                if data_table:
-                    # 获取所有数值单元格的值
-                    # 每行是 dict: {column_key: cell_value}
-                    # cell_value can be:
-                    # - int/float (直接值)
-                    # - {"value": int/float} (对指标值)
-                    numeric_values = []
-                    for row in data_table:
-                        for key, cell in row.items():
-                            if isinstance(cell, (int, float)):
-                                numeric_values.append(cell)
-                            elif isinstance(cell, dict) and "value" in cell:
-                                val = cell["value"]
-                                if isinstance(val, (int, float)):
-                                    numeric_values.append(val)
-                    if numeric_values:
-                        all_zero = all(v == 0 for v in numeric_values)
-                        if all_zero:
-                            error_msg = "表格中所有数值都为0，预期应该有非零值"
-                            status = "error"
-
-        # 对于实体表格，额外检查至少有一行数据
-        if analysis_type == "entity_table" and data_points == 0 and status == "success":
-            error_msg = "实体表格期望至少返回一条数据，但结果为空"
-            status = "error"
-
-        # 构建详细结果
-        detailed_result = {
-            "test_id": test_case["id"],
-            "test_name": test_case["name"],
-            "query": query,
-            "status": status,
-            "analysis_type": analysis_type,
-            "data_points": data_points,
-            "has_chart_config": has_chart_config,
-            "all_zero": all_zero,
-            "response_time": round(elapsed_time, 2),
-            "error_message": error_msg,
-        }
-
-        if verbose:
-            detailed_result["raw_response"] = test_result
-
-        if verbose:
-            detailed_result["raw_response"] = test_result
-
-        return detailed_result
-
-    except Exception as e:
-        elapsed_time = time.time() - test_start_time
-        return {
-            "test_id": test_case["id"],
-            "test_name": test_case["name"],
-            "query": query,
-            "status": "error",
-            "analysis_type": "unknown",
-            "data_points": 0,
-            "has_chart_config": False,
-            "response_time": round(elapsed_time, 2),
-            "error_message": f"执行异常: {str(e)}"
-        }
 
 async def main():
     """主函数"""
