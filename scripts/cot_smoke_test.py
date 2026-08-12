@@ -179,32 +179,167 @@ def parse_args():
     )
     return parser.parse_args()
 
-async def run_single_test(test_case: Dict[str, Any], advertiser_id: str, verbose: bool = False) -> Dict[str, Any]:
-    """运行单个测试用例"""
+async def run_single_test(test_case: Dict[str, Any], advertiser_id: str, verbose: bool = False, max_retries: int = 3) -> Dict[str, Any]:
+    """运行单个测试用例，支持最多重试max_retries次，有一次成功就算成功"""
     query = test_case["query_template"].format(advertiser_id=advertiser_id)
-    test_start_time = time.time()
+    total_start_time = time.time()
 
-    # 构建分析节点的输入状态
-    state = {
-        "user_input": query,
-        "advertiser_ids": [advertiser_id],
-        "conversation_history": [],
-        "report_intent": {},
+    last_result = None
+    last_error = None
+
+    # 最多重试 max_retries 次
+    for attempt in range(max_retries):
+        if attempt > 0:
+            print(f"   第 {attempt + 1} 次重试...")
+
+        test_start_time = time.time()
+        # 构建分析节点的输入状态
+        state = {
+            "user_input": query,
+            "advertiser_ids": [advertiser_id],
+            "conversation_history": [],
+            "report_intent": {},
+        }
+
+        try:
+            # 导入 analysis_node 并运行
+            from src.graph.nodes import analysis_node
+
+            test_result = await analysis_node(state)
+            elapsed_attempt = time.time() - test_start_time
+
+            # 解析测试结果
+            status = "success"
+            if test_result.get("needs_clarification"):
+                status = "needs_clarification"
+                last_error = "需要澄清"
+            elif test_result.get("error"):
+                status = "error"
+                last_error = str(test_result.get("error"))
+            else:
+                # 校验成功，直接返回结果
+                elapsed_time = time.time() - total_start_time
+
+                # 提取分析类型
+                analysis_type = "unknown"
+                if "analysis_plan" in test_result and "analysis_plan" in test_result["analysis_plan"]:
+                    ap = test_result["analysis_plan"]["analysis_plan"]
+                    analysis_type = ap.get("analysis_type", "unknown")
+
+                # 提取数据点数量
+                # - 趋势分析: chart_data 包含 chart_data.data (data points list)
+                # - 实体表格: chart_data 包含 data_table.rows (table rows list)
+                # test_result: analysis_node output
+                # test_result['chart_data'] = AnalysisResult.model_dump()
+                data_points = 0
+                if "chart_data" in test_result:
+                    if "data" in test_result["chart_data"]:
+                        data_points = len(test_result["chart_data"]["data"])
+                    if "data_table" in test_result["chart_data"] and "rows" in test_result["chart_data"]["data_table"]:
+                        data_points = len(test_result["chart_data"]["data_table"]["rows"])
+
+                # 检查是否有图表配置 - chart_config directly in chart_data for trend
+                has_chart_config = False
+                if "chart_data" in test_result:
+                    if "chart_config" in test_result["chart_data"]:
+                        has_chart_config = test_result["chart_data"]["chart_config"] is not None
+
+                # 收集错误信息
+                error_msg = None
+                if test_result.get("error"):
+                    error_msg = str(test_result.get("error"))
+
+                # 检查是否所有数据点都是0
+                all_zero = False
+                if data_points > 0 and status == "success":
+                    # 趋势分析：检查趋势数据（在 chart_data.data）
+                    if "data" in test_result["chart_data"]:
+                        chart_data = test_result["chart_data"].get("data", [])
+                        if chart_data:
+                            # 检查第一个metric是否全为0
+                            first_point = chart_data[0]
+                            # 获取第一个数值key（排除date）
+                            numeric_keys = [k for k in first_point.keys() if k != "date"]
+                            if numeric_keys:
+                                metric_key = numeric_keys[0]
+                                all_values = [point[metric_key] for point in chart_data if metric_key in point]
+                                all_zero = all(v == 0 for v in all_values)
+                                if all_zero:
+                                    error_msg = "所有数据点都为0，预期应该有非零值"
+                                    status = "error"
+                    # 实体表格：检查数据不全为0（在 data_table.rows）
+                    # test_result["chart_data"] = AnalysisResult.model_dump()
+                    # data_table 直接在 chart_data 下
+                    if "data_table" in test_result["chart_data"]:
+                        data_table = test_result["chart_data"].get("data_table", {}).get("rows", [])
+                        if data_table:
+                            # 获取所有数值单元格的值
+                            # 每行是 dict: {column_key: cell_value}
+                            # cell_value can be:
+                            # - int/float (直接值)
+                            # - {"value": int/float} (对指标值)
+                            numeric_values = []
+                            for row in data_table:
+                                for key, cell in row.items():
+                                    if isinstance(cell, (int, float)):
+                                        numeric_values.append(cell)
+                                    elif isinstance(cell, dict) and "value" in cell:
+                                        val = cell["value"]
+                                        if isinstance(val, (int, float)):
+                                            numeric_values.append(val)
+                            if numeric_values:
+                                all_zero = all(v == 0 for v in numeric_values)
+                                if all_zero:
+                                    error_msg = "表格中所有数值都为0，预期应该有非零值"
+                                    status = "error"
+
+                # 对于实体表格，额外检查至少有一行数据
+                if analysis_type == "entity_table" and data_points == 0 and status == "success":
+                    error_msg = "实体表格期望至少返回一条数据，但结果为空"
+                    status = "error"
+
+                # 构建详细结果
+                detailed_result = {
+                    "test_id": test_case["id"],
+                    "test_name": test_case["name"],
+                    "query": query,
+                    "status": status,
+                    "analysis_type": analysis_type,
+                    "data_points": data_points,
+                    "has_chart_config": has_chart_config,
+                    "all_zero": all_zero,
+                    "response_time": round(elapsed_time, 2),
+                    "error_message": error_msg,
+                    "retries": attempt,
+                }
+
+                if verbose:
+                    detailed_result["raw_response"] = test_result
+
+                return detailed_result
+
+        except Exception as e:
+            last_error = f"执行异常: {str(e)}"
+
+        # 记录本次结果
+        last_result = test_result if 'test_result' in locals() else None
+
+    # 所有重试都失败了，返回最后一次的错误
+    elapsed_time = time.time() - total_start_time
+    return {
+        "test_id": test_case["id"],
+        "test_name": test_case["name"],
+        "query": query,
+        "status": "error",
+        "analysis_type": "unknown",
+        "data_points": 0,
+        "has_chart_config": False,
+        "all_zero": False,
+        "response_time": round(elapsed_time, 2),
+        "error_message": f"{max_retries}次重试全部失败，最后一次错误: {last_error}",
+        "retries": max_retries,
+        "raw_response": last_result,
     }
-
-    try:
-        # 导入 analysis_node 并运行
-        from src.graph.nodes import analysis_node
-
-        test_result = await analysis_node(state)
-        elapsed_time = time.time() - test_start_time
-
-        # 解析测试结果
-        status = "success"
-        if test_result.get("needs_clarification"):
-            status = "needs_clarification"
-        elif test_result.get("error"):
-            status = "error"
 
         # 提取分析类型
         analysis_type = "unknown"
