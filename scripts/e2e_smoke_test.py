@@ -320,137 +320,148 @@ def run_single_test(
     base_url: str,
     timeout: float,
     verbose: bool = False,
+    max_retries: int = 3,
 ) -> Dict[str, Any]:
-    """运行单个测试用例"""
+    """运行单个测试用例，支持最多重试max_retries次，有一次成功就算成功"""
     start_time = time.time()
     query = test_case["query"]
     expected = test_case["expected"]
 
-    # 1. 创建会话
-    session_id = create_session(base_url, timeout)
-    if not session_id:
-        elapsed = time.time() - start_time
-        return {
-            "test_id": test_case["id"],
-            "test_name": test_case["name"],
-            "query": query,
-            "status": "error",
-            "error_message": "创建会话失败，后端服务可能不可用",
-            "response_time": round(elapsed, 2),
-        }
+    last_result = None
+    last_error = None
 
-    # 2. 发送消息
-    result = send_message(base_url, session_id, query, timeout)
-    elapsed = time.time() - start_time
+    # 最多重试 max_retries 次
+    for attempt in range(max_retries):
+        if attempt > 0:
+            print(f"   第 {attempt + 1} 次重试...")
 
-    if result is None:
-        return {
-            "test_id": test_case["id"],
-            "test_name": test_case["name"],
-            "query": query,
-            "status": "error",
-            "error_message": "发送消息失败或超时",
-            "response_time": round(elapsed, 2),
-        }
+        # 1. 创建会话（每次重试都新建会话，避免状态污染）
+        session_id = create_session(base_url, timeout)
+        if not session_id:
+            last_error = "创建会话失败，后端服务可能不可用"
+            continue
 
-    # 3. 判断初始状态
-    status = "success"
-    error_message = None
-    data_points = 0
-    has_chart_config = False
-    all_zero_flag = False
+        # 2. 发送消息
+        result = send_message(base_url, session_id, query, timeout)
 
-    # 调试：打印实际返回结构帮助排查问题
-    # import json
-    # print("DEBUG: API result =", json.dumps(result, indent=2, ensure_ascii=False))
+        if result is None:
+            last_error = "发送消息失败或超时"
+            continue
 
-    if result.get("needs_clarification"):
-        status = "needs_clarification"
-    elif result.get("error"):
-        status = "error"
-        error_message = str(result.get("error"))
-    elif result.get("status") == "waiting_for_clarification":
-        status = "needs_clarification"
-    else:
-        # 4. 结构校验（result 是 API 返回的完整结果）
-        ok, err_msg = validate_result(result, expected)
-        if not ok:
+        # 3. 判断初始状态
+        status = "success"
+        error_message = None
+
+        if result.get("needs_clarification"):
+            status = "needs_clarification"
+            last_error = "需要澄清"
+        elif result.get("error"):
             status = "error"
-            error_message = err_msg
-
-    # 提取统计信息
-    data_points = 0
-    has_chart_config = False
-    all_zero_flag = False
-
-    # 获取最终数据（兼容两种结构）
-    data_content = None
-    if result and "result" in result and "final_report" in result["result"]:
-        final_report = result["result"]["final_report"]
-        if "type" in final_report and "data" in final_report and final_report.get("type") == "final_report":
-            data_content = final_report.get("data")
+            last_error = str(result.get("error"))
+        elif result.get("status") == "waiting_for_clarification":
+            status = "needs_clarification"
+            last_error = "等待澄清"
         else:
-            data_content = final_report
+            # 4. 结构校验（result 是 API 返回的完整结果）
+            ok, err_msg = validate_result(result, expected)
+            if not ok:
+                status = "error"
+                last_error = err_msg
+            else:
+                # 校验通过，直接返回成功结果，不继续重试
+                elapsed = time.time() - start_time
+                data_points = 0
+                has_chart_config = False
+                all_zero_flag = False
 
-    if data_content:
-        if "data" in data_content:
-            trend_data = data_content.get("data", [])
-            if trend_data:
-                data_points = len(trend_data)
-        if "data_table" in data_content:
-            data_table = data_content.get("data_table", {}).get("rows", [])
-            if data_table:
-                data_points = len(data_table)
-        if "chart_config" in data_content:
-            has_chart_config = data_content["chart_config"] is not None
+                # 获取最终数据（兼容两种结构）
+                data_content = None
+                if result and "result" in result and "final_report" in result["result"]:
+                    final_report = result["result"]["final_report"]
+                    if "type" in final_report and "data" in final_report and final_report.get("type") == "final_report":
+                        data_content = final_report.get("data")
+                    else:
+                        data_content = final_report
 
-    # 检查全零（已经在validate_result里做了，但这里记录）
-    # 重新计算all_zero用于统计
-    numeric_values: List[float] = []
-    if data_content:
-        trend_data = data_content.get("data", [])
-        data_table = data_content.get("data_table", {}).get("rows", [])
+                if data_content:
+                    if "data" in data_content:
+                        trend_data = data_content.get("data", [])
+                        if trend_data:
+                            data_points = len(trend_data)
+                    if "data_table" in data_content:
+                        data_table = data_content.get("data_table", {}).get("rows", [])
+                        if data_table:
+                            data_points = len(data_table)
+                    if "chart_config" in data_content:
+                        has_chart_config = data_content["chart_config"] is not None
 
-        if trend_data:
-            first_point = trend_data[0]
-            numeric_keys = [k for k in first_point.keys() if k != "date"]
-            if numeric_keys:
-                metric_key = numeric_keys[0]
-                for point in trend_data:
-                    val = point.get(metric_key)
-                    if isinstance(val, (int, float)):
-                        numeric_values.append(float(val))
+                # 检查全零
+                numeric_values: List[float] = []
+                if data_content:
+                    trend_data = data_content.get("data", [])
+                    data_table = data_content.get("data_table", {}).get("rows", [])
 
-        if data_table:
-            for row in data_table:
-                for cell in row:
-                    if isinstance(cell, (int, float)):
-                        numeric_values.append(float(cell))
-                    elif isinstance(cell, dict) and "value" in cell:
-                        val = cell["value"]
-                        if isinstance(val, (int, float)):
-                            numeric_values.append(float(val))
+                    if trend_data:
+                        first_point = trend_data[0]
+                        numeric_keys = [k for k in first_point.keys() if k != "date"]
+                        if numeric_keys:
+                            metric_key = numeric_keys[0]
+                            for point in trend_data:
+                                val = point.get(metric_key)
+                                if isinstance(val, (int, float)):
+                                    numeric_values.append(float(val))
 
-    if numeric_values:
-        all_zero_flag = all(v == 0 for v in numeric_values)
+                    if data_table:
+                        for row in data_table:
+                            for cell in row:
+                                if isinstance(cell, (int, float)):
+                                    numeric_values.append(float(cell))
+                                elif isinstance(cell, dict) and "value" in cell:
+                                    val = cell["value"]
+                                    if isinstance(val, (int, float)):
+                                        numeric_values.append(float(val))
 
-    detailed_result = {
+                if numeric_values:
+                    all_zero_flag = all(v == 0 for v in numeric_values)
+
+                detailed_result = {
+                    "test_id": test_case["id"],
+                    "test_name": test_case["name"],
+                    "query": query,
+                    "status": status,
+                    "analysis_type": expected["analysis_type"],
+                    "data_points": data_points,
+                    "has_chart_config": has_chart_config,
+                    "all_zero": all_zero_flag,
+                    "response_time": round(elapsed, 2),
+                    "error_message": None,
+                    "retries": attempt,  # 记录重试次数
+                }
+
+                # Always save raw response for debugging
+                detailed_result["raw_response"] = result
+
+                return detailed_result
+
+        # 记录本次结果
+        last_result = result
+
+    # 所有重试都失败了，返回最后一次的错误
+    elapsed = time.time() - start_time
+    return {
         "test_id": test_case["id"],
         "test_name": test_case["name"],
         "query": query,
-        "status": status,
+        "status": "error",
         "analysis_type": expected["analysis_type"],
-        "data_points": data_points,
-        "has_chart_config": has_chart_config,
-        "all_zero": all_zero_flag,
+        "data_points": 0,
+        "has_chart_config": False,
+        "all_zero": False,
         "response_time": round(elapsed, 2),
-        "error_message": error_message,
+        "error_message": f"{max_retries}次重试全部失败，最后一次错误: {last_error}",
+        "retries": max_retries,
+        "raw_response": last_result,
     }
-
-    # Always save raw response for debugging
-    detailed_result["raw_response"] = result
-
-    return detailed_result
 
 
 def main():

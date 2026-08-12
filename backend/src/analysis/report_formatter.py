@@ -22,6 +22,7 @@ from src.nl_dsl.models import (
     AnalysisResult as NlDslAnalysisResult,
     EmptyCheckResult,
 )
+from src.tools.hierarchy_utils import get_entity_names
 
 logger = logging.getLogger(__name__)
 
@@ -361,12 +362,131 @@ class ReportFormatter:
                 formatted_rows.append(row)
 
         # 处理列格式 - 只提取 label 给前端显示（表头）
+        # 同时保存原始key用于判断是否是ID列需要自动插入名称
         formatted_columns = []
+        original_keys = []  # 保存每个列的原始key
         for col in columns:
             if isinstance(col, dict):
-                formatted_columns.append(col.get("label", col.get("key", str(col))))
+                label = col.get("label", col.get("key", str(col)))
+                formatted_columns.append(label)
+                original_keys.append(col.get("key", col.get("key", str(col))))
             else:
                 formatted_columns.append(str(col))
+                original_keys.append(str(col))
+
+        # ---- 自动补充/修复维度名称（campaign_id → campaign_name 等） ----
+        # ID 维度字段 -> (name列显示名, entity_type)
+        id_to_name_map = {
+            "campaign_id": ("计划名称", "campaign"),
+            "adgroup_id": ("广告组名称", "adgroup"),
+            "advertiser_id": ("广告主名称", "advertiser"),
+            "creative_id": ("创意名称", "creative"),
+        }
+
+        # 名称列对应的entity_type
+        # 各种可能的名称列原始key映射到对应的entity_type
+        name_column_to_entity = {
+            "campaign_name": "campaign",
+            "adgroup_name": "adgroup",
+            "advertiser_name": "advertiser",
+            "creative_name": "creative",
+            "campaign 名称": "campaign",  # 已经label化的也要处理
+            "广告组名称": "adgroup",
+            "广告主名称": "advertiser",
+            "创意名称": "creative",
+        }
+
+        # 第一步：检查是否已经存在名称列，但是值仍然是ID，需要替换值
+        # 我们需要找到ID列→名称列的对应关系
+        id_to_name_column_idx: Dict[int, int] = {}  # id_column_idx -> name_column_idx
+
+        for id_original_key, (_, entity_type) in id_to_name_map.items():
+            # 查找是否已经存在对应名称列
+            for idx, (orig_key, col_label) in enumerate(zip(original_keys, formatted_columns)):
+                # 判断这列是否是对应entity的名称列
+                is_name_col = (orig_key in name_column_to_entity and name_column_to_entity[orig_key] == entity_type) or \
+                             (col_label in name_column_to_entity and name_column_to_entity[col_label] == entity_type)
+                if is_name_col:
+                    # 查找对应的ID列在哪里
+                    for id_idx, (id_orig_key, _) in enumerate(zip(original_keys, formatted_columns)):
+                        if id_orig_key == id_original_key:
+                            id_to_name_column_idx[id_idx] = idx
+                            break
+                    break
+
+        # 收集所有需要查询的实体和 ID
+        entity_ids_by_type = {}
+        name_needs_update = []  # [(id_col_idx, name_col_idx, entity_type)]
+
+        for id_col_idx, name_col_idx in id_to_name_column_idx.items():
+            # 从每行提取ID值，查询名称后更新到名称列
+            for row in formatted_rows:
+                if id_col_idx < len(row):
+                    val = row[id_col_idx]
+                    if val is not None and val != "":
+                        # 找到这个ID列对应的entity_type
+                        original_key = original_keys[id_col_idx]
+                        _, entity_type = id_to_name_map[original_key]
+                        if entity_type not in entity_ids_by_type:
+                            entity_ids_by_type[entity_type] = set()
+                        try:
+                            entity_ids_by_type[entity_type].add(int(val))
+                        except (ValueError, TypeError):
+                            pass
+                        name_needs_update.append((id_col_idx, name_col_idx, entity_type))
+
+        # 第二步：对于没有名称列的纯ID列，需要在ID列后插入名称列
+        name_insertions = []  # [(insert_after_idx, entity_type, name_col_name)]
+        for current_idx, original_key in enumerate(original_keys):
+            if original_key in id_to_name_map and current_idx not in id_to_name_column_idx:
+                name_display, entity_type = id_to_name_map[original_key]
+                name_insertions.append((current_idx, entity_type, name_display))
+                # 也需要收集ID
+                for row in formatted_rows:
+                    if current_idx < len(row):
+                        val = row[current_idx]
+                        if val is not None and val != "":
+                            if entity_type not in entity_ids_by_type:
+                                entity_ids_by_type[entity_type] = set()
+                            try:
+                                entity_ids_by_type[entity_type].add(int(val))
+                            except (ValueError, TypeError):
+                                pass
+
+        if entity_ids_by_type:
+            # 批量查询所有 name
+            name_maps = {}
+            for entity_type, ids in entity_ids_by_type.items():
+                if ids:
+                    name_maps[entity_type] = get_entity_names(entity_type, list(ids))
+                else:
+                    name_maps[entity_type] = {}
+
+            # 第一步：先更新已存在名称列的值（不影响索引）
+            for id_col_idx, name_col_idx, entity_type in name_needs_update:
+                name_map = name_maps.get(entity_type, {})
+                for row in formatted_rows:
+                    if id_col_idx < len(row) and name_col_idx < len(row):
+                        try:
+                            eid = int(row[id_col_idx])
+                            ename = name_map.get(eid, str(row[id_col_idx]))
+                            row[name_col_idx] = ename
+                        except (ValueError, TypeError):
+                            # 如果ID转换失败，保持原样
+                            pass
+
+            # 第二步：按位置从后往前插入新的名称列（避免索引偏移）
+            for current_idx, entity_type, name_display in sorted(name_insertions, key=lambda x: -x[0]):
+                name_map = name_maps.get(entity_type, {})
+                formatted_columns.insert(current_idx + 1, name_display)
+                for row in formatted_rows:
+                    if current_idx < len(row):
+                        try:
+                            eid = int(row[current_idx])
+                            ename = name_map.get(eid, "")
+                        except (ValueError, TypeError):
+                            ename = ""
+                        row.insert(current_idx + 1, ename)
 
         return {
             "columns": formatted_columns,
