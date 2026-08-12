@@ -894,24 +894,24 @@ def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> 
     if rows and base_dsl:
         from src.tools.hierarchy_utils import get_entity_names
 
+        # 如果 orig_columns 还不存在（聚合去重没发生），
+        # 需要根据第一步过滤得到的 keep_indices 过滤原始列，得到和当前 rows/columns 对应的原始列
+        if 'orig_columns' not in locals():
+            # orig_columns 初始化为原始列，然后过滤
+            orig_columns = result_dict.get('columns', [])
+            if keep_indices != list(range(len(orig_columns))):
+                orig_columns = [orig_columns[i] for i in keep_indices]
+
         # 找出所有需要补充 name 的 ID 列（通过 agg_field_map 反查实际字段名）
-        # columns 此时是显示名，需要对应回实际字段
-        # 所以我们基于原始 columns 和 agg_field_map 来判断
-        orig_columns = result_dict.get('columns', [])
+        # 当前 orig_columns 和 rows 已经过滤过，索引一一对应
         name_insertions = []  # [(insert_after_idx, entity_type, name_col_name)]
 
-        for orig_idx, orig_col in enumerate(orig_columns):
+        for current_idx, orig_col in enumerate(orig_columns):
             actual_field = agg_field_map.get(orig_col, orig_col)
             if actual_field in id_to_name_map:
                 name_display, entity_type = id_to_name_map[actual_field]
-                # 计算在当前 columns 中的位置（因为可能有列被过滤掉了）
-                # 用 keep_indices 映射
-                if keep_indices:
-                    if orig_idx in keep_indices:
-                        current_idx = keep_indices.index(orig_idx)
-                        name_insertions.append((current_idx, entity_type, name_display))
-                else:
-                    name_insertions.append((orig_idx, entity_type, name_display))
+                # current_idx 就是当前 rows 中的索引，直接使用
+                name_insertions.append((current_idx, entity_type, name_display))
 
         if name_insertions:
             # 收集所有需要查询的实体和 ID
@@ -934,13 +934,21 @@ def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> 
                             except (ValueError, TypeError):
                                 pass
 
+            # Debug: print to console because logging may be buffered
+            print(f"[debug-name] after collecting ids: entity_ids_by_type={entity_ids_by_type}")
+            logger.info(f"[debug-name] after collecting ids: entity_ids_by_type={entity_ids_by_type}")
+
             # 批量查询所有 name
             name_maps = {}
             for entity_type, ids in entity_ids_by_type.items():
                 if ids:
                     name_maps[entity_type] = get_entity_names(entity_type, list(ids))
+                    print(f"[debug-name] got {entity_type} names: {len(name_maps[entity_type])} names for {sorted(list(ids))} → {name_maps[entity_type]}")
+                    logger.info(f"[debug-name] got {entity_type} names: {len(name_maps[entity_type])} names for {sorted(list(ids))} → {name_maps[entity_type]}")
                 else:
                     name_maps[entity_type] = {}
+            print(f"[debug-name] name_insertions={name_insertions}, final columns before insert: {columns}, rows sample[0]={rows[0] if rows else '[]'}")
+            logger.info(f"[debug-name] name_insertions={name_insertions}, final columns before insert: {columns}, rows sample[0]={rows[0] if rows else '[]'}")
 
             # 按位置从后往前插入（避免索引偏移）
             for current_idx, entity_type, name_display in sorted(name_insertions, key=lambda x: -x[0]):
@@ -954,6 +962,8 @@ def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> 
                         except (ValueError, TypeError):
                             ename = ""
                         row.insert(current_idx + 1, ename)
+            if name_insertions:
+                logger.info(f"[debug-name] after insert: columns={columns}, rows[0]={rows[0] if rows else 'empty'}")
 
     # 生成标题
     time_range = report_intent.get('time_range', {}) if report_intent else {}
