@@ -81,8 +81,8 @@ def parse_args():
     parser.add_argument(
         "--timeout",
         type=float,
-        default=240.0,
-        help="请求超时时间（秒），默认240秒",
+        default=720.0,
+        help="请求超时时间（秒），默认720秒（支持最多3次重试，每次240秒)",
     )
     parser.add_argument(
         "--output",
