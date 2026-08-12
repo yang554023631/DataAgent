@@ -302,6 +302,9 @@ def _build_field_condition(field: str, operator: str, value: Any) -> Dict[str, A
     if operator == "=":
         return {"term": {field: value}}
     elif operator == "in":
+        # terms query requires an array, if value is not an array wrap it
+        if not isinstance(value, list):
+            value = [value]
         return {"terms": {field: value}}
     elif operator in operator_map:
         es_operator = operator_map[operator]

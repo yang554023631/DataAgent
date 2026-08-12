@@ -1,10 +1,11 @@
 import uuid
 import json
 import asyncio
-from typing import Dict, Any, List, AsyncGenerator
+from typing import Dict, Any, List, AsyncGenerator, Optional
 from datetime import datetime
 from src.graph.builder import app as graph_app
 from src.graph.callbacks import get_logging_callbacks
+from src.services.streaming_context import set_sse_queue, get_sse_queue
 
 class SessionService:
     """会话管理服务"""
@@ -209,7 +210,7 @@ class SessionService:
         }
 
     async def stream_message(self, session_id: str, user_input: str) -> AsyncGenerator[str, None]:
-        """发送消息并流式返回执行进度"""
+        """发送消息并流式返回执行进度（实时推送）"""
         session = self.get_session(session_id)
         if not session:
             # 发送错误事件
@@ -232,45 +233,60 @@ class SessionService:
             # 更新 user_input
             initial_state["user_input"] = user_input
 
-            # 执行 Graph
-            result = await graph_app.ainvoke(
-                initial_state,
-                config={
-                    "callbacks": get_logging_callbacks(),
-                    "configurable": {"thread_id": session_id},
-                },
-            )
+            # ========== 实时推送：创建事件队列 ==========
+            event_queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
+            set_sse_queue(event_queue)
 
-            # 保存状态
-            session["graph_state"] = result
+            # 图执行任务：执行 graph，完成后发送哨兵
+            async def run_graph():
+                try:
+                    result = await graph_app.ainvoke(
+                        initial_state,
+                        config={
+                            "callbacks": get_logging_callbacks(),
+                            "configurable": {"thread_id": session_id},
+                        },
+                    )
+                    # 保存状态
+                    session["graph_state"] = result
+                    # 发送哨兵表示完成
+                    await event_queue.put(None)
+                    return result
+                except Exception as e:
+                    # 异常发送错误事件，然后哨兵
+                    await event_queue.put({"type": "error", "message": str(e)})
+                    await event_queue.put(None)
+                    raise
 
-            # 从 execution_trace 回放步骤
-            execution_trace = result.get("execution_trace", [])
-            for step in execution_trace:
-                step_name = step.get("step")
-                status = step.get("status")
+            # 启动 graph 任务在后台执行
+            graph_task = asyncio.create_task(run_graph())
 
-                if status == "started":
-                    # 步骤开始事件
-                    yield f"data: {json.dumps({'type': 'step_start', 'step': step_name, 'status': 'started'})}\n\n"
-                else:
-                    # 步骤完成事件
-                    event_data = {
-                        "type": "step_complete",
-                        "step": step_name,
-                        "status": status
-                    }
-                    if "duration_ms" in step:
-                        event_data["duration_ms"] = step["duration_ms"]
-                    yield f"data: {json.dumps(event_data)}\n\n"
+            # 直接在主循环消费事件并 yield 给客户端
+            # 这样避免嵌套 AsyncGenerator 导致的缓冲问题
+            while True:
+                event = await event_queue.get()
+                if event is None:
+                    # 哨兵，退出
+                    break
+                # 发送 SSE 格式事件
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                # Yield 后立即让出控制权给事件循环
+                # 强制刷新输出缓冲区，确保每个事件立即发送给客户端
+                await asyncio.sleep(0)
 
-                # 小延迟制造流式效果
-                await asyncio.sleep(0.1)
+            # 等待 graph 任务完成
+            result = await graph_task
+
+            # 处理后续：CoT reasoning, 澄清, 最终报告, 完成
+            if result is None:
+                # graph 执行失败，已经发送了错误事件
+                yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+                return
 
             # 发送 CoT reasoning 事件（如果有）
             cot_reasoning = result.get("cot_reasoning")
             if cot_reasoning:
-                yield f"data: {json.dumps({'type': 'cot_reasoning', 'data': cot_reasoning})}\n\n"
+                yield f"data: {json.dumps({'type': 'cot_reasoning', 'data': cot_reasoning}, ensure_ascii=False)}\n\n"
 
             # 检查是否需要澄清
             needs_clarification = result.get("needs_clarification", False)
@@ -306,23 +322,28 @@ class SessionService:
                     }
 
                 # 发送澄清事件
-                yield f"data: {json.dumps({'type': 'hitl', 'question': clarification_info.get('question'), 'options': clarification_info.get('options', [])})}\n\n"
+                yield f"data: {json.dumps({'type': 'hitl', 'question': clarification_info.get('question'), 'options': clarification_info.get('options', [])}, ensure_ascii=False)}\n\n"
 
                 # 如果存在 final_report，也发送
                 if result.get("final_report"):
-                    yield f"data: {json.dumps({'type': 'final_report', 'data': result.get('final_report')})}\n\n"
+                    yield f"data: {json.dumps({'type': 'final_report', 'data': result.get('final_report')}, ensure_ascii=False)}\n\n"
             else:
                 # 发送最终报告
                 final_report = result.get("final_report")
                 if final_report:
-                    yield f"data: {json.dumps({'type': 'final_report', 'data': final_report})}\n\n"
+                    yield f"data: {json.dumps({'type': 'final_report', 'data': final_report}, ensure_ascii=False)}\n\n"
+
+            # 清除上下文
+            set_sse_queue(None)
 
             # 完成事件
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
         except Exception as e:
+            # 清除上下文
+            set_sse_queue(None)
             # 错误事件
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
 # 单例

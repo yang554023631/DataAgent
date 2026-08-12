@@ -6,6 +6,7 @@ import time
 import logging
 import sys
 import os
+import asyncio
 # Add project root to sys.path to import src.analysis and src.nl_dsl
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from typing import Dict, Any, Optional, List
@@ -16,12 +17,48 @@ from src.agents.analyst_agent import analyst_agent
 from src.agents.reporter_agent import reporter_agent, format_comparison_report
 from src.agents.insight_agent import insight_agent, insights_to_highlights
 from src.services.advertiser_service import get_all_advertisers
+from src.services.streaming_context import get_sse_queue
 from src.intent.top_classifier import get_top_classifier
 from src.intent.report_intent import get_report_intent_analyzer
 from src.intent.clarify_node import clarify_node as clarify_node_impl, build_clarification_state
 from src.intent.reject_node import reject_node as reject_node_impl
 
 logger = logging.getLogger(__name__)
+
+
+async def _push_sse_event(event: Dict[str, Any]) -> None:
+    """推送事件到 SSE 队列（如果当前是流式请求）"""
+    queue = get_sse_queue()
+    if queue is not None:
+        try:
+            import time
+            from datetime import datetime
+            # 根据步骤类型转换事件类型
+            event_type = None
+            status = event.get("status")
+            if status == "started":
+                event_type = "step_start"
+            else:
+                event_type = "step_complete"
+
+            sse_event = {
+                "type": event_type,
+                "step": event.get("step"),
+                "status": status,
+                "server_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],  # 服务器端时间，方便观测推送时机
+            }
+            # 复制其他字段
+            for k, v in event.items():
+                if k not in sse_event:
+                    sse_event[k] = v
+
+            await queue.put(sse_event)
+            # 让出控制权给事件循环，确保消费者能立即取出并发送这个事件
+            # 避免多个事件攒在一起最后一次性发送
+            await asyncio.sleep(0)
+        except Exception as e:
+            # 推送失败不影响主流程，只打日志
+            logger.warning(f"Failed to push SSE event: {e}")
 
 
 def _generate_suggested_queries(advertiser_name: str) -> list:
@@ -546,12 +583,21 @@ async def intent_classifier_node(state: dict) -> dict:
     user_input = state.get("user_input", "")
     conversation_history = state.get("conversation_history", [])
 
+    # 获取已有的 execution_trace
+    execution_trace: List[Dict[str, Any]] = state.get("execution_trace", [])
+
+    step_start = time.time()
+    event = {"step": "intent_classifier", "status": "started"}
+    execution_trace.append(event)
+    await _push_sse_event(event)
+
     logger.info(f"开始顶层意图分类: 用户输入='{user_input[:100]}'")
 
     classifier = get_top_classifier()
     result = await classifier.classify(user_input, conversation_history)
 
     updates = {
+        "execution_trace": execution_trace,
         "intent_category": result.category,
         "intent_confidence": result.confidence,
         "intent_classify_source": result.source,
@@ -574,8 +620,24 @@ async def intent_classifier_node(state: dict) -> dict:
             missing_fields=[],
         )
         updates.update(build_clarification_state(clarification))
+        event = {
+            "step": "intent_classifier",
+            "status": "needs_clarification",
+            "duration_ms": int((time.time() - step_start) * 1000),
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"顶层意图分类完成: 分类={result.category}, 置信度={result.confidence:.2f}, 触发澄清=True")
     else:
+        event = {
+            "step": "intent_classifier",
+            "status": "success",
+            "duration_ms": int((time.time() - step_start) * 1000),
+            "category": result.category,
+            "confidence": result.confidence,
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"顶层意图分类完成: 分类={result.category}, 置信度={result.confidence:.2f}, 来源={result.source}")
 
     return updates
@@ -587,10 +649,18 @@ async def report_intent_node(state: dict) -> dict:
     conversation_history = state.get("conversation_history", [])
     existing_advertiser_ids = list(state.get("advertiser_ids") or [])
 
+    # 获取已有的 execution_trace
+    execution_trace: List[Dict[str, Any]] = state.get("execution_trace", [])
+
     # --- 澄清回填：上一轮是 missing_advertiser 澄清时，把用户选择的广告主直接填入 ---
     clarification_info = state.get("clarification") or {}
     last_clarification_type = clarification_info.get("type", "")
     pending_input = state.get("pending_clarification_input", "")
+
+    step_start = time.time()
+    event = {"step": "report_intent", "status": "started"}
+    execution_trace.append(event)
+    await _push_sse_event(event)
 
     if last_clarification_type == "missing_advertiser" and pending_input:
         resolved_ids = _resolve_advertiser_from_feedback(pending_input)
@@ -617,7 +687,9 @@ async def report_intent_node(state: dict) -> dict:
         existing_ad_level=existing_ad_level,
     )
 
-    updates = {}
+    updates = {
+        "execution_trace": execution_trace,
+    }
 
     # 写入路由信息到 state（所有路径都有 route_info）
     if route_info:
@@ -629,6 +701,15 @@ async def report_intent_node(state: dict) -> dict:
         # 纯广告主查询，直接返回 final_report
         updates["final_report"] = final_report
         updates["needs_clarification"] = False
+        event = {
+            "step": "report_intent",
+            "status": "success",
+            "duration_ms": int((time.time() - step_start) * 1000),
+            "route": route_info["route"],
+            "has_final_report": True,
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"报表意图识别完成: 检测到纯广告主查询, 路由={route_info['route']}")
     else:
         # 非纯广告主查询路径，清除旧的 final_report（避免 state 中残留上一轮的结果）
@@ -664,15 +745,39 @@ async def report_intent_node(state: dict) -> dict:
         if clarification:
             # 需要澄清
             updates.update(build_clarification_state(clarification))
+            event = {
+                "step": "report_intent",
+                "status": "needs_clarification",
+                "duration_ms": int((time.time() - step_start) * 1000),
+            }
+            execution_trace.append(event)
+            await _push_sse_event(event)
             logger.info(f"报表意图识别完成: 触发澄清=True, 类型={clarification.type}, 路由={route_info['route']}")
         else:
             # 不需要澄清，确保标志位为 False
             updates["needs_clarification"] = False
             if result:
+                event = {
+                    "step": "report_intent",
+                    "status": "success",
+                    "duration_ms": int((time.time() - step_start) * 1000),
+                    "route": route_info["route"],
+                }
+                execution_trace.append(event)
+                await _push_sse_event(event)
                 log_msg = f"报表意图识别完成: 广告主={result.advertiser_ids}, 时间={result.time_range and result.time_range.start_date + '~' + result.time_range.end_date}, 指标={result.metrics}, 层级={result.ad_level}"
                 log_msg += f", 路由={route_info['route']}, 原因={route_info['reason']}"
                 logger.info(log_msg)
             else:
+                event = {
+                    "step": "report_intent",
+                    "status": "success",
+                    "duration_ms": int((time.time() - step_start) * 1000),
+                    "route": route_info["route"],
+                    "result_empty": True,
+                }
+                execution_trace.append(event)
+                await _push_sse_event(event)
                 logger.info(f"报表意图识别完成: 结果为空, 路由={route_info['route']}")
 
     return updates
@@ -1099,9 +1204,19 @@ async def nl_dsl_node(state: dict) -> dict:
     report_intent = state.get("report_intent_result", {}) or {}
     advertiser_ids = state.get("advertiser_ids", [])
 
+    # 获取已有的 execution_trace
+    execution_trace: List[Dict[str, Any]] = state.get("execution_trace", [])
+
+    step_start = time.time()
+    event = {"step": "nl_dsl", "status": "started"}
+    execution_trace.append(event)
+    await _push_sse_event(event)
+
     logger.info(f"开始NL→DSL查询: 用户输入='{truncate_log(user_input, 100)}', 广告主={advertiser_ids}")
 
-    updates = {}
+    updates = {
+        "execution_trace": execution_trace,
+    }
 
     try:
         # 1. 构造约束
@@ -1135,6 +1250,14 @@ async def nl_dsl_node(state: dict) -> dict:
             final_error = result.metadata.get("final_error", "未知错误")
             final_report = _build_failure_guide_report(result, user_input)
             updates["final_report"] = final_report
+            event = {
+                "step": "nl_dsl",
+                "status": "failed",
+                "duration_ms": int((time.time() - step_start) * 1000),
+                "error": final_error,
+            }
+            execution_trace.append(event)
+            await _push_sse_event(event)
             logger.info(f"NL→DSL查询失败: 生成失败引导报告, 错误={final_error}, metadata={result.metadata}")
             return updates
 
@@ -1149,6 +1272,16 @@ async def nl_dsl_node(state: dict) -> dict:
         else:
             updates["query_context"] = {}
 
+        event = {
+            "step": "nl_dsl",
+            "status": "success",
+            "duration_ms": int((time.time() - step_start) * 1000),
+            "display_type": result.display_type,
+            "total_rows": result.metadata.get('total_rows', 0),
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
+
         logger.info(
             f"NL→DSL查询完成: 呈现类型={result.display_type}, "
             f"行数={result.metadata.get('total_rows', 0)}"
@@ -1156,6 +1289,14 @@ async def nl_dsl_node(state: dict) -> dict:
 
     except Exception as e:
         logger.exception(f"NL→DSL节点异常: error={e}")
+        event = {
+            "step": "nl_dsl",
+            "status": "failed",
+            "duration_ms": int((time.time() - step_start) * 1000),
+            "error": str(e),
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
         # 失败引导
         final_report = _build_failure_guide_report(e, user_input)
         updates["final_report"] = final_report
@@ -1246,7 +1387,9 @@ async def analysis_node(state: dict) -> dict:
     try:
         # ========== 步骤 1: IntentAnalyzer - 字段提取 ==========
         step_start = time.time()
-        execution_trace.append({"step": "intent_analyzer", "status": "started"})
+        event = {"step": "intent_analyzer", "status": "started"}
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 1: IntentAnalyzer started")
 
         try:
@@ -1259,25 +1402,30 @@ async def analysis_node(state: dict) -> dict:
             field_context = intent_result.field_context
             updates["field_context"] = field_context.model_dump() if field_context else None
 
-            execution_trace.append({
+            event = {
                 "step": "intent_analyzer",
                 "status": "success",
                 "duration_ms": int((time.time() - step_start) * 1000),
                 "extracted_fields": {
                     "metrics": getattr(field_context, "metrics", []),
                     "target_level": getattr(field_context, "target_level", None),
-                    "time_range": getattr(field_context, "time_range", None)
+                    "time_range": getattr(field_context, "time_range", None).model_dump()
+                        if getattr(field_context, "time_range", None) is not None else None
                 }
-            })
+            }
+            execution_trace.append(event)
+            await _push_sse_event(event)
             logger.info(f"[AnalysisNode] Step 1: IntentAnalyzer completed")
         except Exception as e:
             logger.exception(f"[AnalysisNode] Step 1 failed: {e}")
-            execution_trace.append({
+            event = {
                 "step": "intent_analyzer",
                 "status": "failed",
                 "error": str(e),
                 "duration_ms": int((time.time() - step_start) * 1000)
-            })
+            }
+            execution_trace.append(event)
+            await _push_sse_event(event)
             # 继续执行 - CotPlanner 可以处理没有 field_context 的情况
             field_context = None
 
@@ -1297,7 +1445,9 @@ async def analysis_node(state: dict) -> dict:
 
         # ========== 步骤 2: CotPlanner - 生成分析计划 ==========
         step_start = time.time()
-        execution_trace.append({"step": "cot_planner", "status": "started"})
+        event = {"step": "cot_planner", "status": "started"}
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 2: CotPlanner started")
 
         cot_planner = get_cot_planner()
@@ -1330,11 +1480,13 @@ async def analysis_node(state: dict) -> dict:
                 "cot_reasoning": cot_result.reasoning.model_dump() if cot_result.reasoning else None
             })
 
-            execution_trace.append({
+            event = {
                 "step": "cot_planner",
                 "status": "hitl_required",
                 "duration_ms": int((time.time() - step_start) * 1000)
-            })
+            }
+            execution_trace.append(event)
+            await _push_sse_event(event)
             logger.info(f"[AnalysisNode] Step 2: HITL required - clarification needed")
             return updates
 
@@ -1343,12 +1495,14 @@ async def analysis_node(state: dict) -> dict:
             error_msg = f"CoT planning failed: {cot_result.status}"
             logger.error(f"[AnalysisNode] {error_msg}")
 
-            execution_trace.append({
+            event = {
                 "step": "cot_planner",
                 "status": "failed",
                 "error": error_msg,
                 "duration_ms": int((time.time() - step_start) * 1000)
-            })
+            }
+            execution_trace.append(event)
+            await _push_sse_event(event)
 
             # 生成错误报告
             report_formatter = ReportFormatter()
@@ -1373,17 +1527,21 @@ async def analysis_node(state: dict) -> dict:
             "cot_reasoning": cot_result.reasoning.model_dump() if cot_result.reasoning else None
         })
 
-        execution_trace.append({
+        event = {
             "step": "cot_planner",
             "status": "success",
             "duration_ms": int((time.time() - step_start) * 1000),
             "analysis_type": analysis_plan_result.analysis_plan.analysis_type.value if hasattr(analysis_plan_result.analysis_plan.analysis_type, "value") else analysis_plan_result.analysis_plan.analysis_type
-        })
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 2: CotPlanner completed successfully")
 
         # ========== 步骤 3: FilterExecutor - 执行筛选计划 ==========
         step_start = time.time()
-        execution_trace.append({"step": "filter_executor", "status": "started"})
+        event = {"step": "filter_executor", "status": "started"}
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 3: FilterExecutor started")
 
         filter_executor = FilterExecutor(es_client=es_client)
@@ -1403,18 +1561,22 @@ async def analysis_node(state: dict) -> dict:
 
         updates["filter_result"] = filter_result.model_dump()
 
-        execution_trace.append({
+        event = {
             "step": "filter_executor",
             "status": "success",
             "duration_ms": int((time.time() - step_start) * 1000),
             "entity_count": filter_result.total_count,
             "entity_level": filter_result.entity_level
-        })
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 3: FilterExecutor completed, got {filter_result.total_count} entities")
 
         # ========== 步骤 3.5: EmptyResultChecker - 空结果检查 ==========
         step_start = time.time()
-        execution_trace.append({"step": "empty_result_checker", "status": "started"})
+        event = {"step": "empty_result_checker", "status": "started"}
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 3.5: EmptyResultChecker started")
 
         empty_checker = EmptyResultChecker(es_client=es_client)
@@ -1425,12 +1587,14 @@ async def analysis_node(state: dict) -> dict:
         )
 
         if empty_check_result.found_error:
-            execution_trace.append({
+            event = {
                 "step": "empty_result_checker",
                 "status": "empty_data",
                 "duration_ms": int((time.time() - step_start) * 1000),
                 "error_type": empty_check_result.error_type.value if hasattr(empty_check_result.error_type, "value") else empty_check_result.error_type
-            })
+            }
+            execution_trace.append(event)
+            await _push_sse_event(event)
             logger.info(f"[AnalysisNode] Step 3.5: EmptyResultChecker found empty data, skipping AnalysisExecutor")
 
             # 直接生成空结果报告
@@ -1444,23 +1608,29 @@ async def analysis_node(state: dict) -> dict:
 
             updates["final_report"] = final_report
             total_duration = int((time.time() - start_time) * 1000)
-            execution_trace.append({
+            event = {
                 "step": "complete",
                 "status": "empty",
                 "total_duration_ms": total_duration
-            })
+            }
+            execution_trace.append(event)
+            await _push_sse_event(event)
             return updates
 
-        execution_trace.append({
+        event = {
             "step": "empty_result_checker",
             "status": "success",
             "duration_ms": int((time.time() - step_start) * 1000)
-        })
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 3.5: EmptyResultChecker passed, continuing to AnalysisExecutor")
 
         # ========== 步骤 4: AnalysisExecutor - 执行分析计划 ==========
         step_start = time.time()
-        execution_trace.append({"step": "analysis_executor", "status": "started"})
+        event = {"step": "analysis_executor", "status": "started"}
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 4: AnalysisExecutor started")
 
         analysis_executor = AnalysisExecutor(es_client=es_client)
@@ -1475,19 +1645,23 @@ async def analysis_node(state: dict) -> dict:
 
         updates["chart_data"] = analysis_result.model_dump()
 
-        execution_trace.append({
+        event = {
             "step": "analysis_executor",
             "status": "success",
             "duration_ms": int((time.time() - step_start) * 1000),
             "has_data": analysis_result.success and (analysis_result.data_table is not None or analysis_result.chart_data is not None)
-        })
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 4: AnalysisExecutor completed")
 
         # ========== 步骤 5: QualityChecker - 质量检查（可跳过） ==========
         quality_result = None
         if skip_quality_check:
             step_start = time.time()
-            execution_trace.append({"step": "quality_checker", "status": "skipped"})
+            event = {"step": "quality_checker", "status": "skipped"}
+            execution_trace.append(event)
+            await _push_sse_event(event)
             logger.info("[AnalysisNode] Step 5: QualityChecker skipped (user chose to continue)")
             # 创建一个空的 QualityResult
             from src.nl_dsl.quality_checker import QualityResult as QCResult
@@ -1496,7 +1670,9 @@ async def analysis_node(state: dict) -> dict:
             updates["quality_result"] = quality_result.model_dump()
         else:
             step_start = time.time()
-            execution_trace.append({"step": "quality_checker", "status": "started"})
+            event = {"step": "quality_checker", "status": "started"}
+            execution_trace.append(event)
+            await _push_sse_event(event)
             logger.info(f"[AnalysisNode] Step 5: QualityChecker started")
 
             quality_checker = QualityChecker()
@@ -1542,27 +1718,33 @@ async def analysis_node(state: dict) -> dict:
                     "hitl_request": hitl_request
                 })
 
-                execution_trace.append({
+                event = {
                     "step": "quality_checker",
                     "status": "hitl_required",
                     "duration_ms": int((time.time() - step_start) * 1000),
                     "issue_count": len(quality_result.issues)
-                })
+                }
+                execution_trace.append(event)
+                await _push_sse_event(event)
                 logger.info(f"[AnalysisNode] Step 5: QualityChecker suggests HITL")
                 return updates
 
-            execution_trace.append({
+            event = {
                 "step": "quality_checker",
                 "status": "success",
                 "duration_ms": int((time.time() - step_start) * 1000),
                 "issue_count": len(quality_result.issues),
                 "warning_count": len([i for i in quality_result.issues if i.severity == "warning"])
-            })
+            }
+            execution_trace.append(event)
+            await _push_sse_event(event)
             logger.info(f"[AnalysisNode] Step 5: QualityChecker completed with {len(quality_result.issues)} issues")
 
         # ========== 步骤 6: ReportFormatter - 生成最终报告 ==========
         step_start = time.time()
-        execution_trace.append({"step": "report_formatter", "status": "started"})
+        event = {"step": "report_formatter", "status": "started"}
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 6: ReportFormatter started")
 
         report_formatter = ReportFormatter()
@@ -1577,21 +1759,25 @@ async def analysis_node(state: dict) -> dict:
 
         updates["final_report"] = final_report
 
-        execution_trace.append({
+        event = {
             "step": "report_formatter",
             "status": "success",
             "duration_ms": int((time.time() - step_start) * 1000),
             "report_type": final_report.get("report_type", "unknown")
-        })
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 6: ReportFormatter completed")
 
         # ========== 完成 ==========
         total_duration = int((time.time() - start_time) * 1000)
-        execution_trace.append({
+        event = {
             "step": "complete",
             "status": "success",
             "total_duration_ms": total_duration
-        })
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
         logger.info(f"[AnalysisNode] All steps completed in {total_duration}ms")
 
         return updates
@@ -1601,12 +1787,14 @@ async def analysis_node(state: dict) -> dict:
         logger.exception(f"[AnalysisNode] Unexpected error: {e}")
 
         error_duration = int((time.time() - start_time) * 1000)
-        execution_trace.append({
+        event = {
             "step": "error",
             "status": "failed",
             "error": str(e),
             "duration_ms": error_duration
-        })
+        }
+        execution_trace.append(event)
+        await _push_sse_event(event)
 
         # 尝试生成错误报告
         try:

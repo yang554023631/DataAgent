@@ -402,6 +402,7 @@ class ReportFormatter:
 
         for id_original_key, (_, entity_type) in id_to_name_map.items():
             # 查找是否已经存在对应名称列
+            found = False
             for idx, (orig_key, col_label) in enumerate(zip(original_keys, formatted_columns)):
                 # 判断这列是否是对应entity的名称列
                 is_name_col = (orig_key in name_column_to_entity and name_column_to_entity[orig_key] == entity_type) or \
@@ -412,7 +413,9 @@ class ReportFormatter:
                         if id_orig_key == id_original_key:
                             id_to_name_column_idx[id_idx] = idx
                             break
-                    break
+                    found = True
+                    break  # 找到名称列，跳出当前循环
+            # 找到后就不需要继续找了
 
         # 收集所有需要查询的实体和 ID
         entity_ids_by_type = {}

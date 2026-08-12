@@ -72,12 +72,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ],
       isStreaming: true,
       currentSteps: [
-        { id: 'intent_analyzer', label: '理解查询意图', status: 'pending' },
+        { id: 'intent_classifier', label: '识别查询意图', status: 'pending' },
+        { id: 'report_intent', label: '解析报表参数', status: 'pending' },
+        { id: 'intent_analyzer', label: '提取查询字段', status: 'pending' },
         { id: 'cot_planner', label: '生成分析计划', status: 'pending' },
         { id: 'filter_executor', label: '执行筛选查询', status: 'pending' },
         { id: 'empty_result_checker', label: '空结果检查', status: 'pending' },
         { id: 'analysis_executor', label: '执行分析查询', status: 'pending' },
         { id: 'quality_checker', label: '质量校验', status: 'pending' },
+        { id: 'report_formatter', label: '生成最终报告', status: 'pending' },
       ],
       _streamCleanup: undefined
     }));
