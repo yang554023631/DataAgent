@@ -150,7 +150,7 @@ class CotPlanner:
         )
 
         # Step 3: Build prompt
-        user_prompt = build_cot_user_prompt(
+        base_user_prompt = build_cot_user_prompt(
             user_query=user_input,
             field_context=field_context.model_dump() if field_context else {},
             advertisers=advertisers or [],
@@ -168,7 +168,15 @@ class CotPlanner:
 
         while retry_count <= self.max_retries:
             try:
-                raw_response = self._call_llm(system_prompt, user_prompt, retry_count > 0)
+                # Build prompt with error feedback if this is a retry
+                if retry_count > 0 and last_error is not None:
+                    # Add error feedback to prompt
+                    error_feedback = self._build_error_feedback(last_error)
+                    current_user_prompt = base_user_prompt + "\n\n" + error_feedback
+                else:
+                    current_user_prompt = base_user_prompt
+
+                raw_response = self._call_llm(system_prompt, current_user_prompt, retry_count > 0)
                 logger.debug(f"LLM response received (attempt {retry_count + 1})")
 
                 # Step 5: Parse and validate
@@ -343,11 +351,12 @@ class CotPlanner:
             plan = AnalysisPlanResult(**parsed)
 
             # Validate
-            validation_errors = self._validate_plan(plan)
+            validation_errors = self._validate_plan(plan, field_context)
             if validation_errors:
                 logger.warning(f"Plan validation failed: {validation_errors}")
                 return CotPlanResult(
                     status=CotResultStatus.VALIDATION_FAILED,
+                    plan=plan,
                     raw_response=raw_response,
                 )
 
@@ -363,6 +372,70 @@ class CotPlanner:
             return CotPlanResult(
                 status=CotResultStatus.PARSE_FAILED,
                 raw_response=raw_response,
+            )
+
+    def _build_error_feedback(self, last_error) -> str:
+        """
+        Build error feedback prompt for retries.
+
+        Args:
+            last_error: The previous error result (CotPlanResult or Exception)
+
+        Returns:
+            str: Error feedback text to append to prompt
+        """
+        if isinstance(last_error, CotPlanResult):
+            if last_error.status == CotResultStatus.PARSE_FAILED:
+                return (
+                    "\n\n⚠️ **ERROR - 请修正后重试**\n"
+                    "你的上一次输出解析失败了。\n"
+                    "可能原因：JSON格式不正确，缺少必要的双引号，或者有多余的逗号。\n"
+                    "请重新检查JSON格式，输出严格正确的JSON格式。"
+                )
+            elif last_error.status == CotResultStatus.VALIDATION_FAILED:
+                # 如果 last_error 有 plan，我们可以检查具体的验证错误
+                feedback_lines = [
+                    "\n\n⚠️ **ERROR - 请修正后重试**",
+                    "你的上一次计划验证失败了，请修正以下错误后重新输出："
+                ]
+                # Extract validation errors if available
+                if last_error.plan:
+                    # We can't get the errors directly from last_error, but we can re-validate
+                    from src.analysis.models import AnalysisPlanResult
+                    # The errors were already collected in _validate_plan
+                    # Just add the general specific reminders
+                    if (last_error.plan.field_context and
+                        last_error.plan.field_context.metrics and
+                        last_error.plan.analysis_plan and
+                        last_error.plan.analysis_plan.metrics):
+                        expected = last_error.plan.field_context.metrics
+                        actual = last_error.plan.analysis_plan.metrics
+                        if sorted(expected) != sorted(actual):
+                            feedback_lines.append(f"- ⚠️ METRICS MISMATCH: field_context specifies metrics = {expected}, but you output metrics = {actual}. THEY MUST BE EXACTLY THE SAME (same count, same names). THIS IS A HARD REQUIREMENT. Fix it NOW.")
+
+                feedback_lines.extend([
+                    "- 如果 field_context 中已经指定了 metrics，analysis_plan.metrics 必须与 field_context.metrics 完全一致（数量和名称都必须相同）",
+                    "- 所有必填字段都必须填写，不能为 null",
+                    "- 受众分布分析必须正确设置 audience_dimension 字段名（如 性别 → audience_gender）",
+                    "- group_by 必须使用实体层级名称（如 campaign），不能使用带 _id 后缀的字段名",
+                    "\n请修正这些错误，重新输出完整正确的JSON计划。"
+                ])
+                return "\n".join(feedback_lines)
+            else:
+                return (
+                    "\n\n⚠️ **ERROR - 请修正后重试**\n"
+                    "你的上一次输出验证失败了，请重新检查并修正错误后再次输出。"
+                )
+        elif isinstance(last_error, Exception):
+            return (
+                f"\n\n⚠️ **ERROR - 请修正后重试**\n"
+                f"上一次执行遇到错误：{str(last_error)}\n"
+                "请修正后重新输出。"
+            )
+        else:
+            return (
+                "\n\n⚠️ **ERROR - 请修正后重试**\n"
+                "上一次输出有错误，请修正后重新输出。"
             )
 
     def _extract_json(self, text: str) -> Optional[str]:
@@ -419,9 +492,14 @@ class CotPlanner:
             raw_text=reasoning_text,
         )
 
-    def _validate_plan(self, plan: AnalysisPlanResult) -> List[str]:
+    def _validate_plan(self, plan: AnalysisPlanResult, input_field_context: Optional[FieldContext] = None) -> List[str]:
         """
         Validate the analysis plan and auto-add base metrics for derived metrics.
+
+        Args:
+            plan: The parsed analysis plan result
+            input_field_context: Field context from intent analysis (input to planner),
+                this is the authoritative source, not what LLM output in plan.field_context.
 
         Returns:
             List of validation errors (empty if valid)
@@ -448,8 +526,23 @@ class CotPlanner:
             if not plan.analysis_plan.time_range:
                 errors.append("time_range is required")
 
+            # Check metrics consistency with field_context
+            # Use the input_field_context from intent analysis (authoritative) NOT plan.field_context
+            if input_field_context and input_field_context.metrics:
+                # field_context 已经指定了 metrics，analysis_plan.metrics 必须完全一致
+                expected_metrics = input_field_context.metrics
+                actual_metrics = plan.analysis_plan.metrics
+                if sorted(expected_metrics) != sorted(actual_metrics):
+                    errors.append(
+                        f"metrics mismatch: field_context specifies {expected_metrics}, "
+                        f"but analysis_plan has {actual_metrics}. "
+                        f"They must be exactly the same (same count and same names) per prompt instructions."
+                    )
+
             # Auto-add base metrics for derived metrics in analysis_plan
-            if plan.analysis_plan.metrics:
+            # Only do this if field_context doesn't already specify metrics
+            # If field_context specifies metrics, we shouldn't add anything - mismatch is an error
+            if plan.analysis_plan.metrics and not (input_field_context and input_field_context.metrics):
                 metrics_set = set(plan.analysis_plan.metrics)
                 for metric in list(metrics_set):  # Iterate over copy
                     if metric in DERIVED_METRICS:

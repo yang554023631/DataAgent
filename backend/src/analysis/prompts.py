@@ -63,6 +63,23 @@ For entity_table analysis, the `group_by` field should be the **entity level nam
 - audience_distribution: 受众分布（如"按性别、年龄看分布"）
 - summary: 摘要/概览（如"整体数据概览"）
 
+## 受众维度字段映射（audience_distribution 必须使用）
+当分析类型为 `audience_distribution` 时，用户提到的受众维度需要映射到正确的字段名：
+
+中文名称 → 字段名：
+- 性别 → `audience_gender`
+- 年龄 → `audience_age`
+- 年龄段 → `audience_age`
+- 操作系统 → `audience_os`
+- 设备 → `audience_os`
+- 兴趣 → `audience_interest`
+- 兴趣标签 → `audience_interest`
+- 国家 → `audience_country`
+- 城市 → `audience_city`
+- 地域 → `audience_city`
+
+示例：用户说"按性别分布"，你需要在 `analysis_plan.audience_dimension` 中填写 `"audience_gender"`。
+
 ## 可用的图表类型（chart type）
 - line: 折线图（适合时间趋势）
 - bar: 柱状图（适合对比、分布）
@@ -217,7 +234,8 @@ For entity_table analysis, the `group_by` field should be the **entity level nam
 3. 如果用户的问题中缺少必要信息（如广告主、时间范围），优先返回澄清请求
 4. 日期格式统一使用 YYYY-MM-DD
 5. 衍生指标需要确保其依赖的基础指标也包含在 metrics 中
-6. 今天的日期是 {today_date}
+6. **字段上下文一致性要求**：如果 `field_context` 中已经指定了 `metrics`，那么 `analysis_plan.metrics` 必须与 `field_context.metrics` 完全一致（指标数量和指标名称都必须相同），不能多也不能少。这是硬性要求，必须严格遵守。
+7. 今天的日期是 {today_date}
 """
 
 # ==================== 用户提示模板 ====================
@@ -263,6 +281,8 @@ def build_field_context_section(field_context: dict) -> str:
         lines.append(f"- 目标层级: {field_context['target_level']}")
     if field_context.get("metrics"):
         lines.append(f"- 指标: {field_context['metrics']}")
+        # 额外添加醒目的提醒，减少幻觉
+        lines.append(f"  ✅ **硬性要求**: analysis_plan.metrics 必须完全等于 {field_context['metrics']}，指标数量和名称都必须完全一致，不能多也不能少！")
 
     return "\n".join(lines) if lines else "（无已确认字段）"
 

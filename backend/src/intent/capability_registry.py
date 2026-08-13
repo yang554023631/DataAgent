@@ -13,6 +13,7 @@ from src.tools.term_mapper import METRIC_MAPPING, DIMENSION_MAPPING
 
 # 标准名 -> 中文别名
 AD_LEVEL_MAP: Dict[str, List[str]] = {
+    "advertiser": ["广告主", "整个广告主", "全部", "advertiser", "account"],
     "campaign": ["计划", "广告计划", "活动", "广告活动", "campaign"],
     "ad_group": ["广告组", "组", "adgroup", "ad_group"],
     "creative": ["创意", "素材", "creative", "creatives"],

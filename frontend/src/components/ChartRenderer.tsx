@@ -249,11 +249,21 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
     const valueField = report?.chart_config?.y_axis?.field || metrics[0] || 'value';
     const seriesConfig = report?.chart_config?.series || [];
 
-    const pieData = data.map((item, index) => ({
-      value: Number(item[valueField]) || 0,
-      name: String(item[seriesField] || item.name || `项${index + 1}`),
-      itemStyle: seriesConfig[index]?.color ? { color: seriesConfig[index].color } : undefined,
-    }));
+    const pieData = data.map((item, index) => {
+      // 优先使用 chart_config.series 中的 name（受众分布已经后端映射好了中文）
+      // 如果没有，再从 data 中拿，最后 fallback 到 项N
+      let name: string;
+      if (seriesConfig[index]?.name) {
+        name = seriesConfig[index].name;
+      } else {
+        name = String(item[seriesField] || item.name || item.label || `项${index + 1}`);
+      }
+      return {
+        value: Number(item[valueField]) || 0,
+        name,
+        itemStyle: seriesConfig[index]?.color ? { color: seriesConfig[index].color } : undefined,
+      };
+    });
 
     const pieOption: EChartsOption = {
       tooltip: {

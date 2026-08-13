@@ -122,6 +122,8 @@ class AnalysisComparison(BaseModel):
     compare_end_date: str = Field(..., description="Comparison period end date")
 
 
+from typing import Union
+
 class AnalysisPlan(BaseModel):
     """Analysis plan (the analysis part, different from existing AnalysisPlan)."""
     analysis_type: AnalysisType = Field(..., description="Type of analysis")
@@ -131,7 +133,7 @@ class AnalysisPlan(BaseModel):
     compare_time_range: Optional[AnalysisComparison] = Field(None, description="Comparison period (for period_comparison)")
     time_granularity: str = Field("day", description="Time granularity: day/week/month")
     audience_dimension: Optional[str] = Field(None, description="Audience dimension (for audience_distribution)")
-    group_by: Optional[str] = Field(None, description="Group by field (for entity_table or multi-series trend)")
+    group_by: Optional[Union[str, List[str]]] = Field(None, description="Group by field(s) (for entity_table or multi-series trend). Can be a single string or a list of strings for multiple groupings.")
     order_by: Optional[str] = Field(None, description="Order by field")
     order_dir: str = Field("desc", description="Order direction: asc/desc")
     limit: int = Field(100, description="Limit number of results")

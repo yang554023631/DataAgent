@@ -166,9 +166,105 @@ class ReportIntentAnalyzer:
         - 指标：LLM 提取的 vs map_metrics 提取的，取并集
         - 维度：LLM 提取的 vs map_dimensions 提取的，取并集
         - 不一致但置信度高的以 LLM 为准，置信度低的记录警告
+        - 如果 LLM 提取失败（advertiser_ids 为空），尝试规则提取广告主 ID
         """
-        # TODO: 可以在后续优化中引入更复杂的交叉验证
-        # 目前只做能力层面的校验（见 check_capabilities）
+        from src.tools.term_mapper import map_metrics as mapped_tool
+        from src.tools.term_mapper import map_dimensions
+        # Reuse the same regex logic from intent_analyzer to extract advertiser ids
+        import re
+
+        # Get the underlying function from StructuredTool
+        rule_map_metrics = mapped_tool.func
+        rule_map_dimensions = map_dimensions.func
+
+        # 规则提取指标
+        rule_metrics = rule_map_metrics(user_input)
+        # Merge: take union of LLM metrics and rule metrics
+        if rule_metrics:
+            combined = list(set(result.metrics + rule_metrics))
+            result.metrics = combined
+            logger.info(f"Rule metrics merged: LLM had {len(result.metrics)}, rule added {len(rule_metrics)}, combined {len(combined)}")
+
+        # 规则提取维度
+        rule_dims = rule_map_dimensions(user_input)
+        # Merge: take union of LLM dimensions and rule dimensions
+        if rule_dims:
+            combined = list(set(result.group_by + rule_dims))
+            result.group_by = combined
+            logger.info(f"Rule dimensions merged: LLM had {len(result.group_by)}, rule added {len(rule_dims)}, combined {len(combined)}")
+
+        # 规则提取广告主 IDs (if LLM failed to extract any)
+        if not result.advertiser_ids:
+            # Extract using the same regex patterns as intent_analyzer
+            ADVERTISER_ID_PATTERNS = [
+                r'id[为是]\s*([a-f0-9\-]+)\s*的?广告主',
+                r'广告主id[为是]\s*([a-f0-9\-]+)',
+                r'广告主id\s*[为是]?\s*([a-f0-9\-]+)',
+                r'广告主\s*[：:]\s*([a-f0-9\-]+)',
+                r'advertiser\s*[=:]\s*([a-f0-9\-]+)',
+                r'([a-f0-9\-]{8,}-[a-f0-9\-]+)\s*广告主',
+                r'广告主\s*([a-f0-9\-]{8,})',
+                r'([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})',
+                r'id[为是]\s*(\d+)\s*的?广告主',
+                r'广告主id[为是]\s*(\d+)',
+                r'广告主id\s*[为是]?\s*(\d+)',
+                r'广告主\s*[：:]\s*(\d+)',
+                r'advertiser\s*[=:]\s*(\d+)',
+                r'(\d+)\s*号广告主',
+                r'(\d+)\s*广告主',
+                r'广告主\s*(\d+)',
+            ]
+            ids = []
+            text_lower = user_input.lower()
+            for pattern in ADVERTISER_ID_PATTERNS:
+                matches = re.findall(pattern, user_input, re.IGNORECASE)
+                for match in matches:
+                    adv_id_str = str(match).strip()
+                    try:
+                        adv_id_int = int(adv_id_str)
+                        if str(adv_id_int) not in ids:
+                            ids.append(str(adv_id_int))
+                    except ValueError:
+                        if adv_id_str not in ids:
+                            ids.append(adv_id_str)
+            if ids:
+                result.advertiser_ids = ids
+                logger.info(f"Rule advertiser_ids extracted: {ids}")
+
+        # 规则提取时间范围 (if LLM failed to extract)
+        if not result.time_range:
+            from src.analysis.intent_analyzer import simple_parse_time_range
+            parsed = simple_parse_time_range(user_input)
+            if parsed:
+                from src.intent.models import ReportTimeRange
+                result.time_range = ReportTimeRange(
+                    start_date=parsed.start_date,
+                    end_date=parsed.end_date,
+                    unit=parsed.unit,
+                )
+                logger.info(f"Rule time_range extracted: {parsed.start_date} to {parsed.end_date}")
+
+        # 规则提取广告层级 - 如果文本中明确提到某个层级，覆盖LLM结果
+        # 顺序：长模式先匹配，短模式后匹配（避免"广告主"先匹配了"广告计划"中的"广告"）
+        AD_LEVEL_PATTERNS = [
+            (r'广告\s*计划', 'campaign'),
+            (r'广告\s*组', 'ad_group'),
+            (r'广告\s*主', 'advertiser'),
+            (r'计划', 'campaign'),
+            (r'组', 'ad_group'),
+            (r'整个', 'advertiser'),
+            (r'全部', 'advertiser'),
+            (r'创意', 'creative'),
+            (r'素材', 'creative'),
+        ]
+        text_lower = user_input.lower()
+        for pattern, level in AD_LEVEL_PATTERNS:
+            if re.search(pattern, text_lower):
+                if result.ad_level != level:
+                    result.ad_level = level
+                    logger.info(f"Rule ad_level extracted: {level} (overwriting LLM result)")
+                break
+
         inconsistencies = []
         return inconsistencies
 
@@ -503,23 +599,35 @@ class ReportIntentAnalyzer:
         # Step 1: LLM 提取
         result = await self._llm_extract(user_input, conversation_history)
 
-        if result.confidence < 0.2:
-            # 置信度太低，视为解析失败
-            route_info = {"route": "pending_clarification", "reason": "需要澄清后再路由", "analysis_type": ""}
-            return None, ClarificationInfo(
-                type="missing_metrics",  # 先用缺指标的澄清引导用户
-                question="抱歉，我没太理解你的需求。请告诉我你想查看哪些数据指标？",
-                options=[],
-                allow_custom_input=True,
-                missing_fields=["metrics"],
-            ), None, route_info
-
         # Step 2: 上下文继承
         self._apply_context_inheritance(
             result, existing_advertiser_ids, existing_time_range, existing_ad_level
         )
 
-        # Step 2.5: 基于 LLM 结构化结果判断是否为纯广告主查询
+        # Step 2.5: 基于规则的交叉验证和合并（必须在能力校验之前）
+        # 使用规则提取作为补充，LLM 漏提的指标/维度通过规则提取补充
+        # 即使 LLM 置信度低，也先用规则补充，看是否能凑齐必填字段
+        self._rule_validate(result, user_input)
+
+        if result.confidence < 0.2:
+            # 置信度太低，但先检查规则提取是否已经凑齐必填字段
+            # 如果已经凑齐，继续流程，不要直接返回澄清
+            ok, _ = self.check_required_fields(result)
+            if ok:
+                # 规则已经凑齐，继续流程
+                pass
+            else:
+                # 仍然缺字段，返回澄清
+                route_info = {"route": "pending_clarification", "reason": "需要澄清后再路由", "analysis_type": ""}
+                return None, ClarificationInfo(
+                    type="missing_metrics",  # 先用缺指标的澄清引导用户
+                    question="抱歉，我没太理解你的需求。请告诉我你想查看哪些数据指标？",
+                    options=[],
+                    allow_custom_input=True,
+                    missing_fields=["metrics"],
+                ), None, route_info
+
+        # Step 3: 基于 LLM 结构化结果判断是否为纯广告主查询
         # （完全基于 LLM 输出的结构化字段，不依赖关键词规则）
         final_report = self._build_advertiser_lookup_report(result)
         if final_report is not None:
@@ -527,19 +635,19 @@ class ReportIntentAnalyzer:
             route_info = {"route": "advertiser_lookup", "reason": "纯广告主查询", "analysis_type": "qa"}
             return None, None, final_report, route_info
 
-        # Step 3: 能力校验，失败时返回澄清（后续可调整为路由 nl_dsl）
+        # Step 4: 能力校验，失败时返回澄清（后续可调整为路由 nl_dsl）
         ok, cap_clarification = self.check_capabilities(result)
         if not ok:
             route_info = {"route": "pending_clarification", "reason": "需要澄清后再路由", "analysis_type": ""}
             return result, cap_clarification, None, route_info
 
-        # Step 4: 必填字段检查
+        # Step 5: 必填字段检查
         ok, req_clarification = self.check_required_fields(result)
         if not ok:
             route_info = {"route": "pending_clarification", "reason": "需要澄清后再路由", "analysis_type": ""}
             return result, req_clarification, None, route_info
 
-        # Step 5: 路由判断
+        # Step 6: 路由判断
         route, reason, analysis_type = self._determine_query_route(result, user_input)
         route_info = {
             "route": route,

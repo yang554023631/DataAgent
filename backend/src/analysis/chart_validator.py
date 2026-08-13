@@ -39,19 +39,35 @@ def validate_chart_report(report_data: Dict[str, Any]) -> ChartValidationResult:
     result = ChartValidationResult()
 
     metadata = report_data.get("metadata", {})
-    chart_config = report_data.get("chart_config", {})
+    # Get chart_config from report, ensure it's never None - convert to empty dict
+    chart_config = report_data.get("chart_config")
+    if chart_config is None:
+        chart_config = {}
     data = report_data.get("data", [])
     data_table = report_data.get("data_table", {})
+
+    # Extra guarantee - if it's still not a dict, make it one
+    if not isinstance(chart_config, dict):
+        chart_config = {}
+
+    # Debug log
+    logger.debug(f"[DEBUG] validate_chart_report: chart_config={type(chart_config)}, chart_type={metadata.get('chart_type')}")
 
     chart_type = metadata.get("chart_type")
 
     if not chart_type:
         # fallback 到 chart_config.type
-        chart_type = chart_config.get("type")
+        chart_type = chart_config.get("type") if chart_config else None
 
     if not chart_type:
         result.add_error("Missing chart_type in metadata.chart_type or chart_config.type")
         return result
+
+    # Final guarantee - any chart getting called must have dict chart_config
+    if chart_config is None:
+        chart_config = {}
+    if not isinstance(chart_config, dict):
+        chart_config = {}
 
     # 按类型分发校验
     if chart_type == "line":
@@ -110,6 +126,10 @@ def _validate_line_data(data: List[Any], result: ChartValidationResult) -> None:
 
 def _validate_bar_data(data: List[Any], chart_config: Dict[str, Any], result: ChartValidationResult) -> None:
     """校验柱状图结构"""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.error(f"=== ENTER _validate_bar_data: chart_config={chart_config}, type={type(chart_config)} ===")
+
     if not isinstance(data, list):
         result.add_error("bar chart: data must be a list")
         return
@@ -118,9 +138,20 @@ def _validate_bar_data(data: List[Any], chart_config: Dict[str, Any], result: Ch
         result.add_error("bar chart: data array is empty (bar chart requires data)")
         return
 
+    # Ultimate guard: if it's not a dict at all, force it to empty dict
+    if chart_config is None or not isinstance(chart_config, dict):
+        logger.error(f"=== Converting chart_config from {type(chart_config)} to empty dict ===")
+        chart_config = {}
+
+    # Debug: crash if still None
+    if chart_config is None:
+        raise RuntimeError(f"Failed to convert chart_config from None to dict! type={type(chart_config)}")
+
     # 检查 chart_config 必须有 x_axis.field 和 y_axis.field
-    x_field = chart_config.get("x_axis", {}).get("field")
-    y_field = chart_config.get("y_axis", {}).get("field")
+    x_axis = chart_config.get("x_axis")
+    x_field = x_axis.get("field") if x_axis and isinstance(x_axis, dict) else None
+    y_axis = chart_config.get("y_axis")
+    y_field = y_axis.get("field") if y_axis and isinstance(y_axis, dict) else None
 
     if not x_field:
         result.add_error("bar chart: chart_config.x_axis.field is missing")

@@ -56,6 +56,22 @@ class FilterExecutor:
 
         # 如果是 none 类型筛选（全量），直接返回
         if filter_plan.filter_type == "none" or not filter_plan.steps:
+            # Special case: when target_level is advertiser and current_entity_ids is None,
+            # use the top-level advertiser_ids as the entity ids since we've already filtered them upstream
+            if current_level == "advertiser" and current_entity_ids is None:
+                # Convert to int if possible just like in build_common_filters
+                converted_ids = []
+                for adv_id in advertiser_ids:
+                    try:
+                        converted_ids.append(int(adv_id))
+                    except ValueError:
+                        converted_ids.append(adv_id)
+                return FilterResult(
+                    entity_ids=converted_ids,
+                    entity_level=current_level,
+                    total_count=len(converted_ids),
+                    trace=[{"step": "none", "action": "full_scan (use top-level advertiser_ids)", "status": "success"}],
+                )
             return FilterResult(
                 entity_ids=current_entity_ids or [],
                 entity_level=current_level,

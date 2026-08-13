@@ -56,6 +56,8 @@ DIMENSION_MAPPING = {
     "渠道": "campaign_id",
     "广告活动": "campaign_id",
     "活动": "campaign_id",
+    "广告计划": "campaign_id",
+    "计划": "campaign_id",
     "广告组": "adgroup_id",
     "组": "adgroup_id",
     "创意": "creative_id",
@@ -120,14 +122,41 @@ FILTER_VALUE_MAPPING = {
     "杭州": {"field": "audience_city", "value": 2005},
 }
 
+import re
+
 @tool
 def map_metrics(text: str) -> List[str]:
-    """将自然语言指标名称映射为标准指标名"""
+    """将自然语言指标名称映射为标准指标名
+
+    改进：使用更好的边界匹配避免误匹配动词"展示"为指标impressions
+    """
     result = []
+    text_lower = text.lower()
     for term, standard in METRIC_MAPPING.items():
-        # 支持中英文关键词匹配
-        if term.lower() in text.lower() and standard not in result:
-            result.append(standard)
+        term_lower = term.lower()
+        # 匹配规则：
+        # - 断言前面不是小写字母/数字，避免指标嵌入到更大的词语中
+        # - 断言后面不是小写字母/数字，同上
+        # Special case: "展示"作为动词在"分开展示"中不要匹配
+        pattern = r'(?<![a-z0-9])%s(?![a-z0-9])' % re.escape(term_lower)
+        if not re.search(pattern, text_lower):
+            continue
+        if term == "展示":
+            # Check if "展示" is preceded by "展开" / "开展" - which means it's a verb, not the metric
+            match_iter = list(re.finditer(pattern, text_lower))
+            for match in match_iter:
+                start = match.start()
+                if start >= 2:
+                    prev_two = text_lower[start-2:start]
+                    if prev_two == "展开" or prev_two == "开展":
+                        # This is "X开展示", "展示" is a verb, skip
+                        continue
+                # Accept this match
+                if standard not in result:
+                    result.append(standard)
+        else:
+            if standard not in result:
+                result.append(standard)
     # 如果没有识别到任何指标，默认返回所有核心指标，用于洞察规则分析
     return result if result else ["impressions", "clicks", "cost", "conversions"]
 
@@ -148,6 +177,7 @@ def map_dimensions(text: str) -> List[str]:
         ("按月", "data_month"), ("按月份", "data_month"), ("分月", "data_month"), ("每月", "data_month"),
         ("按周", "data_week"), ("按星期", "data_week"), ("分周", "data_week"), ("每周", "data_week"),
         ("按渠道", "campaign_id"), ("按活动", "campaign_id"), ("按广告活动", "campaign_id"),
+        ("按广告计划", "campaign_id"), ("广告计划", "campaign_id"), ("计划", "campaign_id"), ("按计划", "campaign_id"),
         ("按广告组", "adgroup_id"), ("按组", "adgroup_id"),
         ("按创意", "creative_id"), ("按素材", "creative_id"),
         ("按性别", "audience_gender"), ("分性别", "audience_gender"),
@@ -176,6 +206,8 @@ def map_dimensions(text: str) -> List[str]:
         ("行业和", "industry"), ("和行业", "industry"),
         ("兴趣和", "audience_interest"), ("和兴趣", "audience_interest"),
         ("渠道和", "campaign_id"), ("和渠道", "campaign_id"),
+        ("广告计划和", "campaign_id"), ("和广告计划", "campaign_id"),
+        ("计划和", "campaign_id"), ("和计划", "campaign_id"),
         ("广告组和", "adgroup_id"), ("和广告组", "adgroup_id"),
         ("创意和", "creative_id"), ("和创意", "creative_id"),
     ]

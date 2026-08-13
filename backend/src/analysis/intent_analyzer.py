@@ -185,13 +185,39 @@ def simple_parse_time_range(text: str) -> Optional[SimpleTimeRange]:
 
 
 def simple_map_metrics(text: str) -> List[str]:
-    """简单的指标映射"""
+    """简单的指标映射
+
+    使用正则边界匹配，避免子串误匹配（如"分开展示"中的"展示"不要匹配成指标）
+    注意：在 Unicode Python 正则中，中文汉字 isalnum() → True，所以\w包含汉字
+    因此我们需要用不同的方式：只要求指标前面不能跟小写字母/阿拉伯数字，避免嵌入到其他词中
+    """
     metrics = []
     text_lower = text.lower()
 
     for alias, standard in METRIC_MAPPING.items():
-        if alias.lower() in text_lower and standard not in metrics:
-            metrics.append(standard)
+        alias_lower = alias.lower()
+        # Use lookaround assertions that work with Chinese:
+        # - 断言前面不是小写字母或数字 → 保证指标不嵌入在其他词中
+        # - 断言后面不是小写字母或数字 → 同上
+        pattern = r'(?<![a-z0-9])%s(?![a-z0-9])' % re.escape(alias_lower)
+        matches = list(re.finditer(pattern, text_lower))
+        if matches:
+            # Special case: "展示" as verb in "分开展示" - skip this occurrence
+            if alias == "展示":
+                for match in matches:
+                    start = match.start()
+                    # Check if "展示" is preceded by "展开" / "开展" (common case "分开展示")
+                    if start >= 2:
+                        prev_two = text_lower[start-2:start]
+                        if prev_two == "展开" or prev_two == "开展":
+                            # This is "X开展示", "展示" is a verb, not the metric impression → skip
+                            continue
+                    # If we get here, accept the match
+                    if standard not in metrics:
+                        metrics.append(standard)
+            else:
+                if standard not in metrics:
+                    metrics.append(standard)
 
     # 如果没有识别到指标，返回默认指标
     return metrics if metrics else []
@@ -555,10 +581,10 @@ class IntentAnalyzer:
         audience_dimension = extractions.get("audience_dimension")
 
         return FieldContext(
-            advertiser_ids=advertiser_ids if advertiser_ids else None,
+            advertiser_ids=advertiser_ids if advertiser_ids is not None else None,
             time_range=time_range,
             target_level=target_level,
-            metrics=metrics if metrics else None,
+            metrics=metrics if metrics is not None else None,
             audience_dimension=audience_dimension,
             compare_time_range=None,  # 这个在 CoT 阶段处理
             entity_ids=None,

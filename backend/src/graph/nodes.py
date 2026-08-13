@@ -1633,7 +1633,18 @@ async def analysis_node(state: dict) -> dict:
         await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 4: AnalysisExecutor started")
 
-        analysis_executor = AnalysisExecutor(es_client=es_client)
+        # 构建 entity_name 映射：ID -> 名称
+        from src.tools.hierarchy_utils import get_entity_names
+        entity_name_resolver = {}
+        entity_ids = filter_result.entity_ids
+        entity_level = filter_result.entity_level
+        if entity_ids and entity_level and len(entity_ids) > 0:
+            entity_name_resolver = get_entity_names(entity_level, entity_ids)
+
+        analysis_executor = AnalysisExecutor(
+            es_client=es_client,
+            entity_name_resolver=entity_name_resolver
+        )
 
         analysis_result = analysis_executor.execute(
             analysis_plan=analysis_plan_result.analysis_plan,

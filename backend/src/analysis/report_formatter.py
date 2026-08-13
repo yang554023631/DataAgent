@@ -87,7 +87,16 @@ class ReportFormatter:
             title = f"⚠️ 需要人工介入 - {title}"
 
         # 3. 提取图表配置和数据
-        chart_config = chart_data.get("chart_config", {})
+        # If analysis_result directly contains chart_config (returned from AnalysisExecutor.execute), use it
+        chart_config = None
+        if analysis_result is not None and hasattr(analysis_result, 'chart_config') and analysis_result.chart_config is not None:
+            if hasattr(analysis_result.chart_config, 'model_dump'):
+                chart_config = analysis_result.chart_config.model_dump()
+            else:
+                chart_config = analysis_result.chart_config
+        # Fallback: extract from chart_data if needed
+        if chart_config is None:
+            chart_config = chart_data.get("chart_config", {})
         data = chart_data.get("data", [])
 
         # 更新 chart_config.title 确保和当前指标一致
@@ -135,8 +144,14 @@ class ReportFormatter:
         quality_info = cls._format_quality_info(quality_result)
 
         # 7. 准备元数据
+        # Convert pydantic object to dict if needed for metadata generation
         if analysis_plan is not None and filter_result is not None:
-            metadata = cls._generate_metadata(filter_result, analysis_plan, chart_config)
+            chart_config_dict = chart_config
+            if hasattr(chart_config, 'model_dump'):
+                chart_config_dict = chart_config.model_dump()
+            elif not isinstance(chart_config, dict):
+                chart_config_dict = {}
+            metadata = cls._generate_metadata(filter_result, analysis_plan, chart_config_dict)
         else:
             metadata = {}
 

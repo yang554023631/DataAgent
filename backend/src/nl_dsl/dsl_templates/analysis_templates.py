@@ -206,7 +206,12 @@ def build_entity_table(
     # Add order by if specified
     if order_by:
         order_path = None
-        if is_derived_metric(order_by):
+        level_field = get_level_field(group_by_level)
+        # Check if order_by is the grouping field itself (advertiser_id / campaign_id etc.)
+        # If yes, sort by _key directly (don't use sum aggregation path)
+        if order_by == group_by_level or order_by == level_field:
+            order_path = "_key"
+        elif is_derived_metric(order_by):
             order_path = order_by
         else:
             order_path = f"sum_{order_by}>value"
@@ -325,15 +330,29 @@ def build_audience_distribution(
     end_date: str,
     metric: str,
     audience_type: str,
-    index: str = "ad_stat_data",
+    index: str = "ad_stat_audience",
 ) -> Dict[str, Any]:
     """A6: 受众分布分析"""
     data_type = get_data_type(metric)
     if data_type is None:
         raise ValueError(f"Unknown metric: {metric}")
 
+    # Map audience dimension field name to audience_type number
+    audience_type_map = {
+        "audience_gender": 1,
+        "audience_age": 2,
+        "audience_os": 3,
+        "audience_interest": 4,
+        "audience_os_version": 5,
+        "audience_country": 6,
+        "audience_city": 7,
+    }
+    audience_type_num = audience_type_map.get(audience_type)
+    if audience_type_num is None:
+        raise ValueError(f"Unknown audience dimension: {audience_type}")
+
     filters = build_common_filters(advertiser_ids, start_date, end_date, [data_type])
-    filters.append({"term": {"audience_type": audience_type}})
+    filters.append({"term": {"audience_type": audience_type_num}})
 
     dsl = {
         "index": index,
@@ -345,7 +364,7 @@ def build_audience_distribution(
         "size": 0,
         "aggs": {
             "by_audience": {
-                "terms": {"field": "audience_value", "size": 100},
+                "terms": {"field": "audience_tag_value", "size": 100},
                 "aggs": {
                     "metric_sum": {"sum": {"field": "data_value"}}
                 }
