@@ -28,8 +28,8 @@ TEST_CASES: List[Dict[str, Any]] = [
             "chart_type": "line",
             "entity_level": "advertiser",
             "metrics": ["cost"],
-            "columns_len": 1,
-            "columns": ["日期"],
+            "columns_len": 2,
+            "columns": ["日期", "cost"],
             "has_chart_config": True,
             "chart_config_type": "line",
             "x_axis_field": "date",
@@ -442,6 +442,26 @@ def validate_result(
                 # 如果没指定 y_axis_field，回退到检查 value 字段（兼容对比图格式）
                 elif "value" in point and point["value"] is None:
                     return False, f"chart data[{i}].value 为 null，预期应该有值"
+
+    # 10. 检查 chart_config.title 是否包含正确的指标名称（可选校验）
+    if "chart_config" in data and data["chart_config"] and "metrics" in expected:
+        # 使用第一个指标来判断
+        metrics = expected["metrics"]
+        if metrics and len(metrics) > 0:
+            first_metric = metrics[0]
+            # 指标名称映射（和后端保持一致）
+            metric_display_map = {
+                "cost": "消耗",
+                "impressions": "曝光量",
+                "clicks": "点击量",
+                "ctr": "点击率",
+                "cvr": "转化率",
+                "spend": "花费",
+            }
+            expected_display = metric_display_map.get(first_metric, first_metric)
+            actual_title = data["chart_config"].get("title", "")
+            if expected_display not in actual_title:
+                return False, f"chart_config.title 错误: 期望包含 '{expected_display}', 实际标题是 '{actual_title}'"
 
     return True, None
 

@@ -133,9 +133,6 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
 
       return (
         <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">
-            {period1.name} vs {period2.name} 趋势对比
-          </h3>
           <ReactECharts option={lineOption} style={{ height: '440px' }} />
         </div>
       );
@@ -190,9 +187,6 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
 
       return (
         <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
-          <h3 className="text-sm font-medium text-gray-700 mb-2">
-            {period1.name} vs {period2.name} 对比
-          </h3>
           <ReactECharts option={barOption} style={{ height: '440px' }} />
         </div>
       );
@@ -305,9 +299,6 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
 
     return (
       <div className="w-full min-h-[400px] bg-white rounded-lg shadow-sm p-4">
-        <h3 className="text-sm font-medium text-gray-700 mb-2">
-          {report?.chart_config?.title || getMetricDisplayName(valueField) + ' 分布'}
-        </h3>
         <ReactECharts option={pieOption} style={{ height: '340px' }} />
       </div>
     );
@@ -464,9 +455,6 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
 
         return (
           <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">
-              {report?.chart_config?.title || getMetricDisplayName(primaryMetric) + ' 趋势'}
-            </h3>
             <ReactECharts option={multiLineOption} style={{ height: '440px' }} />
           </div>
         );
@@ -479,7 +467,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
           grid: {
             left: 60,
             right: 40,
-            top: 60,
+            top: 30,  // 去掉标题后top可以更小，腾出更多空间给图表
             bottom: 100,
             containLabel: true,
           },
@@ -526,9 +514,6 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
 
         return (
           <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
-            <h3 className="text-sm font-medium text-gray-700 mb-2">
-              {getMetricDisplayName(primaryMetric)} 趋势
-            </h3>
             <ReactECharts option={lineOption} style={{ height: '440px' }} />
           </div>
         );
@@ -546,7 +531,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
       grid: {
         left: 60,
         right: 40,
-        top: 40,
+        top: 30,  // 去掉标题后top可以更小，腾出更多空间给图表
         bottom: 120,  // 加大底部边距，给长标签留出足够空间
         containLabel: true,
       },
@@ -591,9 +576,6 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
 
     return (
       <div className="w-full min-h-[500px] bg-white rounded-lg shadow-sm p-4">
-        <h3 className="text-sm font-medium text-gray-700 mb-2">
-          {getMetricDisplayName(primaryMetric)} 分布
-        </h3>
         <ReactECharts option={barOption} style={{ height: '440px' }} />
       </div>
     );

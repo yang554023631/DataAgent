@@ -82,7 +82,7 @@ class ReportFormatter:
             )
 
         # 2. 生成标题
-        title = cls._generate_title_from_plan(analysis_plan)
+        title = cls._generate_title_from_plan(analysis_plan, filter_result)
         if report_type == "hitl":
             title = f"⚠️ 需要人工介入 - {title}"
 
@@ -90,11 +90,38 @@ class ReportFormatter:
         chart_config = chart_data.get("chart_config", {})
         data = chart_data.get("data", [])
 
+        # 更新 chart_config.title 确保和当前指标一致
+        if analysis_plan and len(analysis_plan.metrics) > 0 and "type" in chart_config:
+            primary_metric = analysis_plan.metrics[0]
+            metric_display = cls._get_metric_display_name(primary_metric)
+            chart_type = chart_config.get("type")
+            if chart_type == "line":
+                chart_config["title"] = f"{metric_display} 趋势"
+            elif chart_type == "bar":
+                if analysis_plan.analysis_type == "period_comparison":
+                    chart_config["title"] = f"{metric_display} 对比"
+                else:
+                    chart_config["title"] = f"{metric_display} 分布"
+            elif chart_type == "pie":
+                chart_config["title"] = f"{metric_display} 分布"
+
+        # 对 date 字段进行格式化（如果是时间戳）
+        start_date = analysis_plan.time_range.start_date if analysis_plan and analysis_plan.time_range else None
+        end_date = analysis_plan.time_range.end_date if analysis_plan and analysis_plan.time_range else None
+        if data and len(data) > 0 and start_date and end_date:
+            # 检查第一个点是否有 date 字段且是数字（时间戳）
+            first_point = data[0]
+            if "date" in first_point and isinstance(first_point["date"], (int, float)):
+                # 格式化所有点的 date
+                for point in data:
+                    if "date" in point and isinstance(point["date"], (int, float)):
+                        point["date"] = cls._format_date_timestamp(int(point["date"]), start_date, end_date)
+
         # 4. 格式化数据表格
         if analysis_result is not None and analysis_result.data_table is not None:
-            data_table = cls._format_analysis_data_table(analysis_result.data_table, analysis_plan.metrics)
+            data_table = cls._format_analysis_data_table(analysis_result.data_table, analysis_plan.metrics, analysis_plan)
         else:
-            data_table = cls._format_data_table(chart_data.get("data", []), analysis_plan.metrics if analysis_plan else [])
+            data_table = cls._format_data_table(chart_data.get("data", []), analysis_plan.metrics if analysis_plan else [], analysis_plan)
 
         # 5. 生成亮点
         highlights = cls._generate_highlights(
@@ -180,7 +207,7 @@ class ReportFormatter:
         ]
 
         # 生成标题
-        title = cls._generate_title_from_plan(analysis_plan_result.analysis_plan)
+        title = cls._generate_title_from_plan(analysis_plan_result.analysis_plan, filter_result)
 
         return {
             "report_type": "empty",
@@ -248,28 +275,53 @@ class ReportFormatter:
         return "success"
 
     @classmethod
-    def _generate_title_from_plan(cls, analysis_plan: AnalysisPlan) -> str:
+    def _generate_title_from_plan(cls, analysis_plan: AnalysisPlan, filter_result: FilterResult = None) -> str:
         """从分析计划生成标题"""
         analysis_type_names = {
-            AnalysisType.ENTITY_TABLE: "实体表格分析",
-            AnalysisType.TIME_TREND: "时间趋势分析",
-            AnalysisType.PERIOD_COMPARISON: "时期对比分析",
-            AnalysisType.AUDIENCE_DISTRIBUTION: "受众分布分析",
-            AnalysisType.SUMMARY: "数据汇总分析",
+            AnalysisType.ENTITY_TABLE: "实体表格",
+            AnalysisType.TIME_TREND: "趋势",
+            AnalysisType.PERIOD_COMPARISON: "对比分析",
+            AnalysisType.AUDIENCE_DISTRIBUTION: "受众分布",
+            AnalysisType.SUMMARY: "数据汇总",
         }
 
         type_name = analysis_type_names.get(analysis_plan.analysis_type, "数据分析")
+        metrics = analysis_plan.metrics
+
+        # 主标题构建：优先用第一个指标名称 + 类型
+        if metrics and len(metrics) > 0:
+            primary_metric = metrics[0]
+            metric_display = cls._get_metric_display_name(primary_metric)
+            title_base = f"{metric_display} {type_name}"
+        else:
+            title_base = type_name
+
+        # 如果只筛选了一个实体，添加实体信息前缀
+        if filter_result and filter_result.total_count == 1:
+            entity_level = filter_result.entity_level
+            # 实体级别显示名称
+            level_display = {
+                "advertiser": "广告主",
+                "campaign": "广告计划",
+                "adgroup": "广告组",
+                "creative": "创意",
+            }.get(entity_level, entity_level)
+            # 取第一个 entity_id
+            entity_ids = filter_result.entity_ids
+            if entity_ids and len(entity_ids) == 1:
+                entity_id = entity_ids[0]
+                title_base = f"{level_display}ID={entity_id} {title_base}"
 
         time_range = analysis_plan.time_range
         start_date = time_range.start_date
         end_date = time_range.end_date
 
         if start_date and end_date:
-            return f"{type_name} ({start_date} ~ {end_date})"
-        return type_name
+            return f"{title_base} ({start_date} ~ {end_date})"
+        return title_base
 
     @classmethod
-    def _format_data_table(cls, data: List[Dict[str, Any]], metrics: List[str]) -> Dict[str, Any]:
+    def _format_data_table(cls, data: List[Dict[str, Any]], metrics: List[str], analysis_plan: AnalysisPlan = None) -> Dict[str, Any]:
         """格式化数据表格（从字典列表）"""
         if not data:
             return {"columns": [], "rows": []}
@@ -283,23 +335,27 @@ class ReportFormatter:
             formatted_row = []
             for col in columns:
                 value = row.get(col)
+                # 格式化日期字段（如果是时间戳）
+                col_lower = col.lower()
+                if (col_lower.find("date") != -1 or col_lower.find("time") != -1 or
+                    col_lower.find("day") != -1 or col_lower.find("hour") != -1):
+                    if isinstance(value, (int, float)) and analysis_plan and analysis_plan.time_range:
+                        start_date = analysis_plan.time_range.start_date
+                        end_date = analysis_plan.time_range.end_date
+                        if start_date and end_date:
+                            value = cls._format_date_timestamp(int(value), start_date, end_date)
                 # 格式化百分比字段
-                if col in metrics and (col.lower().find("ctr") != -1 or col.lower().find("cvr") != -1):
+                elif col in metrics and (col_lower.find("ctr") != -1 or col_lower.find("cvr") != -1):
                     if isinstance(value, (int, float)):
-                        formatted_row.append(f"{value * 100:.1f}%")
-                    else:
-                        formatted_row.append(value)
+                        value = f"{value * 100:.1f}%"
                 # 格式化金额字段
-                elif col in metrics and (col.lower().find("cost") != -1 or col.lower().find("spend") != -1):
+                elif col in metrics and (col_lower.find("cost") != -1 or col_lower.find("spend") != -1):
                     if isinstance(value, (int, float)):
-                        formatted_row.append(f"¥{value:,.2f}")
-                    else:
-                        formatted_row.append(value)
+                        value = f"¥{value:,.2f}"
                 # 格式化数字字段
                 elif col in metrics and isinstance(value, (int, float)):
-                    formatted_row.append(f"{value:,}")
-                else:
-                    formatted_row.append(value)
+                    value = f"{value:,}"
+                formatted_row.append(value)
             rows.append(formatted_row)
 
         return {
@@ -308,7 +364,7 @@ class ReportFormatter:
         }
 
     @classmethod
-    def _format_analysis_data_table(cls, data_table, metrics: List[str]) -> Dict[str, Any]:
+    def _format_analysis_data_table(cls, data_table, metrics: List[str], analysis_plan: AnalysisPlan = None) -> Dict[str, Any]:
         """格式化数据表格（从 AnalysisDataTable 对象）"""
         if not data_table:
             return {"columns": [], "rows": []}
@@ -333,23 +389,27 @@ class ReportFormatter:
                     # 如果列是字典，获取 key 用于取值
                     col_key = col.get("key", col) if isinstance(col, dict) else col
                     value = row.get(col_key)
+                    # 格式化日期字段（如果是时间戳）
+                    col_key_lower = str(col_key).lower()
+                    if (col_key_lower.find("date") != -1 or col_key_lower.find("time") != -1 or
+                        col_key_lower.find("day") != -1 or col_key_lower.find("hour") != -1):
+                        if isinstance(value, (int, float)) and analysis_plan and analysis_plan.time_range:
+                            start_date = analysis_plan.time_range.start_date
+                            end_date = analysis_plan.time_range.end_date
+                            if start_date and end_date:
+                                value = cls._format_date_timestamp(int(value), start_date, end_date)
                     # 格式化百分比字段
-                    if col_key in metrics and (str(col_key).lower().find("ctr") != -1 or str(col_key).lower().find("cvr") != -1):
+                    elif col_key in metrics and (col_key_lower.find("ctr") != -1 or col_key_lower.find("cvr") != -1):
                         if isinstance(value, (int, float)):
-                            formatted_row.append(f"{value * 100:.1f}%")
-                        else:
-                            formatted_row.append(value)
+                            value = f"{value * 100:.1f}%"
                     # 格式化金额字段
-                    elif col_key in metrics and (str(col_key).lower().find("cost") != -1 or str(col_key).lower().find("spend") != -1):
+                    elif col_key in metrics and (col_key_lower.find("cost") != -1 or col_key_lower.find("spend") != -1):
                         if isinstance(value, (int, float)):
-                            formatted_row.append(f"¥{value:,.2f}")
-                        else:
-                            formatted_row.append(value)
+                            value = f"¥{value:,.2f}"
                     # 格式化数字字段
                     elif col_key in metrics and isinstance(value, (int, float)):
-                        formatted_row.append(f"{value:,}")
-                    else:
-                        formatted_row.append(value)
+                        value = f"{value:,}"
+                    formatted_row.append(value)
                 formatted_rows.append(formatted_row)
             # 如果行是列表，直接格式化
             elif isinstance(row, list):
@@ -357,23 +417,27 @@ class ReportFormatter:
                 for i, value in enumerate(row):
                     col = columns[i] if i < len(columns) else ""
                     col_key = col.get("key", col) if isinstance(col, dict) else col
+                    # 格式化日期字段（如果是时间戳）
+                    col_key_lower = str(col_key).lower()
+                    if (col_key_lower.find("date") != -1 or col_key_lower.find("time") != -1 or
+                        col_key_lower.find("day") != -1 or col_key_lower.find("hour") != -1):
+                        if isinstance(value, (int, float)) and analysis_plan and analysis_plan.time_range:
+                            start_date = analysis_plan.time_range.start_date
+                            end_date = analysis_plan.time_range.end_date
+                            if start_date and end_date:
+                                value = cls._format_date_timestamp(int(value), start_date, end_date)
                     # 格式化百分比字段
-                    if col_key in metrics and (str(col_key).lower().find("ctr") != -1 or str(col_key).lower().find("cvr") != -1):
+                    elif col_key in metrics and (col_key_lower.find("ctr") != -1 or col_key_lower.find("cvr") != -1):
                         if isinstance(value, (int, float)):
-                            formatted_row.append(f"{value * 100:.1f}%")
-                        else:
-                            formatted_row.append(value)
+                            value = f"{value * 100:.1f}%"
                     # 格式化金额字段
-                    elif col_key in metrics and (str(col_key).lower().find("cost") != -1 or str(col_key).lower().find("spend") != -1):
+                    elif col_key in metrics and (col_key_lower.find("cost") != -1 or col_key_lower.find("spend") != -1):
                         if isinstance(value, (int, float)):
-                            formatted_row.append(f"¥{value:,.2f}")
-                        else:
-                            formatted_row.append(value)
+                            value = f"¥{value:,.2f}"
                     # 格式化数字字段
                     elif col_key in metrics and isinstance(value, (int, float)):
-                        formatted_row.append(f"{value:,}")
-                    else:
-                        formatted_row.append(value)
+                        value = f"{value:,}"
+                    formatted_row.append(value)
                 formatted_rows.append(formatted_row)
             else:
                 formatted_rows.append(row)
@@ -677,6 +741,36 @@ class ReportFormatter:
             "conv": "转化数",
         }
         return display_names.get(metric, metric)
+
+    @classmethod
+    def _format_date_timestamp(cls, timestamp: int, start_date: str, end_date: str) -> str:
+        """格式化日期时间戳
+
+        根据时间范围跨度选择粒度：
+        - 跨度 > 1天 → 格式化为 YYYY-MM-DD
+        - 跨度 ≤ 1天 → 格式化为 YYYY-MM-DD HH
+        """
+        from datetime import datetime, timedelta
+
+        try:
+            # 解析起始和结束日期
+            start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+            end_dt = datetime.strptime(end_date, "%Y-%m-%d")
+            days_diff = (end_dt - start_dt).days
+        except (ValueError, TypeError):
+            # 如果解析失败，默认按日格式化
+            days_diff = 2
+
+        # timestamp 可能是毫秒或秒
+        if timestamp > 1e12:  # 毫秒
+            dt = datetime.fromtimestamp(timestamp / 1000)
+        else:  # 秒
+            dt = datetime.fromtimestamp(timestamp)
+
+        if days_diff > 1:
+            return dt.strftime("%Y-%m-%d")
+        else:
+            return dt.strftime("%Y-%m-%d %H")
 
     @classmethod
     def _format_quality_info(cls, quality_result: QualityResult) -> Dict[str, Any]:

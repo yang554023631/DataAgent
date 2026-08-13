@@ -578,7 +578,10 @@ class AnalysisExecutor:
         columns = [{"key": "date", "label": "日期"}]
         rows = []
 
-        if series_level:
+        # 只有当 series_level 不为空且不是 date 相关维度时，才是真正的多系列
+        # date_related 分组本身就是趋势分析的分组维度，不代表多系列
+        date_related = ['data_date', 'date', 'day', 'month', 'time']
+        if series_level and series_level.lower() not in date_related:
             # 多系列
             # 获取所有系列 ID
             all_series = set()
