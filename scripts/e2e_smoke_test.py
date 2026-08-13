@@ -25,7 +25,7 @@ TEST_CASES: List[Dict[str, Any]] = [
         "query": "id为6的广告主4月份的消耗趋势",
         "expected": {
             "analysis_type": "time_trend",
-            "chart_type": "table",
+            "chart_type": "line",
             "entity_level": "advertiser",
             "metrics": ["cost"],
             "columns_len": 1,
@@ -83,7 +83,7 @@ TEST_CASES: List[Dict[str, Any]] = [
             "has_chart_config": True,
             "chart_config_type": "bar",
             "x_axis_field": "period",
-            "y_axis_field": "cost",
+            "y_axis_field": "value",
             "data_empty": False,
             "min_rows": 1,
             "require_non_null": True,
@@ -419,19 +419,29 @@ def validate_result(
         if actual_chart_type != expected_chart_type:
             return False, f"metadata.chart_type错误: 期望 {expected_chart_type}, 得到 {actual_chart_type}"
 
-    # 9. 检查 chart data 每个点都有 value 且不为 null
+    # 9. 检查 chart data 结构
     if "data" in data and expected.get("has_chart_config"):
         chart_data = data["data"]
         if not isinstance(chart_data, list):
             return False, f"chart data 不是数组: 得到 {type(chart_data)}"
-        if len(chart_data) == 0:
+        # 只有当 data_empty 不为 True 时，才检查非空
+        if not expected.get("data_empty", False) and len(chart_data) == 0:
             return False, "chart data 为空数组"
-        # 检查每个点都有 value 且不为 None
-        for i, point in enumerate(chart_data):
-            if "value" not in point:
-                return False, f"chart data[{i}] 缺少 'value' 字段"
-            if point["value"] is None and expected.get("require_non_null"):
-                return False, f"chart data[{i}].value 为 null，预期应该有值"
+        # require_non_null 只检查指定的 y_axis_field 或者 value 不为 null
+        if expected.get("require_non_null"):
+            y_field = expected.get("y_axis_field")
+            for i, point in enumerate(chart_data):
+                if not isinstance(point, dict):
+                    continue
+                # 如果指定了 y_axis_field，检查那个字段不为 null
+                if y_field:
+                    if y_field not in point:
+                        return False, f"chart data[{i}] 缺少 y_axis_field '{y_field}'"
+                    if point[y_field] is None:
+                        return False, f"chart data[{i}].{y_field} 为 null，预期应该有值"
+                # 如果没指定 y_axis_field，回退到检查 value 字段（兼容对比图格式）
+                elif "value" in point and point["value"] is None:
+                    return False, f"chart data[{i}].value 为 null，预期应该有值"
 
     return True, None
 

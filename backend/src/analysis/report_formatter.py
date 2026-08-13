@@ -23,6 +23,7 @@ from src.nl_dsl.models import (
     EmptyCheckResult,
 )
 from src.tools.hierarchy_utils import get_entity_names
+from src.analysis.chart_validator import validate_chart_report
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,8 @@ class ReportFormatter:
         else:
             next_queries = []
 
-        return {
+        # Build final report
+        report_dict = {
             "report_type": report_type,
             "title": title,
             "chart_config": chart_config,
@@ -135,6 +137,21 @@ class ReportFormatter:
             "cot_reasoning_summary": cot_reasoning_summary,
             "next_queries": next_queries
         }
+
+        # Validate chart data structure before returning
+        validation = validate_chart_report(report_dict)
+        if not validation.is_valid:
+            error_msgs = "; ".join(validation.errors)
+            logger.error(f"Chart data validation failed: {error_msgs}")
+            return cls.format_error(
+                error_type="validation_error",
+                message="图表数据结构校验失败",
+                reason=error_msgs,
+                suggestions=["请重试查询", "检查查询条件"],
+                recommended_queries=[user_input] if user_input else []
+            )
+
+        return report_dict
 
     @classmethod
     def format_empty_result(
