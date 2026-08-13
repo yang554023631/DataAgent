@@ -200,8 +200,10 @@ class AnalysisExecutor:
         trend_data = extract_trend_data(response, series_level=series_level)
 
         # 构建图表数据
+        # 如果 analysis_plan 已经指定了 chart_type，默认配置使用它，不要硬编码覆盖
+        default_chart_type = analysis_plan.chart_type.value if hasattr(analysis_plan.chart_type, "value") else analysis_plan.chart_type
         chart_config = analysis_plan.chart_config or AnalysisChartConfig(
-            type="line",
+            type=default_chart_type,
             title=f"{metric} 趋势",
             x_axis={"field": "date", "label": "日期"},
             y_axis={"field": metric, "label": metric},
@@ -275,9 +277,10 @@ class AnalysisExecutor:
         # 提取数据
         table_data = extract_entity_table_data(response, group_by_level)
 
-        # 构建图表配置（默认为表格类型）
+        # 构建图表配置（默认为表格类型，如果 LLM 指定了 chart_type 就用 LLM 的）
+        default_chart_type = analysis_plan.chart_type.value if hasattr(analysis_plan.chart_type, "value") else analysis_plan.chart_type
         chart_config = analysis_plan.chart_config or AnalysisChartConfig(
-            type="table",
+            type=default_chart_type,
             title=f"{group_by_level} 指标汇总",
         )
 
@@ -314,15 +317,15 @@ class AnalysisExecutor:
         """执行时期对比分析"""
         trace.append({"step": "period_comparison", "status": "started"})
 
-        if not analysis_plan.comparison:
+        if not analysis_plan.compare_time_range:
             raise ValueError("Period comparison analysis requires comparison config")
 
         dsl = build_period_comparison_summary(
             advertiser_ids=advertiser_ids,
             current_start=start_date,
             current_end=end_date,
-            compare_start=analysis_plan.comparison.compare_start_date,
-            compare_end=analysis_plan.comparison.compare_end_date,
+            compare_start=analysis_plan.compare_time_range.compare_start_date,
+            compare_end=analysis_plan.compare_time_range.compare_end_date,
             metrics=analysis_plan.metrics,
         )
 
@@ -338,8 +341,11 @@ class AnalysisExecutor:
         comparison_data = extract_comparison_data(response, analysis_plan.metrics)
 
         # 构建图表配置
+        # 如果 analysis_plan 已经指定了 chart_type，默认配置使用它，不要硬编码覆盖
+        # 只有当 chart_config 为 None 时才创建默认配置
+        default_chart_type = analysis_plan.chart_type.value if hasattr(analysis_plan.chart_type, "value") else analysis_plan.chart_type
         chart_config = analysis_plan.chart_config or AnalysisChartConfig(
-            type="bar",
+            type=default_chart_type,
             title="时期对比",
             x_axis={"field": "metric", "label": "指标"},
             y_axis={"field": "value", "label": "数值"},
@@ -348,11 +354,55 @@ class AnalysisExecutor:
 
         # 构建图表数据
         chart_data_points = []
+        # Generate friendly period names from date ranges
+        def get_friendly_period_name(period_key: str) -> str:
+            """Generate friendly display name for a period from its date range"""
+            # Get the start and end dates for this period
+            if period_key == "current_period":
+                start_date = analysis_plan.time_range.start_date
+                end_date = analysis_plan.time_range.end_date
+            elif period_key == "compare_period":
+                if not analysis_plan.compare_time_range:
+                    return "对比期"
+                start_date = analysis_plan.compare_time_range.compare_start_date
+                end_date = analysis_plan.compare_time_range.compare_end_date
+            else:
+                return period_key
+
+            # Parse YYYY-MM-DD
+            if len(start_date) != 10 or len(end_date) != 10:
+                return period_key.replace("_", " ")
+
+            start_year = int(start_date[0:4])
+            start_month = int(start_date[5:7])
+            start_day = int(start_date[8:10])
+            end_year = int(end_date[0:4])
+            end_month = int(end_date[5:7])
+            end_day = int(end_date[8:10])
+
+            # Case 1: Full month (start day 1, end day is last day of month) → just "M月" or "YYYY年M月"
+            if start_day == 1 and end_day >= 28:
+                if start_year == end_year:
+                    return f"{start_month}月"
+                else:
+                    return f"{start_year}年{start_month}月"
+
+            # Case 2: Same year, different months → "M月d日 ~ N月d日"
+            if start_year == end_year:
+                if start_month == end_month:
+                    # Same month, multiple days → "M月d日 ~d日"
+                    return f"{start_month}月{start_day}日~{end_day}日"
+                else:
+                    return f"{start_month}月{start_day}日~{end_month}月{end_day}日"
+
+            # Case 3: Different years → "YYYY年M月d日 ~ YYYY年M月d日"
+            return f"{start_year}年{start_month}月{start_day}日~{end_year}年{end_month}月{end_day}日"
+
         for metric in analysis_plan.metrics:
             for period in ["current_period", "compare_period"]:
                 chart_data_points.append({
                     "metric": metric,
-                    "period": period,
+                    "period": get_friendly_period_name(period),
                     "value": comparison_data[period].get(metric),
                 })
 
@@ -412,8 +462,10 @@ class AnalysisExecutor:
         audience_data = extract_audience_data(response)
 
         # 构建图表配置
+        # 如果 analysis_plan 已经指定了 chart_type，默认配置使用它，不要硬编码覆盖
+        default_chart_type = analysis_plan.chart_type.value if hasattr(analysis_plan.chart_type, "value") else analysis_plan.chart_type
         chart_config = analysis_plan.chart_config or AnalysisChartConfig(
-            type="pie",
+            type=default_chart_type,
             title=f"{analysis_plan.audience_type} 分布",
         )
 
@@ -471,8 +523,10 @@ class AnalysisExecutor:
         summary_data = extract_summary_data(response, analysis_plan.metrics)
 
         # 构建图表配置
+        # 如果 analysis_plan 已经指定了 chart_type，默认配置使用它，不要硬编码覆盖
+        default_chart_type = analysis_plan.chart_type.value if hasattr(analysis_plan.chart_type, "value") else analysis_plan.chart_type
         chart_config = analysis_plan.chart_config or AnalysisChartConfig(
-            type="kpi_card",
+            type=default_chart_type,
             title="汇总指标",
         )
 

@@ -315,22 +315,50 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
 
   // 普通查询图表渲染（至少2条数据才渲染图表）
   if (data && data.length > 1) {
+    // Get x and y field from chart_config if provided
+    const xField = report?.chart_config?.x_axis?.field;
+    const yField = report?.chart_config?.y_axis?.field;
     const primaryMetric = ('metrics' in (report?.chart_config || {})
       ? (report?.chart_config as ChartConfig)?.metrics?.[0]
-      : undefined) || metrics?.[0] || 'clicks';
+      : undefined) || (yField ? undefined : metrics?.[0]) || 'clicks';
     const categories: string[] = [];
     const values: number[] = [];
 
     // 确定哪些列是维度列（排除指标列和 name）
     const metricColumns = ['impressions', 'clicks', 'cost', 'conversions', 'reach', 'frequency', 'ctr', 'cvr', 'roi'];
-    const dimensionColumns = Object.keys(data[0] || {})
+    let dimensionColumns = Object.keys(data[0] || {})
       .filter(col => !metricColumns.includes(col) && col !== 'name');
+
+    // If x_field is specified, use it directly as the only dimension
+    if (xField) {
+      dimensionColumns = [xField];
+    }
 
     data.forEach((item) => {
       // 如果有多维度列，使用 name 列的组合值作为分类（因为 name 包含所有维度的组合）
       // 如果只有单个维度列，直接使用该维度值
+      // 如果有 series_field，每个点就是一个分类，将 x_field + series_field 组合起来更清晰
       let category: string;
-      if (dimensionColumns.length > 1 && item.name) {
+      if (report?.chart_config?.series_field && dimensionColumns.length === 1) {
+        // When we have a series field (like 'period'), combine it with x field for better readability
+        const xVal = String(item[xField]) || '';
+        const seriesVal = String(item[report.chart_config.series_field]) || '';
+
+        // Translate period names to more readable Chinese
+        const friendlyNames: Record<string, string> = {
+          'current_period': '当前期',
+          'compare_period': '对比期',
+          'current': '当前期',
+          'compare': '对比期',
+          '4月': '4月',
+          '3月': '3月',
+          '2026-04': '4月',
+          '2026-03': '3月',
+        };
+        const friendlySeries = friendlyNames[seriesVal] || seriesVal;
+        // Format: "cost (4月)"
+        category = `${xVal} (${friendlySeries})`;
+      } else if (dimensionColumns.length > 1 && item.name) {
         category = String(item.name);
       } else if (dimensionColumns.length === 1) {
         category = String(item[dimensionColumns[0]]) || item.name || '-';
@@ -339,7 +367,9 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
         category = item[firstKey] || item.name || '-';
       }
       categories.push(category);
-      values.push(Number(item[primaryMetric]) || 0);
+      // Use y_field from chart_config if provided, otherwise fall back to primaryMetric
+      const valueKey = yField || primaryMetric;
+      values.push(Number(item[valueKey]) || 0);
     });
 
     // 根据图表类型渲染

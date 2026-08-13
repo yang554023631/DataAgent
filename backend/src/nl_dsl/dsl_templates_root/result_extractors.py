@@ -141,17 +141,23 @@ def extract_comparison_data(es_response: Dict[str, Any], metrics: List[str]) -> 
     result = {}
 
     for period in ["current_period", "compare_period"]:
-        period_aggs = aggs.get(period, {})
+        period_container = aggs.get(period, {})
+        # In Elasticsearch response, sub-aggs are directly in the period container, not under "aggregations"
         period_data = {}
 
         for metric in metrics:
             if metric in ["ctr", "cvr", "cpc", "cpm"]:
-                if metric in period_aggs:
-                    period_data[metric] = period_aggs[metric].get("value", None)
+                # Derived metrics are bucket_script, value is directly at metric.value
+                if metric in period_container:
+                    period_data[metric] = period_container[metric].get("value", None)
             else:
+                # Base metrics: build_base_metric_sum_aggs adds filter -> aggs -> value
+                # Structure: sum_metric -> {filter: ..., aggs: {value: {sum: ...}}}
+                # In response: sum_metric -> doc_count + value.value (the final number)
                 agg_key = f"sum_{metric}"
-                if agg_key in period_aggs:
-                    period_data[metric] = period_aggs[agg_key].get("value", None)
+                if agg_key in period_container and "value" in period_container[agg_key]:
+                    # Final value is at sum_metric.value.value
+                    period_data[metric] = period_container[agg_key]["value"].get("value", None)
 
         result[period] = period_data
 

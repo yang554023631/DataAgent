@@ -108,7 +108,7 @@ class ReportFormatter:
 
         # 7. 准备元数据
         if analysis_plan is not None and filter_result is not None:
-            metadata = cls._generate_metadata(filter_result, analysis_plan)
+            metadata = cls._generate_metadata(filter_result, analysis_plan, chart_config)
         else:
             metadata = {}
 
@@ -176,8 +176,8 @@ class ReportFormatter:
             ],
             "data_table": {"columns": [], "rows": []},
             "chart_config": None,
-            "metadata": cls._generate_metadata(filter_result, analysis_plan_result.analysis_plan),
-            "next_queries": ["查看最近7天的整体数据", "查看全部广告主数据"],
+            "metadata": cls._generate_metadata(filter_result, analysis_plan_result.analysis_plan, {}),
+            "next_queries": ["查看最近7天的整体数据", "查看全部广告主"],
             "suggestions": suggestions
         }
 
@@ -682,20 +682,25 @@ class ReportFormatter:
         }
 
     @classmethod
-    def _generate_metadata(cls, filter_result: FilterResult, analysis_plan: AnalysisPlan) -> Dict[str, Any]:
+    def _generate_metadata(cls, filter_result: FilterResult, analysis_plan: AnalysisPlan, chart_config: Dict[str, Any]) -> Dict[str, Any]:
         """生成元数据"""
+        # Get actual chart type from the built chart_config by backend
+        # If chart_config has no type, fall back to analysis_plan.chart_type
+        chart_type = (
+            chart_config.get("type",
+                analysis_plan.chart_config.type.value if hasattr(analysis_plan.chart_config, "type") and hasattr(analysis_plan.chart_config.type, "value")
+                else analysis_plan.chart_config.type if analysis_plan.chart_config is not None and hasattr(analysis_plan.chart_config, "type")
+                else analysis_plan.chart_config if analysis_plan.chart_config is not None
+                else "table"
+            )
+        )
         return {
             "generated_at": datetime.now().isoformat(),
             "entity_level": filter_result.entity_level,
             "total_entities": filter_result.total_count,
             "metrics": analysis_plan.metrics,
             "analysis_type": analysis_plan.analysis_type.value if hasattr(analysis_plan.analysis_type, "value") else analysis_plan.analysis_type,
-            "chart_type": (
-                analysis_plan.chart_config.type.value if hasattr(analysis_plan.chart_config, "type") and hasattr(analysis_plan.chart_config.type, "value")
-                else analysis_plan.chart_config.type if analysis_plan.chart_config is not None and hasattr(analysis_plan.chart_config, "type")
-                else analysis_plan.chart_config if analysis_plan.chart_config is not None
-                else "table"
-            ),
+            "chart_type": chart_type,
             "time_range": {
                 "start_date": analysis_plan.time_range.start_date,
                 "end_date": analysis_plan.time_range.end_date,

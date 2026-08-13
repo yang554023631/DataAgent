@@ -69,6 +69,27 @@ TEST_CASES: List[Dict[str, Any]] = [
             "min_rows": 1,
         }
     },
+    {
+        "id": 4,
+        "name": "Period comparison (E2E)",
+        "query": "广告主6 4月的消耗和3月比怎么样",
+        "expected": {
+            "analysis_type": "period_comparison",
+            "chart_type": "bar",
+            "entity_level": "advertiser",
+            "metrics": ["cost"],
+            "columns_len": 5,
+            "columns": ["metric", "current", "compare", "change", "change_pct"],
+            "has_chart_config": True,
+            "chart_config_type": "bar",
+            "x_axis_field": "period",
+            "y_axis_field": "cost",
+            "data_empty": False,
+            "min_rows": 1,
+            "require_non_null": True,
+            "allow_all_zero": False,
+        }
+    },
 ]
 
 
@@ -113,6 +134,11 @@ def parse_args():
         type=float,
         default=1.0,
         help="多大间隔算有效间隔（秒），默认1.0",
+    )
+    parser.add_argument(
+        "--tests",
+        type=str,
+        help="指定要运行的测试ID，逗号分隔，例如 1,2,3",
     )
     return parser.parse_args()
 
@@ -374,7 +400,7 @@ def validate_result(
 
         if numeric_values:
             all_zero = all(v == 0 for v in numeric_values)
-            if all_zero:
+            if all_zero and not expected.get("allow_all_zero", True):
                 return False, "所有数值都为0，预期应该有非零值"
 
     # 7. 检查has_chart_config
@@ -385,6 +411,27 @@ def validate_result(
     expected_has_chart = expected.get("has_chart_config", False)
     if has_chart_config != expected_has_chart:
         return False, f"has_chart_config错误: 期望 {expected_has_chart}, 得到 {has_chart_config}"
+
+    # 8. 检查 metadata.chart_type
+    if "metadata" in data and "chart_type" in expected:
+        expected_chart_type = expected["chart_type"]
+        actual_chart_type = data["metadata"].get("chart_type")
+        if actual_chart_type != expected_chart_type:
+            return False, f"metadata.chart_type错误: 期望 {expected_chart_type}, 得到 {actual_chart_type}"
+
+    # 9. 检查 chart data 每个点都有 value 且不为 null
+    if "data" in data and expected.get("has_chart_config"):
+        chart_data = data["data"]
+        if not isinstance(chart_data, list):
+            return False, f"chart data 不是数组: 得到 {type(chart_data)}"
+        if len(chart_data) == 0:
+            return False, "chart data 为空数组"
+        # 检查每个点都有 value 且不为 None
+        for i, point in enumerate(chart_data):
+            if "value" not in point:
+                return False, f"chart data[{i}] 缺少 'value' 字段"
+            if point["value"] is None and expected.get("require_non_null"):
+                return False, f"chart data[{i}].value 为 null，预期应该有值"
 
     return True, None
 
@@ -540,7 +587,25 @@ def main():
     """主函数"""
     args = parse_args()
 
-    print(f"🚀 开始运行 全流程端到端冒烟测试，共 {len(TEST_CASES)} 个测试用例")
+    # 筛选要运行的测试用例
+    selected_tests = None
+    if args.tests:
+        try:
+            selected_test_ids = [int(id_str.strip()) for id_str in args.tests.split(",")]
+            selected_tests = [
+                test for test in TEST_CASES
+                if test["id"] in selected_test_ids
+            ]
+            if not selected_tests:
+                print("❌ 错误: 未找到指定的测试用例")
+                sys.exit(1)
+        except ValueError:
+            print("❌ 错误: 测试ID格式不正确，请使用逗号分隔的数字")
+            sys.exit(1)
+    else:
+        selected_tests = TEST_CASES
+
+    print(f"🚀 开始运行 全流程端到端冒烟测试，共 {len(selected_tests)} 个测试用例")
     print(f"📌 后端地址: {args.backend_url}")
     print(f"⏱  超时时间: {args.timeout}秒")
     print("-" * 80)
@@ -585,7 +650,7 @@ def main():
             print()
 
     # 正常运行所有测试
-    for test_case in TEST_CASES:
+    for test_case in selected_tests:
         print(f"🔹 运行测试 {test_case['id']}: {test_case['name']}")
         print(f"   查询: {test_case['query']}")
 
