@@ -90,6 +90,66 @@ TEST_CASES: List[Dict[str, Any]] = [
             "allow_all_zero": False,
         }
     },
+    {
+        "id": 5,
+        "name": "Audience distribution (E2E)",
+        "query": "广告主6 4月份的消耗按性别分布",
+        "expected": {
+            "analysis_type": "audience_distribution",
+            "entity_level": "advertiser",
+            "metrics": ["cost"],
+            "columns_len": 3,
+            "columns": ["audience_gender 类别", "cost", "percentage"],
+            "has_chart_config": True,
+            "data_empty": False,
+            "require_non_null": True,
+            "allow_all_zero": False,
+            "min_rows": 1,
+            "min_non_zero_columns": 2,
+        }
+    },
+    {
+        "id": 6,
+        "name": "Multi-series trend (E2E)",
+        "query": "广告主6下各个广告计划分开展示4月份的消耗趋势",
+        "expected": {
+            "analysis_type": "time_trend",
+            "chart_type": "line",
+            "entity_level": "campaign",
+            "metrics": ["cost"],
+            "columns_len": 0,
+            "min_columns": 4,
+            "has_chart_config": True,
+            "chart_config_type": "line",
+            "x_axis_field": "date",
+            "data_empty": False,
+            "require_non_null": True,
+            "allow_all_zero": False,
+            "min_rows": 1,
+            "min_non_zero_columns": 2,
+        }
+    },
+    {
+        "id": 7,
+        "name": "Multi-metric entity table (E2E)",
+        "query": "列出广告主6 4月份的展示、点击、消耗、转化数据表格",
+        "expected": {
+            "analysis_type": "entity_table",
+            "chart_type": "table",
+            "entity_level": "advertiser",
+            "metrics": ["impressions", "clicks", "cost", "conversions"],
+            "columns_len": 6,
+            "columns": ["advertiser ID", "advertiser 名称", "impressions", "clicks", "cost", "conversions"],
+            "has_chart_config": True,
+            "data_empty": True,
+            "min_rows": 1,
+            "max_rows": 1,
+            "require_non_null": True,
+            "allow_all_zero": False,
+            "skip_title_check": True,
+            "min_non_zero_columns": 4,
+        }
+    },
 ]
 
 
@@ -105,8 +165,8 @@ def parse_args():
     parser.add_argument(
         "--timeout",
         type=float,
-        default=720.0,
-        help="请求超时时间（秒），默认720秒（支持最多3次重试，每次240秒)",
+        default=120.0,
+        help="请求超时时间（秒），默认120秒（支持最多1次重试，总超时240秒)",
     )
     parser.add_argument(
         "--output",
@@ -301,6 +361,24 @@ def extract_numeric_values_from_cell(cell: Any) -> List[float]:
     return values
 
 
+def _is_non_zero_value(val) -> bool:
+    """检查一个值是否非零，处理字符串格式化的数值"""
+    if val is None or val == "":
+        return False
+    if isinstance(val, (int, float)):
+        return val != 0
+    if isinstance(val, str):
+        # 处理格式化字符串如 "466,529.0" → 去掉逗号 → 转浮点数
+        try:
+            cleaned = val.replace(",", "").strip()
+            num = float(cleaned)
+            return num != 0
+        except (ValueError, TypeError):
+            # 不是数字，视为非零（有内容就算非零）
+            return True
+    return False
+
+
 def validate_result(
     api_result: Dict[str, Any],
     expected: Dict[str, Any],
@@ -360,8 +438,10 @@ def validate_result(
 
     # 3. 列数校验
     expected_cols = expected.get("columns_len", 0)
+    min_cols = expected.get("min_columns", 0)
     data_table = data["data_table"]
     rows = data_table.get("rows", [])
+
     if expected_cols > 0:
         if not rows:
             return False, f"data_table.rows 为空，期望至少 {expected_cols} 列"
@@ -369,6 +449,21 @@ def validate_result(
         got_cols = len(first_row)
         if got_cols != expected_cols:
             return False, f"columns长度错误: 期望 {expected_cols}, 得到 {got_cols}"
+    elif min_cols > 0:
+        if not rows:
+            return False, f"data_table.rows 为空，期望至少 {min_cols} 列"
+        first_row = rows[0]
+        got_cols = len(first_row)
+        if got_cols < min_cols:
+            return False, f"columns长度不足: 期望至少 {min_cols} 列，得到 {got_cols}"
+
+    # 4. 行数校验（min_rows 和 max_rows）
+    if "min_rows" in expected:
+        if len(rows) < expected["min_rows"]:
+            return False, f"data_table.rows 行数不足: 期望至少 {expected['min_rows']} 行，得到 {len(rows)} 行"
+    if "max_rows" in expected:
+        if len(rows) > expected["max_rows"]:
+            return False, f"data_table.rows 行数过多: 期望最多 {expected['max_rows']} 行，得到 {len(rows)} 行"
 
     # 4. 检查是否所有数值都为零
     expected_data_empty = expected.get("data_empty", False)
@@ -402,6 +497,104 @@ def validate_result(
             all_zero = all(v == 0 for v in numeric_values)
             if all_zero and not expected.get("allow_all_zero", True):
                 return False, "所有数值都为0，预期应该有非零值"
+
+    def _is_non_zero_value(val) -> bool:
+        """检查一个值是否非零，处理字符串格式化的数值"""
+        if val is None or val == "":
+            return False
+        if isinstance(val, (int, float)):
+            return val != 0
+        if isinstance(val, str):
+            # 处理格式化字符串如 "466,529.0" → 去掉逗号 → 转浮点数
+            try:
+                cleaned = val.replace(",", "").strip()
+                num = float(cleaned)
+                return num != 0
+            except (ValueError, TypeError):
+                # 不是数字，视为非零（有内容就算非零）
+                return True
+        return False
+
+    # 5. 检查至少有 min_non_zero_columns 列包含非零值
+    # 这个用于多系列趋势，确保每个系列都有非零数据（不会全为零）
+    min_non_zero_cols = expected.get("min_non_zero_columns")
+    if min_non_zero_cols is not None and data_table and rows:
+        # 对于每一列，统计有多少非零值
+        # columns_info 可能是:
+        # - [{"key": "date", "label": "日期"}, ...] (dict 格式行时)
+        # - ["日期", "campaign ID", ...] (list 格式行时，label 直接作为字符串)
+        columns_info = data_table.get("columns", [])
+        if not columns_info:
+            if rows and len(rows) > 0:
+                num_cols = len(rows[0])
+            else:
+                num_cols = 0
+        else:
+            num_cols = len(columns_info)
+
+        # 统计每列非零值数量
+        non_zero_count_per_col = [0] * num_cols
+        for row in rows:
+            # row 可能是 dict 也可能是 list
+            if isinstance(row, dict):
+                # dict 格式：{key: value}
+                i = 0
+                for col in columns_info:
+                    key = col.get("key") if isinstance(col, dict) else col
+                    val = row.get(key)
+                    if _is_non_zero_value(val):
+                        non_zero_count_per_col[i] += 1
+                    i += 1
+            elif isinstance(row, list):
+                # list 格式：[value1, value2, ...]
+                for i, val in enumerate(row):
+                    if i < len(non_zero_count_per_col) and _is_non_zero_value(val):
+                        non_zero_count_per_col[i] += 1
+
+        # 计算有多少列至少有一个非零
+        cols_with_non_zero = sum(1 for cnt in non_zero_count_per_col if cnt > 0)
+        if cols_with_non_zero < min_non_zero_cols:
+            return False, (
+                f"非零列数量不足: 期望至少 {min_non_zero_cols} 列包含非零值，"
+                f"实际只有 {cols_with_non_zero} 列有非零。各列非零计数: {non_zero_count_per_col}"
+            )
+
+    # 6. 检查至少有 min_non_empty_columns 列不为空
+    # 类似于 min_non_zero_columns，但检查非空而不是非零
+    min_non_empty_cols = expected.get("min_non_empty_columns")
+    if min_non_empty_cols is not None and data_table and rows:
+        columns_info = data_table.get("columns", [])
+        if not columns_info:
+            if rows and len(rows) > 0:
+                num_cols = len(rows[0])
+            else:
+                num_cols = 0
+        else:
+            num_cols = len(columns_info)
+
+        # 统计每列非空值数量
+        non_empty_count_per_col = [0] * num_cols
+        for row in rows:
+            # row 可能是 dict 也可能是 list
+            if isinstance(row, dict):
+                i = 0
+                for col in columns_info:
+                    key = col.get("key") if isinstance(col, dict) else col
+                    val = row.get(key)
+                    if val is not None and val != "":
+                        non_empty_count_per_col[i] += 1
+                    i += 1
+            elif isinstance(row, list):
+                for i, val in enumerate(row):
+                    if i < len(non_empty_count_per_col) and val is not None and val != "":
+                        non_empty_count_per_col[i] += 1
+
+        cols_with_non_empty = sum(1 for cnt in non_empty_count_per_col if cnt > 0)
+        if cols_with_non_empty < min_non_empty_cols:
+            return False, (
+                f"非空列数量不足: 期望至少 {min_non_empty_cols} 列包含非空值，"
+                f"实际只有 {cols_with_non_empty} 列有非空。各列非空计数: {non_empty_count_per_col}"
+            )
 
     # 7. 检查has_chart_config
     has_chart_config = (
@@ -443,8 +636,27 @@ def validate_result(
                 elif "value" in point and point["value"] is None:
                     return False, f"chart data[{i}].value 为 null，预期应该有值"
 
+            # 对于多系列趋势（测试6），检查补零完整性：每个日期点都应该包含所有系列
+            # 如果第一个点有 N 个非 date 键，那么所有点都应该有 N 个非 date 键
+            min_non_zero_cols = expected.get("min_non_zero_columns")
+            if min_non_zero_cols is not None and min_non_zero_cols > 1 and chart_data:
+                # 获取第一个点的非 date 键数量，这个应该等于预期的系列数量
+                first_point = chart_data[0]
+                if isinstance(first_point, dict):
+                    expected_series_count = len([k for k in first_point.keys() if k != "date"])
+                    # 检查每个点都有相同数量的系列（补零保证每个日期都包含所有系列）
+                    for i, point in enumerate(chart_data):
+                        if not isinstance(point, dict):
+                            continue
+                        actual_count = len([k for k in point.keys() if k != "date"])
+                        if actual_count != expected_series_count:
+                            return False, (
+                                f"chart data[{i}] 系列数量不匹配: 期望 {expected_series_count} 个系列，"
+                                f"实际 {actual_count} 个。补零不完整，某些系列在该日期缺失。"
+                            )
+
     # 10. 检查 chart_config.title 是否包含正确的指标名称（可选校验）
-    if "chart_config" in data and data["chart_config"] and "metrics" in expected:
+    if "chart_config" in data and data["chart_config"] and "metrics" in expected and not expected.get("skip_title_check"):
         # 使用第一个指标来判断
         metrics = expected["metrics"]
         if metrics and len(metrics) > 0:
@@ -457,6 +669,7 @@ def validate_result(
                 "ctr": "点击率",
                 "cvr": "转化率",
                 "spend": "花费",
+                "conv": "转化",
             }
             expected_display = metric_display_map.get(first_metric, first_metric)
             actual_title = data["chart_config"].get("title", "")
@@ -471,7 +684,7 @@ def run_single_test(
     base_url: str,
     timeout: float,
     verbose: bool = False,
-    max_retries: int = 3,
+    max_retries: int = 1,
 ) -> Dict[str, Any]:
     """运行单个测试用例，支持最多重试max_retries次，有一次成功就算成功"""
     start_time = time.time()
@@ -481,10 +694,10 @@ def run_single_test(
     last_result = None
     last_error = None
 
-    # 最多重试 max_retries 次
-    for attempt in range(max_retries):
+    # 最多重试 max_retries 次，总共有 max_retries + 1 次尝试
+    for attempt in range(max_retries + 1):
         if attempt > 0:
-            print(f"   第 {attempt + 1} 次重试...")
+            print(f"   第 {attempt + 1} 次尝试...")
 
         # 1. 创建会话（每次重试都新建会话，避免状态污染）
         session_id = create_session(base_url, timeout)

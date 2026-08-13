@@ -22,6 +22,7 @@ from .dsl_templates import (
     get_level_field,
     LEVEL_TO_FIELD,
 )
+from src.tools.custom_report_client import AUDIENCE_VALUE_MAPS
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,24 @@ class AnalysisExecutor:
         # Skip date-related grouping - single series trend is already grouped by date
         series_level = analysis_plan.group_by
         date_related = ['data_date', 'date', 'day', 'month', 'time']
-        if series_level and series_level.lower() not in date_related:
+
+        # 如果 group_by 是列表（多个分组字段），过滤掉日期相关的，只保留非日期的作为 series_level
+        if isinstance(series_level, list):
+            # 找第一个非日期相关的字段作为 series_level
+            found = None
+            for gb in series_level:
+                if gb.lower() not in date_related:
+                    found = gb
+                    break
+            series_level = found
+
+        # 智能推断：如果 having 过滤后得到多个实体ID，且 group_by 为空
+        # 说明用户希望看到每个实体单独的趋势，自动推断 series_level = entity_level
+        if entity_ids and len(entity_ids) > 1 and not series_level and entity_level:
+            # entity_level 是 "campaign"，对应的字段就是 get_level_field(entity_level) = "campaign_id"
+            series_level = get_level_field(entity_level)
+
+        if series_level and str(series_level).lower() not in date_related:
             # 多系列趋势
             dsl = build_multi_series_trend(
                 advertiser_ids=advertiser_ids,
@@ -210,22 +228,62 @@ class AnalysisExecutor:
         )
 
         # 转换数据格式
-        chart_data_points = []
-        for date_key, value in trend_data.items():
-            if series_level and isinstance(value, dict):
-                # 多系列: {date: {series_id: value, ...}}
-                point = {"date": date_key}
-                for series_id, series_value in value.items():
-                    point[str(series_id)] = series_value
-                chart_data_points.append(point)
-            else:
-                # 单系列: {date: value}
-                chart_data_points.append({"date": date_key, metric: value})
-
-        # 构建数据表格
+        # 构建数据表格（表格始终使用长格式，已经补零）
         data_table = self._build_data_table_for_trend(
             trend_data, metric, series_level
         )
+
+        if series_level and str(series_level).lower() not in ['data_date', 'date', 'day', 'month', 'time']:
+            # 多系列趋势: 转换为前端期望的长格式，每个 date × series 占一行
+            # 这样前端现有代码可以直接处理多系列
+            # 收集所有日期和所有系列
+            all_series = set()
+            all_dates = set()
+            for date_key, series_values in trend_data.items():
+                all_dates.add(date_key)
+                if isinstance(series_values, dict):
+                    all_series.update(series_values.keys())
+
+            # 判断指标类型，确定补零值
+            # 计数类指标（曝光/点击/转化/触达）补整数0，其他（消耗/比例/频次）补浮点数0.0
+            integer_metrics = {'impressions', 'clicks', 'conversions', 'reach'}
+            fill_value = 0 if metric in integer_metrics else 0.0
+
+            # 获取 series_field 名称（比如 "campaign_id"）
+            series_field = get_level_field(series_level) if series_level else None
+
+            # 对每个日期 × 每个系列生成一行（长格式）
+            chart_data_points = []
+            sorted_dates = sorted(all_dates)
+            for date_key in sorted_dates:
+                series_values = trend_data.get(date_key, {})
+                if not isinstance(series_values, dict):
+                    series_values = {}
+                for series_id in sorted(all_series):
+                    value = series_values.get(series_id, fill_value)
+                    point = {
+                        "date": date_key,
+                        series_field: str(series_id),
+                        metric: value,
+                    }
+                    chart_data_points.append(point)
+
+            # 自动填充 chart_config.series 给前端
+            # 每个系列需要一个 {name: series_name} 条目
+            if chart_config.series is None or len(chart_config.series) == 0:
+                series_list = []
+                for series_id in sorted(all_series):
+                    series_name = self.entity_name_resolver.get(series_id, str(series_id))
+                    series_list.append({"name": series_name})
+                chart_config.series = series_list
+
+            # 设置 series_field
+            chart_config.series_field = series_field
+        else:
+            # 单系列: {date: value}
+            chart_data_points = []
+            for date_key, value in sorted(trend_data.items()):
+                chart_data_points.append({"date": date_key, metric: value})
 
         trace.append({"step": "time_trend", "status": "success"})
 
@@ -252,6 +310,18 @@ class AnalysisExecutor:
         trace.append({"step": "entity_table", "status": "started"})
 
         group_by_level = analysis_plan.group_by or entity_level
+        # If group_by is a list (multiple groupings), take the first non-date one for entity table grouping
+        if isinstance(group_by_level, list):
+            date_related = ['data_date', 'date', 'day', 'month', 'time']
+            found = None
+            for gb in group_by_level:
+                if gb.lower() not in date_related:
+                    found = gb
+                    break
+            if found:
+                group_by_level = found
+            else:
+                group_by_level = group_by_level[0] if group_by_level else entity_level
         if not group_by_level:
             raise ValueError("Entity table analysis requires group_by (group by level)")
 
@@ -300,6 +370,7 @@ class AnalysisExecutor:
 
         return AnalysisResult(
             chart_data=chart_data,
+            chart_config=chart_config,
             data_table=data_table,
             trace=trace,
         )
@@ -435,8 +506,8 @@ class AnalysisExecutor:
         """执行受众分布分析"""
         trace.append({"step": "audience_distribution", "status": "started"})
 
-        if not analysis_plan.audience_type:
-            raise ValueError("Audience distribution analysis requires audience_type")
+        if not analysis_plan.audience_dimension:
+            raise ValueError("Audience distribution analysis requires audience_dimension")
 
         if not analysis_plan.metrics:
             raise ValueError("Audience distribution analysis requires at least one metric")
@@ -447,7 +518,7 @@ class AnalysisExecutor:
             start_date=start_date,
             end_date=end_date,
             metric=metric,
-            audience_type=analysis_plan.audience_type,
+            audience_type=analysis_plan.audience_dimension,
         )
 
         # 如果有实体 ID，添加过滤条件
@@ -461,23 +532,61 @@ class AnalysisExecutor:
         # 提取数据
         audience_data = extract_audience_data(response)
 
+        # 如果有受众值映射，将数字编码转换为中文名称
+        if analysis_plan.audience_dimension in AUDIENCE_VALUE_MAPS:
+            mapping = AUDIENCE_VALUE_MAPS[analysis_plan.audience_dimension]
+            mapped_data = {}
+            for key, value in audience_data.items():
+                # key 可能是字符串或数字，尝试映射
+                mapped_key = mapping.get(str(key), mapping.get(key, key))
+                mapped_data[mapped_key] = int(value) if value.is_integer() else value
+            audience_data = mapped_data
+
         # 构建图表配置
         # 如果 analysis_plan 已经指定了 chart_type，默认配置使用它，不要硬编码覆盖
         default_chart_type = analysis_plan.chart_type.value if hasattr(analysis_plan.chart_type, "value") else analysis_plan.chart_type
         chart_config = analysis_plan.chart_config or AnalysisChartConfig(
             type=default_chart_type,
-            title=f"{analysis_plan.audience_type} 分布",
+            title=f"{analysis_plan.audience_dimension} 分布",
         )
+
+        # 对于饼图，如果 chart_config.series 为空，自动填充series信息，每个标签对应一个系列
+        if default_chart_type == "pie" and (not chart_config.series):
+            # 从 audience_data 提取所有标签作为 series
+            series = []
+            for label in audience_data.keys():
+                series.append({"name": str(label)})
+            chart_config.series = series
+
+        # 对于柱状图，如果 x_axis 或 y_axis 为空，自动补全默认配置
+        if default_chart_type == "bar":
+            if not chart_config.x_axis:
+                # x 轴是分类标签，字段名就是 label
+                audience_dim_label = analysis_plan.audience_dimension or "分类"
+                # 尝试映射中文标签
+                label_mapping = {
+                    "audience_gender": "性别",
+                    "audience_age": "年龄",
+                    "audience_os": "操作系统",
+                    "audience_country": "国家",
+                    "audience_city": "城市",
+                    "audience_interest": "兴趣",
+                }
+                display_label = label_mapping.get(audience_dim_label, audience_dim_label)
+                chart_config.x_axis = {"field": "label", "label": display_label}
+            if not chart_config.y_axis:
+                # y 轴是指标值，字段名就是 value
+                chart_config.y_axis = {"field": "value", "label": metric}
 
         # 构建图表数据
         chart_data_points = [
-            {"category": key, "value": value}
+            {"label": key, "value": value}
             for key, value in audience_data.items()
         ]
 
         # 构建数据表格
         data_table = self._build_data_table_for_audience(
-            audience_data, analysis_plan.audience_type, metric
+            audience_data, analysis_plan.audience_dimension, metric
         )
 
         trace.append({"step": "audience_distribution", "status": "success"})
@@ -574,36 +683,64 @@ class AnalysisExecutor:
         metric: str,
         series_level: Optional[str],
     ) -> AnalysisDataTable:
-        """为趋势分析构建数据表格"""
-        columns = [{"key": "date", "label": "日期"}]
-        rows = []
+        """为趋势分析构建数据表格
 
+        多系列使用长格式（每行 date + series + value），避免列爆炸。
+        缺失数据按指标类型补零。
+        """
         # 只有当 series_level 不为空且不是 date 相关维度时，才是真正的多系列
         # date_related 分组本身就是趋势分析的分组维度，不代表多系列
         date_related = ['data_date', 'date', 'day', 'month', 'time']
         if series_level and series_level.lower() not in date_related:
-            # 多系列
-            # 获取所有系列 ID
+            # 多系列 → 长格式：每行 date × series → 避免列爆炸
+            # 获取所有系列 ID 和 所有日期
             all_series = set()
+            all_dates = set()
             for date_key, series_values in trend_data.items():
+                all_dates.add(date_key)
                 if isinstance(series_values, dict):
                     all_series.update(series_values.keys())
 
-            # 添加系列列
-            for series_id in sorted(all_series):
-                series_name = self.entity_name_resolver.get(series_id, str(series_id))
-                columns.append({"key": str(series_id), "label": series_name})
+            # 判断指标类型，确定补零值
+            integer_metrics = {'impressions', 'clicks', 'cost', 'conversions', 'reach'}
+            fill_value = 0 if metric in integer_metrics else 0.0
 
-            # 构建行
-            for date_key, series_values in sorted(trend_data.items()):
-                row = {"date": date_key}
-                if isinstance(series_values, dict):
-                    for series_id, value in series_values.items():
-                        row[str(series_id)] = value
-                rows.append(row)
+            # 排序
+            sorted_dates = sorted(all_dates)
+            sorted_series = sorted(all_series)
+
+            # 构建长格式表格：每行 date × series
+            columns = [
+                {"key": "date", "label": "日期"},
+                {"key": "series_id", "label": f"{series_level} ID"},
+                {"key": "series_name", "label": f"{series_level} 名称"},
+                {"key": metric, "label": metric},
+            ]
+            rows = []
+
+            # 对每个日期 × 每个系列 都生成一行，缺失补零
+            for date_key in sorted_dates:
+                series_values = trend_data.get(date_key, {})
+                if not isinstance(series_values, dict):
+                    series_values = {}
+
+                for series_id in sorted_series:
+                    series_name = self.entity_name_resolver.get(series_id, str(series_id))
+                    value = series_values.get(series_id, fill_value)
+                    row = {
+                        "date": date_key,
+                        "series_id": str(series_id),
+                        "series_name": series_name,
+                        metric: value,
+                    }
+                    rows.append(row)
         else:
-            # 单系列
-            columns.append({"key": metric, "label": metric})
+            # 单系列 → 简单一列
+            columns = [
+                {"key": "date", "label": "日期"},
+                {"key": metric, "label": metric},
+            ]
+            rows = []
             for date_key, value in sorted(trend_data.items()):
                 rows.append({"date": date_key, metric: value})
 
