@@ -84,7 +84,6 @@ For entity_table analysis, the `group_by` field should be the **entity level nam
 - line: 折线图（适合时间趋势）
 - bar: 柱状图（适合对比、分布）
 - pie: 饼图（适合占比分布）
-- kpi_card: KPI 卡片（适合核心指标展示）
 - table: 表格（适合明细数据）
 
 ## 可用的指标（metrics）

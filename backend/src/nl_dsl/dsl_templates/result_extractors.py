@@ -118,6 +118,9 @@ def extract_entity_table_data(es_response: Dict[str, Any], level: str) -> Dict[A
     return result
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 def extract_summary_data(es_response: Dict[str, Any], metrics: List[str]) -> Dict[str, float]:
     """Extract summary metric data from ES response.
 
@@ -135,13 +138,29 @@ def extract_summary_data(es_response: Dict[str, Any], metrics: List[str]) -> Dic
         # Check for derived metrics first
         if metric in ["ctr", "cvr", "cpc", "cpm"]:
             if metric in aggs:
-                result[metric] = aggs[metric].get("value", None)
+                # Derived metric: same structure -> metric -> { bucket_script, aggs: { value: { value } } }
+                agg_container = aggs[metric]
+                if "value" in agg_container:
+                    value_agg = agg_container["value"]
+                    result[metric] = value_agg.get("value", None)
+                else:
+                    result[metric] = agg_container.get("value", None)
         else:
             # Base metric: sum_{metric}
             agg_key = f"sum_{metric}"
             if agg_key in aggs:
-                result[metric] = aggs[agg_key].get("value", None)
+                # agg structure: agg_key -> { filter: ..., aggs: { value: { sum: ... } } }
+                # value is nested one level deeper: aggs[agg_key].value.value
+                agg_container = aggs[agg_key]
+                if "value" in agg_container:
+                    value_agg = agg_container["value"]
+                    result[metric] = value_agg.get("value", None)
+                    logger.debug(f"extract_summary: metric={metric}, got value={result[metric]}, type={type(result[metric])}")
+                else:
+                    result[metric] = agg_container.get("value", None)
+                    logger.debug(f"extract_summary (else): metric={metric}, got value={result[metric]}, type={type(result[metric])}")
 
+    logger.debug(f"extract_summary final result={result}")
     return result
 
 

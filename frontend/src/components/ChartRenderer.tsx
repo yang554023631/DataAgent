@@ -196,6 +196,11 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
   // 使用后端传的 chart_config 来确定图表类型和指标
   const chartType = report?.chart_config?.type || 'bar';
 
+  // table 交给下方 DataTable 组件渲染，ChartRenderer 不处理
+  if (chartType === 'table') {
+    return null;
+  }
+
   // KPI Card (summary)
   if (chartType === 'kpi_card' && data && data.length > 0) {
     // Auto-detect metric name and value fields

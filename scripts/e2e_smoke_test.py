@@ -150,6 +150,27 @@ TEST_CASES: List[Dict[str, Any]] = [
             "min_non_zero_columns": 4,
         }
     },
+    {
+        "id": 8,
+        "name": "Multi-metric summary (concise query) (E2E)",
+        "query": "广告主6 4月份的展示、点击、消耗、转化",
+        "expected": {
+            "analysis_type": "summary",
+            "chart_type": "table",
+            "entity_level": "advertiser",
+            "metrics": ["impressions", "clicks", "cost", "conversions"],
+            "columns_len": 2,
+            "columns": ["指标", "数值"],
+            "has_chart_config": True,
+            "data_empty": False,
+            "min_rows": 4,
+            "max_rows": 4,
+            "require_non_null": True,
+            "allow_all_zero": False,
+            "skip_title_check": True,
+            "min_non_zero_columns": 1,
+        }
+    },
 ]
 
 

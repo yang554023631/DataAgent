@@ -61,7 +61,6 @@ class TestEnums:
         assert ChartType.LINE == "line"
         assert ChartType.BAR == "bar"
         assert ChartType.PIE == "pie"
-        assert ChartType.KPI_CARD == "kpi_card"
         assert ChartType.TABLE == "table"
 
 

@@ -153,7 +153,7 @@ class AnalysisComparison(BaseModel):
 
 class AnalysisChartConfig(BaseModel):
     """图表配置"""
-    type: str  # line / bar / pie / kpi_card / table
+    type: str  # line / bar / pie / table
     title: str
     x_axis: Optional[Dict[str, Any]] = None
     y_axis: Optional[Dict[str, Any]] = None

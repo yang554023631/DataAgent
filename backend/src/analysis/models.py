@@ -71,7 +71,6 @@ class ChartType(str, Enum):
     LINE = "line"
     BAR = "bar"
     PIE = "pie"
-    KPI_CARD = "kpi_card"
     TABLE = "table"
 
 
