@@ -81,10 +81,18 @@ For entity_table analysis, the `group_by` field should be the **entity level nam
 示例：用户说"按性别分布"，你需要在 `analysis_plan.audience_dimension` 中填写 `"audience_gender"`。
 
 ## 可用的图表类型（chart type）
-- line: 折线图 — 适合展示随时间变化的趋势数据（如近7天的曝光变化）
-- bar: 柱状图 — 适合展示不同类别之间的对比数据（如各广告计划的消耗对比）
-- pie: 饼图 — 适合展示各部分占总体的比例分布数据（如不同性别受众的占比）
-- table: 表格 — 适合展示明细数据列表（如消耗最高的广告计划列表）
+- line: 折线图（适合时间趋势）
+- bar: 柱状图（适合**同一指标在不同类别之间的数值对比**，例如：广告主6 三四月份的消耗对比；广告主6 三四月份的消耗和点击对比（每个指标分别对比两个月份，多系列柱状图））
+- pie: 饼图（适合占比分布，特别是受众分布场景，比如按性别、年龄、操作系统、系统版本、兴趣、国家、城市等受众维度的分布）
+- table: 表格（适合明细数据，展示多个实体多个指标的详细数值）
+
+### 分析类型与推荐图表
+根据分析类型，请优先选择以下图表：
+- time_trend（时间趋势）→ line（必须使用折线图）
+- period_comparison（时期对比）→ bar（柱状图）
+- audience_distribution（受众分布）→ pie（饼图，展示占比）
+- entity_table（实体列表）→ table（表格，展示明细列表）
+- summary（数据摘要）→ table（表格）
 
 ## 可用的指标（metrics）
 基础指标：
