@@ -58,3 +58,6 @@ review_summary.txt
 
 # Temporary pytest config
 pytest.ini
+
+# Claude local settings (contains credentials)
+.claude/
