@@ -112,7 +112,7 @@ class CotPlanner:
             self.llm = None
             logger.warning("LLM not available, CotPlanner will use mock mode")
 
-    def plan(
+    async def plan(
         self,
         user_input: str,
         field_context: Optional[FieldContext] = None,
@@ -176,7 +176,7 @@ class CotPlanner:
                 else:
                     current_user_prompt = base_user_prompt
 
-                raw_response = self._call_llm(system_prompt, current_user_prompt, retry_count > 0)
+                raw_response = await self._call_llm(system_prompt, current_user_prompt, retry_count > 0)
                 logger.debug(f"LLM response received (attempt {retry_count + 1})")
 
                 # Step 5: Parse and validate
@@ -220,7 +220,7 @@ class CotPlanner:
             retry_count=retry_count,
         )
 
-    def _call_llm(
+    async def _call_llm(
         self,
         system_prompt: str,
         user_prompt: str,
@@ -241,21 +241,18 @@ class CotPlanner:
         if self.llm is None:
             return self._mock_llm_response(system_prompt, user_prompt)
 
-        # Build prompt template and invoke
-        if HAS_LANGCHAIN:
-            # Use direct messages instead of template parsing because we've already fully formatted the prompts
-            # This avoids issues with curly braces in few-shot examples causing template variable parsing errors
-            from langchain_core.messages import SystemMessage, HumanMessage
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=user_prompt),
-            ]
+        # Use IntentLLMClient with json_schema mode to enforce strict JSON output
+        from src.intent.llm_client import get_intent_llm_client
+        from src.analysis.models import AnalysisPlanResult
 
-            response = self.llm.invoke(messages)
-            return response.content.strip()
-        else:
-            # Fallback to direct invocation if needed
-            raise NotImplementedError("LLM invocation requires LangChain")
+        client = get_intent_llm_client()
+        response = await client.call(  # type: ignore
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            json_mode=True,
+            schema=AnalysisPlanResult,
+        )
+        return response
 
     def _parse_and_validate(
         self,

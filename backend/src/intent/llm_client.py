@@ -1,6 +1,7 @@
 import logging
 import asyncio
-from typing import Optional, Literal
+from typing import Optional, Literal, Type
+from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -36,6 +37,7 @@ class IntentLLMClient:
         system_prompt: str,
         user_prompt: str,
         json_mode: bool = True,
+        schema: Optional[Type[BaseModel]] = None,
     ) -> str:
         """
         调用 LLM，支持重试
@@ -43,7 +45,10 @@ class IntentLLMClient:
         Args:
             system_prompt: 系统提示词
             user_prompt: 用户输入提示词
-            json_mode: 是否期望 JSON 输出（仅用于日志和提示，不强制结构化输出）
+            json_mode: 是否期望 JSON 输出
+            schema: 如果提供，则使用 json_schema 模式强制输出符合该pydantic模型结构，None则：
+                - json_mode=True → 用 json_object 模式（只要求合法JSON，不约束结构）
+                - json_mode=False → 普通文本输出
 
         Returns:
             LLM 响应文本（已strip）

@@ -85,10 +85,12 @@ async def detect_intent_change(
     )
 
     try:
+        from src.intent.models import IntentChangeDetectionResult
         response = await llm_client.call(
             system_prompt=system_prompt,
             user_prompt="请判断意图是否变化。",
             json_mode=True,
+            schema=IntentChangeDetectionResult,
         )
         data = json.loads(response)
         has_changed = data.get("has_changed", False)

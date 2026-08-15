@@ -82,3 +82,11 @@ class KnowledgeIntentResult(BaseModel):
     core_topics: List[str] = Field(default_factory=list)
     query_rewrite: str = Field(default="")
     confidence: float = Field(default=1.0)
+
+# ==================== 意图变更检测 ====================
+
+class IntentChangeDetectionResult(BaseModel):
+    """意图变更检测结果 - 判断用户澄清是否改变了原意图"""
+    has_changed: bool = Field(description="是否改变了原意图类别")
+    new_category: Optional[str] = Field(default=None, description="新的意图类别: report / knowledge，仅在has_changed=true时设置")
+    reason: str = Field(description="判断原因")

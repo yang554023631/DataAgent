@@ -1451,7 +1451,7 @@ async def analysis_node(state: dict) -> dict:
         logger.info(f"[AnalysisNode] Step 2: CotPlanner started")
 
         cot_planner = get_cot_planner()
-        cot_result = cot_planner.plan(
+        cot_result = await cot_planner.plan(
             user_input=user_input,
             conversation_history=conversation_history,
             field_context=field_context,

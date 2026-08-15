@@ -35,6 +35,12 @@ class RetryInfo(BaseModel):
     reflection: str = ""
 
 
+class ReflectionResult(BaseModel):
+    """DSL反思修正结果 - 修复之前生成错误的DSL"""
+    reflection: str = Field(description="反思分析，说明之前错在哪里，如何修正")
+    fixed_dsl: Dict[str, Any] = Field(description="修正后的完整ES DSL JSON")
+
+
 class NlDslResult(BaseModel):
     """NL→DSL 查询结果"""
     display_type: str = "list"

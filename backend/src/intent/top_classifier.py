@@ -187,6 +187,7 @@ class IntentTopClassifier:
                 system_prompt=TOP_CLASSIFIER_SYSTEM_PROMPT,
                 user_prompt=user_prompt,
                 json_mode=True,
+                schema=TopClassificationResult,
             )
             data = json.loads(response_text)
 

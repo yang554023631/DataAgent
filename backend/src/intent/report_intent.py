@@ -231,6 +231,29 @@ class ReportIntentAnalyzer:
                 result.advertiser_ids = ids
                 logger.info(f"Rule advertiser_ids extracted: {ids}")
 
+        # 如果advertiser_ids里有内容，但看起来不像ID（不是纯数字/UUID），尝试通过名称搜索转换为ID
+        from src.services.advertiser_service import extract_advertiser_from_input
+
+        # 1. 如果advertiser_ids为空，从输入中搜索
+        if not result.advertiser_ids:
+            matched_ids = extract_advertiser_from_input(user_input)
+            if matched_ids:
+                result.advertiser_ids = matched_ids
+                logger.info(f"Name search extracted advertiser_ids: {matched_ids}")
+        else:
+            # 2. 检查advertiser_ids是否都是有效的ID格式，如果有无效的尝试重新搜索
+            all_valid = True
+            for adv_id in result.advertiser_ids:
+                # 如果不是纯数字，说明可能是名称，需要重新搜索
+                if not adv_id.isdigit():
+                    all_valid = False
+                    break
+            if not all_valid:
+                matched_ids = extract_advertiser_from_input(user_input)
+                if matched_ids:
+                    result.advertiser_ids = matched_ids
+                    logger.info(f"Name search replaced advertiser_ids: {matched_ids}")
+
         # 规则提取时间范围 (if LLM failed to extract)
         if not result.time_range:
             from src.analysis.intent_analyzer import simple_parse_time_range
