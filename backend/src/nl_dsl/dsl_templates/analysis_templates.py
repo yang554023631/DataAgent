@@ -40,10 +40,11 @@ def build_single_series_trend(
         raise ValueError(f"Unknown metric: {metric}")
 
     # Map granularity to Elasticsearch interval
+    # For older ES versions with fixed_interval, use day count for week/month instead of 1w/1M
     interval_map = {
         "day": "1d",
-        "week": "1w",
-        "month": "1M"
+        "week": "7d",
+        "month": "30d"
     }
     interval = interval_map[granularity]
 
@@ -95,10 +96,11 @@ def build_multi_series_trend(
     level_field = get_level_field(series_level)
 
     # Map granularity to Elasticsearch interval
+    # For older ES versions with fixed_interval, use day count for week/month instead of 1w/1M
     interval_map = {
         "day": "1d",
-        "week": "1w",
-        "month": "1M"
+        "week": "7d",
+        "month": "30d"
     }
     interval = interval_map[granularity]
 
@@ -212,13 +214,18 @@ def build_entity_table(
         if order_by == group_by_level or order_by == level_field:
             order_path = "_key"
         elif is_derived_metric(order_by):
-            # Derived metrics are bucket_script aggregations - ES cannot sort terms by pipeline aggregation output
-            # Fallback: sort by the first dependency base metric instead (this gives a reasonable approximate sort)
-            derived = DERIVED_METRICS[order_by]
-            first_dep = derived["depends_on"][0]
-            order_path = f"sum_{first_dep}>value"
+            # Derived metrics are bucket_script (pipeline) aggregations, ES does NOT allow
+            # sorting terms buckets by pipeline aggregations directly.
+            # We need to sort by the first dependency base metric instead.
+            # Only base metrics (sum aggregations) can be used for sorting.
+            first_dep = DERIVED_METRICS[order_by]["depends_on"][0]
+            order_path = f"sum_{first_dep}"
         else:
-            order_path = f"sum_{order_by}>value"
+            # Base metric: when building base metric aggregations for long table model,
+            # we have: sum_metric (filter aggregation) -> aggs -> value (sum aggregation).
+            # Try simpler path: since sum_metric is a single-bucket aggregation and contains
+            # only one inner metric, ES allows sorting just by the outer aggregation name.
+            order_path = f"sum_{order_by}"
 
         dsl["aggs"][f"by_{group_by_level}"]["terms"]["order"] = {order_path: order_dir}
 
@@ -411,6 +418,7 @@ def build_summary(
     # Separate base metrics and derived metrics
     base_metrics = []
     derived_metrics = []
+    metrics = metrics or []
     for metric in metrics:
         if is_derived_metric(metric):
             derived_metrics.append(metric)
@@ -433,10 +441,17 @@ def build_summary(
         },
         "size": 0,
         "aggs": {
-            # Wrap everything in a single global bucket to satisfy bucket_script requirement
+            # Wrap everything in a single bucket to satisfy bucket_script requirement
             # bucket_script must be inside another aggregation that creates buckets
+            # We use a dummy terms aggregation that creates exactly one bucket
+            # (since all documents match the query, they all go into this single bucket)
             "all_data": {
-                "filter": {"match_all": {}},
+                "terms": {
+                    "script": {
+                        "source": "\"all\""
+                    },
+                    "size": 1
+                },
                 "aggs": {}
             }
         },

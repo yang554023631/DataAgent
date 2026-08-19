@@ -76,6 +76,19 @@ class AnalysisExecutor:
         granularity = analysis_plan.time_range.granularity
 
         try:
+            # 如果是多步计划（有前置过滤步骤，比如 where 过滤得到实体 ID 再分析）
+            # 需要交给 MultiStepPipeline 链式执行
+            # 顶层 execute 只执行最终分析步骤，这里不需要处理多步
+            if analysis_plan.steps and len(analysis_plan.steps) > 0:
+                # 多步计划应该由 MultiStepPipeline 处理
+                # 但如果走到这里，说明这是最终分析步骤，steps 是空的？
+                # 实际上，对于多步计划，每个步骤单独执行，最终步骤也应该有自己的配置
+                # 如果 audience_dimension 为空但 steps 存在，说明需要多步处理
+                # 这里不应该走到单步执行器，应该报错说明需要多步执行
+                # 但是在当前架构中，最终分析步骤仍需要正确配置
+                # 对于 audience_distribution，最终步骤应该包含 audience_dimension
+                pass
+
             # 根据分析类型执行相应的分析
             if analysis_plan.analysis_type == "time_trend":
                 result = self._execute_time_trend(
@@ -164,11 +177,11 @@ class AnalysisExecutor:
         # For multi-series trend, use group_by field (already defined in model)
         # Skip date-related grouping - single series trend is already grouped by date
         series_level = analysis_plan.group_by
-        date_related = ['data_date', 'date', 'day', 'month', 'time']
+        date_related = ['data_date', 'date', 'day', 'month', 'time', 'advertiser_id', 'advertiser']
 
         # 如果 group_by 是列表（多个分组字段），过滤掉日期相关的，只保留非日期的作为 series_level
         if isinstance(series_level, list):
-            # 找第一个非日期相关的字段作为 series_level
+            # 找第一个非日期相关且非顶级实体ID的字段作为 series_level
             found = None
             for gb in series_level:
                 if gb.lower() not in date_related:
@@ -506,18 +519,30 @@ class AnalysisExecutor:
         """执行受众分布分析"""
         trace.append({"step": "audience_distribution", "status": "started"})
 
-        if not analysis_plan.audience_dimension:
+        # Check if we have anything to execute
+        has_single_step = bool(analysis_plan.audience_dimension)
+        has_multi_steps = analysis_plan.steps and len(analysis_plan.steps) > 0
+        if not has_single_step and not has_multi_steps:
+            raise ValueError("Audience distribution analysis requires audience_dimension (single-step) or steps (multi-step)")
+
+        # For multi-step plans: if we get here, it means this is the final analysis step
+        # and the audience_dimension should already be set on the analysis_plan
+        # If it's still empty, it's an error
+        audience_dimension = analysis_plan.audience_dimension
+        metrics = analysis_plan.metrics
+
+        if not audience_dimension:
             raise ValueError("Audience distribution analysis requires audience_dimension")
 
-        if not analysis_plan.metrics:
+        if not metrics:
             raise ValueError("Audience distribution analysis requires at least one metric")
 
         dsl = build_audience_distribution(
             advertiser_ids=advertiser_ids,
             start_date=start_date,
             end_date=end_date,
-            metrics=analysis_plan.metrics,
-            audience_type=analysis_plan.audience_dimension,
+            metrics=metrics,
+            audience_type=audience_dimension,
         )
 
         # 如果有实体 ID，添加过滤条件
@@ -532,8 +557,8 @@ class AnalysisExecutor:
         audience_data = extract_audience_data(response)
 
         # 如果有受众值映射，将数字编码转换为中文名称
-        if analysis_plan.audience_dimension in AUDIENCE_VALUE_MAPS:
-            mapping = AUDIENCE_VALUE_MAPS[analysis_plan.audience_dimension]
+        if audience_dimension in AUDIENCE_VALUE_MAPS:
+            mapping = AUDIENCE_VALUE_MAPS[audience_dimension]
             # audience_data is now {audience_value: {metric_name: value}}
             # we need to map the audience_value key only
             mapped_data = {}
@@ -547,14 +572,14 @@ class AnalysisExecutor:
         default_chart_type = analysis_plan.chart_type.value if hasattr(analysis_plan.chart_type, "value") else analysis_plan.chart_type
         chart_config = analysis_plan.chart_config or AnalysisChartConfig(
             type=default_chart_type,
-            title=f"{analysis_plan.audience_dimension} 分布",
+            title=f"{audience_dimension} 分布",
         )
 
         # 对于饼图，如果 chart_config.series 为空，自动填充series信息，每个标签对应一个系列
         # Only works for single metric case
-        if default_chart_type == "pie" and (not chart_config.series) and len(analysis_plan.metrics) == 1:
+        if default_chart_type == "pie" and (not chart_config.series) and len(metrics) == 1:
             # 从 audience_data 提取所有标签作为 series
-            single_metric = analysis_plan.metrics[0]
+            single_metric = metrics[0]
             series = []
             for label in audience_data.keys():
                 series.append({"name": str(label)})
@@ -564,7 +589,7 @@ class AnalysisExecutor:
         if default_chart_type == "bar":
             if not chart_config.x_axis:
                 # x 轴是分类标签，字段名就是 label
-                audience_dim_label = analysis_plan.audience_dimension or "分类"
+                audience_dim_label = audience_dimension or "分类"
                 # 尝试映射中文标签
                 label_mapping = {
                     "audience_gender": "性别",
@@ -575,20 +600,23 @@ class AnalysisExecutor:
                     "audience_interest": "兴趣",
                 }
                 display_label = label_mapping.get(audience_dim_label, audience_dim_label)
-                chart_config.x_axis = {"field": "label", "label": display_label}
+                chart_config.x_axis = {"field": "category", "label": display_label}
+            if not chart_config.y_axis:
+                chart_config.y_axis = {"field": "value", "label": "数值"}
 
         # 构建图表数据
         # For multiple metrics, we only chart the first metric for now
         chart_data_points = []
-        if len(analysis_plan.metrics) > 0:
-            chart_metric = analysis_plan.metrics[0]
+        if len(metrics) > 0:
+            chart_metric = metrics[0]
             for key, metric_values in audience_data.items():
                 value = metric_values.get(chart_metric, 0)
-                chart_data_points.append({"label": key, "value": value})
+                # Pie chart requires 'label' field
+                chart_data_points.append({"label": str(key), "value": value})
 
         # 构建数据表格
         data_table = self._build_data_table_for_audience_multi(
-            audience_data, analysis_plan.audience_dimension, analysis_plan.metrics
+            audience_data, audience_dimension, metrics
         )
 
         trace.append({"step": "audience_distribution", "status": "success"})
@@ -692,7 +720,8 @@ class AnalysisExecutor:
         """
         # 只有当 series_level 不为空且不是 date 相关维度时，才是真正的多系列
         # date_related 分组本身就是趋势分析的分组维度，不代表多系列
-        date_related = ['data_date', 'date', 'day', 'month', 'time']
+        # 顶级实体ID（advertiser/advertiser_id）也不代表多系列（因为我们已经筛选了该advertiser）
+        date_related = ['data_date', 'date', 'day', 'month', 'time', 'advertiser_id', 'advertiser']
         if series_level and series_level.lower() not in date_related:
             # 多系列 → 长格式：每行 date × series → 避免列爆炸
             # 获取所有系列 ID 和 所有日期
@@ -875,17 +904,27 @@ class AnalysisExecutor:
         for metric in metrics:
             columns.append({"key": metric, "label": metric})
 
+        # 单指标情况下添加百分比列（和测试期望一致）
+        if len(metrics) == 1:
+            columns.append({"key": "percentage", "label": "占比"})
+
         # Calculate total percentage based on first metric
         first_metric = metrics[0] if metrics else None
         total = 0.0
         if first_metric:
             for metric_values in audience_data.values():
-                total += metric_values.get(first_metric, 0)
+                val = metric_values.get(first_metric, 0)
+                if isinstance(val, (int, float)):
+                    total += val
 
         rows = []
         for category, metric_values in audience_data.items():
             row = {"category": category}
             row.update(metric_values)
+            # 单指标情况下添加百分比
+            if len(metrics) == 1 and total > 0:
+                percentage = (metric_values.get(first_metric, 0) / total * 100) if total > 0 else None
+                row["percentage"] = percentage
             rows.append(row)
 
         return AnalysisDataTable(columns=columns, rows=rows)
