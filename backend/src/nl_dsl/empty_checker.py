@@ -103,6 +103,7 @@ class EmptyResultChecker:
         if filter_result:
             ids = filter_result.entity_ids
             level = filter_result.entity_level
+            logger.info(f"EmptyResultChecker.async_check: got ids from filter_result: len={len(ids) if ids else 0}, level={level}")
 
         # 并行运行静态检查组和ES轻量查询组
         static_task = asyncio.to_thread(
@@ -161,11 +162,18 @@ class EmptyResultChecker:
     ) -> EmptyCheckResult:
         """检查时间范围有效性"""
         time_range = analysis_plan.time_range
-        try:
-            start_date = datetime.strptime(time_range.start_date, "%Y-%m-%d")
-            end_date = datetime.strptime(time_range.end_date, "%Y-%m-%d")
+        start_str = time_range.start_date
+        end_str = time_range.end_date
 
-            if start_date > end_date:
+        # Empty strings mean full lifetime (no date restriction) - treat as valid
+        if not start_str and not end_str:
+            return EmptyCheckResult(found_error=False)
+
+        try:
+            start_date = datetime.strptime(start_str, "%Y-%m-%d") if start_str else None
+            end_date = datetime.strptime(end_str, "%Y-%m-%d") if end_str else None
+
+            if start_date and end_date and start_date > end_date:
                 return EmptyCheckResult(
                     found_error=True,
                     error_type=EmptyCheckErrorType.INVALID_TIME_RANGE,
@@ -180,17 +188,16 @@ class EmptyResultChecker:
                 )
 
             # 检查时间范围是否合理（例如，不超过3年）
-            days_diff = (end_date - start_date).days
-            if days_diff > 365 * 3:
-                return EmptyCheckResult(
-                    found_error=True,
-                    error_type=EmptyCheckErrorType.INVALID_TIME_RANGE,
-                    hints=[
-                        f"时间范围过大 ({days_diff} 天)，建议不超过 3 年",
-                    ],
-                )
+            hints = []
+            if start_date and end_date:
+                days_diff = (end_date - start_date).days
+                if days_diff > 365 * 3:
+                    # 只是提示，不是错误：时间范围过大建议优化，但不阻止查询执行
+                    # 用户明确查询全生命周期时应该允许，只是给个建议
+                    hints.append(f"时间范围过大 ({days_diff} 天)，建议不超过 3 年")
 
-            return EmptyCheckResult(found_error=False)
+            # 时间范围过大不是错误，只是提示，继续后续检查
+            return EmptyCheckResult(found_error=False, hints=hints)
 
         except ValueError as e:
             return EmptyCheckResult(
@@ -301,6 +308,7 @@ class EmptyResultChecker:
 
         # 执行 1: 检查文档总数
         doc_count = self._get_doc_count(filters)
+        logger.info(f"EmptyResultChecker _run_es_checks: doc_count={doc_count}, entity_ids len={len(entity_ids) if entity_ids else None}, entity_level={entity_level}")
         if doc_count == 0:
             return EmptyCheckResult(
                 found_error=True,
@@ -332,6 +340,8 @@ class EmptyResultChecker:
             if entity_ids and entity_level:
                 from .dsl_templates.common import LEVEL_TO_FIELD
                 level_field = LEVEL_TO_FIELD.get(entity_level, f"{entity_level}_id")
+                # Log to debug what entity_ids we actually get
+                logger.info(f"EmptyResultChecker adding entity filter: level={entity_level}, len(entity_ids)={len(entity_ids)}, first 5={entity_ids[:5]}, all int? {all(isinstance(x, int) for x in entity_ids)}")
                 core_filters.append({"terms": {level_field: entity_ids}})
 
             core_sum = self._get_metrics_sum(core_filters, list(core_data_types))

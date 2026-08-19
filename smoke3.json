@@ -1,0 +1,103 @@
+[
+  {
+    "test_id": 3,
+    "test_name": "Entity table with having filter",
+    "query": "广告主64月份消耗大于10的广告计划有哪些",
+    "status": "needs_clarification",
+    "analysis_type": "unknown",
+    "data_points": 0,
+    "has_chart_config": false,
+    "all_zero": false,
+    "response_time": 21.49,
+    "error_message": null,
+    "raw_response": {
+      "execution_trace": [
+        {
+          "step": "intent_analyzer",
+          "status": "started"
+        },
+        {
+          "step": "intent_analyzer",
+          "status": "success",
+          "duration_ms": 1,
+          "extracted_fields": {
+            "metrics": [
+              "cost"
+            ],
+            "target_level": "campaign",
+            "time_range": null
+          }
+        },
+        {
+          "step": "cot_planner",
+          "status": "started"
+        },
+        {
+          "step": "cot_planner",
+          "status": "hitl_required",
+          "duration_ms": 16862
+        }
+      ],
+      "error": null,
+      "needs_clarification": true,
+      "hitl_request": {
+        "question": "您想查询哪个月份广告主64消耗大于10的广告计划？",
+        "missing_fields": [
+          "time_range"
+        ],
+        "options": [
+          {
+            "value": "2026-07",
+            "label": "2026年7月"
+          },
+          {
+            "value": "2026-06",
+            "label": "2026年6月"
+          },
+          {
+            "value": "2026-05",
+            "label": "2026年5月"
+          }
+        ]
+      },
+      "pending_clarification_input": null,
+      "field_context": {
+        "advertiser_ids": [
+          "64"
+        ],
+        "time_range": null,
+        "target_level": "campaign",
+        "metrics": [
+          "cost"
+        ],
+        "audience_dimension": null,
+        "compare_time_range": null,
+        "entity_ids": null,
+        "additional_fields": {}
+      },
+      "clarification": {
+        "type": "cot_clarification",
+        "question": "您想查询哪个月份广告主64消耗大于10的广告计划？",
+        "options": [
+          {
+            "value": "2026-07",
+            "label": "2026年7月"
+          },
+          {
+            "value": "2026-06",
+            "label": "2026年6月"
+          },
+          {
+            "value": "2026-05",
+            "label": "2026年5月"
+          }
+        ],
+        "allow_custom_input": true,
+        "missing_fields": [
+          "time_range"
+        ]
+      },
+      "cot_reasoning": null
+    }
+  }
+]

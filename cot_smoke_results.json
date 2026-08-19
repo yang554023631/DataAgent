@@ -1,0 +1,55 @@
+[
+  {
+    "test_id": 1,
+    "test_name": "Simple time trend (April)",
+    "query": "id为6的广告主4月份的消耗趋势",
+    "status": "success",
+    "analysis_type": "time_trend",
+    "data_points": 27,
+    "has_chart_config": false,
+    "all_zero": false,
+    "response_time": 27.34,
+    "error_message": null,
+    "retries": 0
+  },
+  {
+    "test_id": 2,
+    "test_name": "Entity table with where filter",
+    "query": "广告主6下未删除的广告计划4月份的消耗和点击",
+    "status": "success",
+    "analysis_type": "entity_table",
+    "data_points": 2,
+    "has_chart_config": false,
+    "all_zero": false,
+    "response_time": 54.22,
+    "error_message": null,
+    "retries": 0
+  },
+  {
+    "test_id": 3,
+    "test_name": "Entity table with having filter",
+    "query": "广告主6 4月份消耗大于10的广告计划有哪些",
+    "status": "error",
+    "analysis_type": "unknown",
+    "data_points": 0,
+    "has_chart_config": false,
+    "all_zero": false,
+    "response_time": 87.92,
+    "error_message": "3次重试全部失败，最后一次错误: {'type': 'analysis_error', 'message': \"BadRequestError(400, 'x_content_parse_exception', '[terms] query does not support [advertiser_id]')\"}",
+    "retries": 3,
+    "raw_response": {
+      "execution_trace": [
+        {
+          "step": "intent_analyzer",
+          "status": "started"
+        },
+        {
+          "step": "intent_analyzer",
+          "status": "success",
+          "duration_ms": 0,
+          "extracted_fields": {
+            "metrics": [
+              "cost"
+            ],
+            "target_level": "campaign",
+            "time_range": 

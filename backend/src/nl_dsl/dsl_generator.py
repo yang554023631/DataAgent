@@ -101,7 +101,7 @@ class DslGenerator:
                     "output_fields": [],
                     "purpose": "单步查询",
                 }],
-                "final_output": "step_1.output",
+                "final_output": "step_1_output",
             }
             plan = QueryPlan(**plan_data)
 

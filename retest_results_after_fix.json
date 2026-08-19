@@ -1,0 +1,66 @@
+[
+  {
+    "id": 9,
+    "name": "模糊名称查询 - 包含digital + 排序",
+    "query": "找出 digital_0 名称带 digital 的广告计划，按消耗排序",
+    "passed": true,
+    "message": "OK",
+    "elapsed": 74.65103507041931
+  },
+  {
+    "id": 12,
+    "name": "模糊查询 + 排序 + TopN - ad_group",
+    "query": "在 digital_0 中找出名称包含六一八的所有广告组，按消耗降序排列前三",
+    "passed": false,
+    "message": "Expected success=True, got report_type=empty: Unknown error",
+    "elapsed": 119.01998805999756
+  },
+  {
+    "id": 15,
+    "name": "模糊名称查询 - creative",
+    "query": "列出 digital_0 名称含尊享的所有创意及消耗",
+    "passed": true,
+    "message": "OK",
+    "elapsed": 101.71282505989075
+  },
+  {
+    "id": 18,
+    "name": "混合筛选 - status + 名称contains",
+    "query": "digital_0 投放中的广告计划，名称含有 best，列出消耗和点击",
+    "passed": true,
+    "message": "OK",
+    "elapsed": 129.9772539138794
+  },
+  {
+    "id": 19,
+    "name": "混合筛选 - 名称 + having点击",
+    "query": "找出 digital_0 下名称含 mini 的创意，点击量大于50的",
+    "passed": false,
+    "message": "Expected success=True, got report_type=error: 分析过程中发生错误",
+    "elapsed": 89.87411284446716
+  },
+  {
+    "id": 50,
+    "name": "Ad Group TopN - 点击率前五",
+    "query": "列出广告主6点击率从高到低排前五的广告组",
+    "passed": false,
+    "message": "Expected success=True, got report_type=empty: Unknown error",
+    "elapsed": 61.95335602760315
+  },
+  {
+    "id": 52,
+    "name": "Creative TopN - 转化率前三",
+    "query": "广告主6转化率最高的三个创意",
+    "passed": true,
+    "message": "OK",
+    "elapsed": 89.01274013519287
+  },
+  {
+    "id": 54,
+    "name": "受众分布 - 操作系统占比",
+    "query": "广告主6按不同操作系统看消耗占比",
+    "passed": true,
+    "message": "OK",
+    "elapsed": 99.89839577674866
+  }
+]

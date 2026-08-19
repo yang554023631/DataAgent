@@ -1,0 +1,509 @@
+[
+  {
+    "test_id": 1,
+    "test_name": "Simple time trend (E2E)",
+    "query": "id为6的广告主4月份的消耗趋势",
+    "status": "success",
+    "analysis_type": "time_trend",
+    "data_points": 27,
+    "has_chart_config": true,
+    "all_zero": false,
+    "response_time": 23.17,
+    "error_message": null,
+    "retries": 0,
+    "raw_response": {
+      "status": "completed",
+      "result": {
+        "query_intent": {
+          "advertiser_ids": [
+            "6"
+          ],
+          "metrics": [
+            "cost"
+          ],
+          "dimensions": [
+            "data_date"
+          ],
+          "filters": [],
+          "is_comparison": false,
+          "time_range": {
+            "start": "2026-04-01",
+            "end": "2026-04-30"
+          },
+          "ad_level": "campaign"
+        },
+        "query_request": null,
+        "query_result": {},
+        "analysis": {},
+        "final_report": {
+          "report_type": "success",
+          "title": "时间趋势分析 (2026-04-01 ~ 2026-04-30)",
+          "chart_config": {
+            "type": "line",
+            "title": "cost 趋势",
+            "x_axis": {
+              "field": "date",
+              "label": "日期"
+            },
+            "y_axis": {
+              "field": "cost",
+              "label": "cost"
+            },
+            "series_field": null,
+            "series": null
+          },
+          "data": [
+            {
+              "date": 1775001600000,
+              "cost": 376.0
+            },
+            {
+              "date": 1775088000000,
+              "cost": 596.0
+            },
+            {
+              "date": 1775174400000,
+              "cost": 502.0
+            },
+            {
+              "date": 1775260800000,
+              "cost": 905.0
+            },
+            {
+              "date": 1775347200000,
+              "cost": 1434.0
+            },
+            {
+              "date": 1775433600000,
+              "cost": 372.0
+            },
+            {
+              "date": 1775520000000,
+              "cost": 842.0
+            },
+            {
+              "date": 1775606400000,
+              "cost": 1275.0
+            },
+            {
+              "date": 1775692800000,
+              "cost": 422.0
+            },
+            {
+              "date": 1775779200000,
+              "cost": 296.0
+            },
+            {
+              "date": 1775865600000,
+              "cost": 69.0
+            },
+            {
+              "date": 1775952000000,
+              "cost": 895.0
+            },
+            {
+              "date": 1776038400000,
+              "cost": 360.0
+            },
+            {
+              "date": 1776124800000,
+              "cost": 616.0
+            },
+            {
+              "date": 1776211200000,
+              "cost": 938.0
+            },
+            {
+              "date": 1776297600000,
+              "cost": 435.0
+            },
+            {
+              "date": 1776384000000,
+              "cost": 707.0
+            },
+            {
+              "date": 1776470400000,
+              "cost": 518.0
+            },
+            {
+              "date": 1776556800000,
+              "cost": 596.0
+            },
+            {
+              "date": 1776643200000,
+              "cost": 313.0
+            },
+            {
+              "date": 1776729600000,
+              "cost": 1109.0
+            },
+            {
+              "date": 1776816000000,
+              "cost": 2200.0
+            },
+            {
+              "date": 1776902400000,
+              "cost": 781.0
+            },
+            {
+              "date": 1776988800000,
+              "cost": 1047.0
+            },
+            {
+              "date": 1777075200000,
+              "cost": 0.0
+            },
+            {
+              "date": 1777161600000,
+              "cost": 943.0
+            },
+            {
+              "date": 1777248000000,
+              "cost": 576.0
+            }
+          ],
+          "data_table": {
+            "columns": [
+              "日期"
+            ],
+            "rows": [
+              [
+                1775001600000
+              ],
+              [
+                1775088000000
+              ],
+              [
+                1775174400000
+              ],
+              [
+                1775260800000
+              ],
+              [
+                1775347200000
+              ],
+              [
+                1775433600000
+              ],
+              [
+                1775520000000
+              ],
+              [
+                1775606400000
+              ],
+              [
+                1775692800000
+              ],
+              [
+                1775779200000
+              ],
+              [
+                1775865600000
+              ],
+              [
+                1775952000000
+              ],
+              [
+                1776038400000
+              ],
+              [
+                1776124800000
+              ],
+              [
+                1776211200000
+              ],
+              [
+                1776297600000
+              ],
+              [
+                1776384000000
+              ],
+              [
+                1776470400000
+              ],
+              [
+                1776556800000
+              ],
+              [
+                1776643200000
+              ],
+              [
+                1776729600000
+              ],
+              [
+                1776816000000
+              ],
+              [
+                1776902400000
+              ],
+              [
+                1776988800000
+              ],
+              [
+                1777075200000
+              ],
+              [
+                1777161600000
+              ],
+              [
+                1777248000000
+              ]
+            ]
+          },
+          "quality_info": {
+            "passed": true,
+            "issues": [],
+            "warnings": [],
+            "actions": []
+          },
+          "highlights": [
+            {
+              "type": "info",
+              "text": "📊 共 27 条数据记录"
+            },
+            {
+              "type": "info",
+              "text": "📈 消耗：总计 ¥19,123.00，平均 ¥708.26，最高 ¥2,200.00，最低 ¥0.00"
+            },
+            {
+              "type": "positive",
+              "text": "🟢 消耗 呈现上升趋势"
+            }
+          ],
+          "metadata": {
+            "generated_at": "2026-08-12T17:38:57.011429",
+            "entity_level": "advertiser",
+            "total_entities": 1,
+            "metrics": [
+              "cost"
+            ],
+            "analysis_type": "time_trend",
+            "chart_type": "table",
+            "time_range": {
+              "start_date": "2026-04-01",
+              "end_date": "2026-04-30",
+              "granularity": "day"
+            }
+          },
+          "cot_reasoning_summary": null,
+          "next_queries": [
+            "按广告计划维度拆分趋势",
+            "对比上周同期数据",
+            "查看受众分布情况"
+          ]
+        },
+        "warnings": []
+      }
+    }
+  },
+  {
+    "test_id": 2,
+    "test_name": "Entity table with where filter (E2E)",
+    "query": "广告主6下未删除的广告计划4月份的消耗和点击",
+    "status": "success",
+    "analysis_type": "entity_table",
+    "data_points": 2,
+    "has_chart_config": true,
+    "all_zero": false,
+    "response_time": 120.72,
+    "error_message": null,
+    "retries": 1,
+    "raw_response": {
+      "status": "completed",
+      "result": {
+        "query_intent": {
+          "advertiser_ids": [
+            "6"
+          ],
+          "metrics": [
+            "cost",
+            "clicks"
+          ],
+          "dimensions": [],
+          "filters": [
+            {
+              "field": "status",
+              "value": "not_deleted"
+            }
+          ],
+          "is_comparison": false,
+          "time_range": {
+            "start": "2026-04-01",
+            "end": "2026-04-30"
+          },
+          "ad_level": "campaign"
+        },
+        "query_request": null,
+        "query_result": {},
+        "analysis": {},
+        "final_report": {
+          "report_type": "success",
+          "title": "实体表格分析 (2026-04-01 ~ 2026-04-30)",
+          "chart_config": {},
+          "data": [],
+          "data_table": {
+            "columns": [
+              "campaign ID",
+              "campaign 名称",
+              "clicks",
+              "cost"
+            ],
+            "rows": [
+              [
+                13,
+                "旗舰43_best",
+                "363,701.0",
+                "¥17,750.00"
+              ],
+              [
+                12,
+                "热门_14",
+                "20,783.0",
+                "¥1,373.00"
+              ]
+            ]
+          },
+          "quality_info": {
+            "passed": true,
+            "issues": [],
+            "warnings": [],
+            "actions": []
+          },
+          "highlights": [
+            {
+              "type": "info",
+              "text": "✅ 数据加载完成，共 2 条记录"
+            }
+          ],
+          "metadata": {
+            "generated_at": "2026-08-12T17:40:57.731568",
+            "entity_level": "campaign",
+            "total_entities": 11,
+            "metrics": [
+              "clicks",
+              "cost"
+            ],
+            "analysis_type": "entity_table",
+            "chart_type": "table",
+            "time_range": {
+              "start_date": "2026-04-01",
+              "end_date": "2026-04-30",
+              "granularity": "day"
+            }
+          },
+          "cot_reasoning_summary": null,
+          "next_queries": [
+            "查看时间趋势变化",
+            "对比不同时期表现",
+            "下钻到广告组维度"
+          ]
+        },
+        "warnings": []
+      }
+    }
+  },
+  {
+    "test_id": 3,
+    "test_name": "Entity table with having filter (E2E)",
+    "query": "广告主6 4月份消耗大于10的广告计划有哪些",
+    "status": "success",
+    "analysis_type": "entity_table",
+    "data_points": 2,
+    "has_chart_config": true,
+    "all_zero": false,
+    "response_time": 114.1,
+    "error_message": null,
+    "retries": 1,
+    "raw_response": {
+      "status": "completed",
+      "result": {
+        "query_intent": {
+          "advertiser_ids": [
+            "6"
+          ],
+          "metrics": [
+            "cost"
+          ],
+          "dimensions": [
+            "campaign_id"
+          ],
+          "filters": [
+            {
+              "metric": "cost",
+              "operator": ">",
+              "value": 10
+            }
+          ],
+          "is_comparison": false,
+          "time_range": {
+            "start": "2026-04-01",
+            "end": "2026-04-30"
+          },
+          "ad_level": "campaign"
+        },
+        "query_request": null,
+        "query_result": {},
+        "analysis": {},
+        "final_report": {
+          "report_type": "success",
+          "title": "实体表格分析 (2026-04-01 ~ 2026-04-30)",
+          "chart_config": {},
+          "data": [],
+          "data_table": {
+            "columns": [
+              "campaign ID",
+              "campaign 名称",
+              "cost"
+            ],
+            "rows": [
+              [
+                13,
+                "旗舰43_best",
+                "¥17,750.00"
+              ],
+              [
+                12,
+                "热门_14",
+                "¥1,373.00"
+              ]
+            ]
+          },
+          "quality_info": {
+            "passed": true,
+            "issues": [],
+            "warnings": [],
+            "actions": []
+          },
+          "highlights": [
+            {
+              "type": "info",
+              "text": "✅ 数据加载完成，共 2 条记录"
+            }
+          ],
+          "metadata": {
+            "generated_at": "2026-08-12T17:42:51.835044",
+            "entity_level": "campaign",
+            "total_entities": 2,
+            "metrics": [
+              "cost"
+            ],
+            "analysis_type": "entity_table",
+            "chart_type": "table",
+            "time_range": {
+              "start_date": "2026-04-01",
+              "end_date": "2026-04-30",
+              "granularity": "day"
+            }
+          },
+          "cot_reasoning_summary": null,
+          "next_queries": [
+            "查看时间趋势变化",
+            "对比不同时期表现",
+            "下钻到广告组维度"
+          ]
+        },
+        "warnings": []
+      }
+    }
+  }
+]

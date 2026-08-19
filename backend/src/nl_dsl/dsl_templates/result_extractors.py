@@ -201,14 +201,14 @@ def extract_comparison_data(es_response: Dict[str, Any], metrics: List[str]) -> 
     return result
 
 
-def extract_audience_data(es_response: Dict[str, Any]) -> Dict[str, float]:
+def extract_audience_data(es_response: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
     """Extract audience distribution data from ES response.
 
     Args:
         es_response: Full Elasticsearch response dict
 
     Returns:
-        Dict of {audience_value: metric_value}
+        Dict of {audience_value: {metric_name: metric_value}}
     """
     audience_agg = es_response.get("aggregations", {}).get("by_audience", {})
     buckets = audience_agg.get("buckets", [])
@@ -216,9 +216,24 @@ def extract_audience_data(es_response: Dict[str, Any]) -> Dict[str, float]:
     result = {}
     for bucket in buckets:
         audience_key = bucket["key"]
-        metric_value = bucket.get("metric_sum", {}).get("value", None)
-        if metric_value is not None:
-            result[audience_key] = metric_value
+        metric_values = {}
+        # Extract all metric values from the bucket
+        for key in bucket:
+            if key == "key" or key == "doc_count":
+                continue
+            # For base metrics: sum_{metric} > value
+            if key.startswith("sum_"):
+                metric_name = key[4:]  # remove "sum_" prefix
+                value = bucket[key].get("value")
+                if value is not None:
+                    metric_values[metric_name] = value
+            else:
+                # For derived metrics: directly get value from bucket_script
+                value = bucket.get(key, {}).get("value")
+                if value is not None:
+                    metric_values[key] = value
+        if metric_values:
+            result[audience_key] = metric_values
 
     return result
 

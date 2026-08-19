@@ -511,13 +511,12 @@ class AnalysisExecutor:
 
         if not analysis_plan.metrics:
             raise ValueError("Audience distribution analysis requires at least one metric")
-        metric = analysis_plan.metrics[0]
 
         dsl = build_audience_distribution(
             advertiser_ids=advertiser_ids,
             start_date=start_date,
             end_date=end_date,
-            metric=metric,
+            metrics=analysis_plan.metrics,
             audience_type=analysis_plan.audience_dimension,
         )
 
@@ -535,11 +534,12 @@ class AnalysisExecutor:
         # 如果有受众值映射，将数字编码转换为中文名称
         if analysis_plan.audience_dimension in AUDIENCE_VALUE_MAPS:
             mapping = AUDIENCE_VALUE_MAPS[analysis_plan.audience_dimension]
+            # audience_data is now {audience_value: {metric_name: value}}
+            # we need to map the audience_value key only
             mapped_data = {}
-            for key, value in audience_data.items():
-                # key 可能是字符串或数字，尝试映射
+            for key, metric_values in audience_data.items():
                 mapped_key = mapping.get(str(key), mapping.get(key, key))
-                mapped_data[mapped_key] = int(value) if value.is_integer() else value
+                mapped_data[mapped_key] = metric_values
             audience_data = mapped_data
 
         # 构建图表配置
@@ -551,8 +551,10 @@ class AnalysisExecutor:
         )
 
         # 对于饼图，如果 chart_config.series 为空，自动填充series信息，每个标签对应一个系列
-        if default_chart_type == "pie" and (not chart_config.series):
+        # Only works for single metric case
+        if default_chart_type == "pie" and (not chart_config.series) and len(analysis_plan.metrics) == 1:
             # 从 audience_data 提取所有标签作为 series
+            single_metric = analysis_plan.metrics[0]
             series = []
             for label in audience_data.keys():
                 series.append({"name": str(label)})
@@ -574,19 +576,19 @@ class AnalysisExecutor:
                 }
                 display_label = label_mapping.get(audience_dim_label, audience_dim_label)
                 chart_config.x_axis = {"field": "label", "label": display_label}
-            if not chart_config.y_axis:
-                # y 轴是指标值，字段名就是 value
-                chart_config.y_axis = {"field": "value", "label": metric}
 
         # 构建图表数据
-        chart_data_points = [
-            {"label": key, "value": value}
-            for key, value in audience_data.items()
-        ]
+        # For multiple metrics, we only chart the first metric for now
+        chart_data_points = []
+        if len(analysis_plan.metrics) > 0:
+            chart_metric = analysis_plan.metrics[0]
+            for key, metric_values in audience_data.items():
+                value = metric_values.get(chart_metric, 0)
+                chart_data_points.append({"label": key, "value": value})
 
         # 构建数据表格
-        data_table = self._build_data_table_for_audience(
-            audience_data, analysis_plan.audience_dimension, metric
+        data_table = self._build_data_table_for_audience_multi(
+            audience_data, analysis_plan.audience_dimension, analysis_plan.metrics
         )
 
         trace.append({"step": "audience_distribution", "status": "success"})
@@ -857,6 +859,34 @@ class AnalysisExecutor:
                 "value": value,
                 "percentage": percentage,
             })
+
+        return AnalysisDataTable(columns=columns, rows=rows)
+
+    def _build_data_table_for_audience_multi(
+        self,
+        audience_data: Dict[str, Dict[str, float]],
+        audience_type: str,
+        metrics: List[str],
+    ) -> AnalysisDataTable:
+        """为受众分布分析构建数据表格 - 支持多指标"""
+        columns = [
+            {"key": "category", "label": f"{audience_type} 类别"},
+        ]
+        for metric in metrics:
+            columns.append({"key": metric, "label": metric})
+
+        # Calculate total percentage based on first metric
+        first_metric = metrics[0] if metrics else None
+        total = 0.0
+        if first_metric:
+            for metric_values in audience_data.values():
+                total += metric_values.get(first_metric, 0)
+
+        rows = []
+        for category, metric_values in audience_data.items():
+            row = {"category": category}
+            row.update(metric_values)
+            rows.append(row)
 
         return AnalysisDataTable(columns=columns, rows=rows)
 

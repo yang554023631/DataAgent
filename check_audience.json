@@ -1,0 +1,21 @@
+{
+  "query": {
+    "bool": {
+      "filter": [
+        {"terms": {"advertiser_id": [6]}},
+        {"term": {"data_type": 5}},
+        {"range": {"data_date": {"gte": "2026-04-01", "lte": "2026-04-30"}}},
+        {"exists": {"field": "audience_type"}}
+      ]
+    }
+  },
+  "size": 0,
+  "aggs": {
+    "by_audience_type": {
+      "terms": {"field": "audience_type"},
+      "aggs": {
+        "sum_cost": {"sum": {"field": "data_value"}}
+      }
+    }
+  }
+}

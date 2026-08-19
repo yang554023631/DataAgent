@@ -3,10 +3,12 @@ DSL Templates public API exports
 """
 from .common import (
     LEVEL_TO_FIELD,
+    LEVEL_TO_INDEX,
     DERIVED_METRICS,
     get_data_type,
     is_derived_metric,
     get_level_field,
+    get_level_index,
     build_time_filter,
     build_bucket_script,
     build_bucket_selector,
@@ -48,10 +50,12 @@ from .result_extractors import (
 __all__ = [
     # Common exports
     "LEVEL_TO_FIELD",
+    "LEVEL_TO_INDEX",
     "DERIVED_METRICS",
     "get_data_type",
     "is_derived_metric",
     "get_level_field",
+    "get_level_index",
     "build_time_filter",
     "build_bucket_script",
     "build_bucket_selector",

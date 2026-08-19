@@ -94,16 +94,19 @@ class ReportIntentAnalyzer:
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 json_mode=True,
+                schema=ReportIntentResult,
             )
             data = json.loads(response_text)
 
             # 解析 time_range
             tr_data = data.get("time_range")
             time_range = None
-            if tr_data and isinstance(tr_data, dict) and tr_data.get("start_date"):
+            if tr_data and isinstance(tr_data, dict):
+                # 对于全生命周期，start_date 和 end_date 是空字符串
+                # 所以只需要检查 tr_data 存在，不需要检查 start_date 非空
                 time_range = ReportTimeRange(
-                    start_date=tr_data["start_date"],
-                    end_date=tr_data.get("end_date", tr_data["start_date"]),
+                    start_date=tr_data.get("start_date", ""),
+                    end_date=tr_data.get("end_date", ""),
                     unit=tr_data.get("unit", "day"),
                     is_lifetime=tr_data.get("is_lifetime", False),
                 )
@@ -111,10 +114,10 @@ class ReportIntentAnalyzer:
             # 解析 compare_time_range
             ctr_data = data.get("compare_time_range")
             compare_time_range = None
-            if ctr_data and isinstance(ctr_data, dict) and ctr_data.get("start_date"):
+            if ctr_data and isinstance(ctr_data, dict):
                 compare_time_range = ReportTimeRange(
-                    start_date=ctr_data["start_date"],
-                    end_date=ctr_data.get("end_date", ctr_data["start_date"]),
+                    start_date=ctr_data.get("start_date", ""),
+                    end_date=ctr_data.get("end_date", ""),
                     unit=ctr_data.get("unit", "day"),
                     is_lifetime=ctr_data.get("is_lifetime", False),
                 )
@@ -129,6 +132,7 @@ class ReportIntentAnalyzer:
                 is_comparison=data.get("is_comparison", False),
                 compare_time_range=compare_time_range,
                 top_n=data.get("top_n"),
+                sort=data.get("sort"),
                 chart_type=data.get("chart_type"),
                 confidence=float(data.get("confidence", 0.7)),
                 alias_mappings=data.get("alias_mappings", {}),
@@ -288,6 +292,17 @@ class ReportIntentAnalyzer:
                     logger.info(f"Rule ad_level extracted: {level} (overwriting LLM result)")
                 break
 
+        # 对提取到的advertiser_names搜索转换为ID
+        if result.advertiser_names:
+            from src.services.advertiser_service import get_advertiser_by_name
+            for name in result.advertiser_names:
+                matched_advertisers = get_advertiser_by_name(name)
+                for adv in matched_advertisers:
+                    adv_id = adv["id"]
+                    if adv_id not in result.advertiser_ids:
+                        result.advertiser_ids.append(adv_id)
+            logger.info(f"[名称→ID] 输入名称: {result.advertiser_names}, 输出IDs: {result.advertiser_ids}")
+
         inconsistencies = []
         return inconsistencies
 
@@ -389,7 +404,24 @@ class ReportIntentAnalyzer:
             )
 
         # 2. 时间范围
+        # If user didn't specify time range, DEFAULT to full lifetime (don't ask clarification)
         if result.time_range is None:
+            from src.intent.models import ReportTimeRange
+            # Default to full lifetime query with empty start/end and is_lifetime=True
+            result.time_range = ReportTimeRange(
+                start_date="",
+                end_date="",
+                unit="day",
+                is_lifetime=True,
+            )
+            logger.info("No time_range specified, default to full lifetime (is_lifetime=True)")
+
+        # 如果是全生命周期，不需要 start_date 和 end_date，跳过检查
+        if result.time_range.is_lifetime:
+            # is_lifetime = true 表示查询全生命周期，不需要补充时间
+            pass
+        elif not (result.time_range.start_date and result.time_range.end_date):
+            # 不是全生命周期，但起止时间不全，需要澄清
             options = [
                 {"value": "今天", "label": "今天"},
                 {"value": "昨天", "label": "昨天"},

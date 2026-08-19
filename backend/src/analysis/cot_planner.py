@@ -417,6 +417,27 @@ class CotPlanner:
                     "- group_by 必须使用实体层级名称（如 campaign），不能使用带 _id 后缀的字段名",
                     "\n请修正这些错误，重新输出完整正确的JSON计划。"
                 ])
+            # 针对筛选计划结构错误的针对性提示
+            if last_error.plan and last_error.plan.filter_plan and last_error.plan.filter_plan.steps:
+                # 提取验证错误信息
+                # 重新验证一次拿到错误列表
+                validation_errors = self._validate_plan(last_error.plan, input_field_context=None)
+                if any("cannot be the first step" in err for err in validation_errors):
+                    feedback_lines.append("- ⚠️ STRUCTURE ERROR: `having_filter` (指标筛选 like '点击量 > 50') **cannot** be the first step. It must be placed **after** all `where_filter`/`cross_level_down` steps, because it needs the entity IDs output from previous dimension filtering. MOVE it to the LAST step.")
+
+                if any("cannot contain both" in err for err in validation_errors):
+                    feedback_lines.append("- ⚠️ STRUCTURE ERROR: One step cannot contain both where conditions (`field`: dimension attribute like name/status) AND having conditions (`metric`: aggregated metric like clicks/cost). **SEPARATE them into different steps**: where conditions → with cross_level_down/where_filter; having conditions → separate final step.")
+
+                if any("has no conditions" in err for err in validation_errors):
+                    feedback_lines.append("- ⚠️ STRUCTURE ERROR: `having_filter` step cannot be empty. **ONLY add a having_filter step when you need to filter by an aggregated metric condition** (like 'clicks > 50' or 'cvr > 0.03'). If you just need to SORT by a metric (like 'highest cvr first'), you DON'T need a having_filter step. DELETE the empty having_filter step entirely. The sorting is already done in the analysis_plan's order_by field.")
+
+                has_structural_error = (
+                    any("cannot be the first step" in err for err in validation_errors) or
+                    any("cannot contain both" in err for err in validation_errors) or
+                    any("has no conditions" in err for err in validation_errors)
+                )
+                if has_structural_error:
+                    feedback_lines.append("\nPlease fix these structural errors and output the complete correct JSON plan again.")
                 return "\n".join(feedback_lines)
             else:
                 return (
@@ -523,6 +544,12 @@ class CotPlanner:
             if not plan.analysis_plan.time_range:
                 errors.append("time_range is required")
 
+            # For audience_distribution analysis type, audience_dimension is required
+            if plan.analysis_plan.analysis_type == "audience_distribution" and not plan.analysis_plan.audience_dimension:
+                # Check if audience_dimension is available in input_field_context
+                if not (input_field_context and input_field_context.audience_dimension):
+                    errors.append("audience_distribution analysis requires audience_dimension (e.g., audience_gender, audience_age, etc.)")
+
             # Check metrics consistency with field_context
             # Use the input_field_context from intent analysis (authoritative) NOT plan.field_context
             if input_field_context and input_field_context.metrics:
@@ -571,6 +598,56 @@ class CotPlanner:
                                         plan.analysis_plan.metrics.append(base_metric)
                                         metrics_set.add(base_metric)
                                         logger.info(f"Auto-added base metric {base_metric} for having condition on {metric}")
+
+        # 验证筛选计划结构规则
+        if plan.filter_plan and plan.filter_plan.steps:
+            has_having = False
+            step_index = 0
+            for step in plan.filter_plan.steps:
+                step_index += 1
+                # Get step_type - handle both dict and FilterCondition object
+                if isinstance(step, dict):
+                    step_type = step.get("step_type")
+                    conditions = step.get("conditions", [])
+                else:
+                    step_type = step.step_type
+                    conditions = step.conditions
+
+                # 规则1: having_filter 不能是第一个步骤
+                # having 需要 entity_ids，必须在 where/cross_level_down 之后
+                if step_type == "having_filter" and step_index == 1:
+                    errors.append("having_filter cannot be the first step. having filter needs entity IDs from previous steps, must come after where/cross_level_down")
+
+                # 规则2: having_filter 必须至少有一个条件
+                # having_filter 步骤如果没有 conditions，说明 LLM 添加了多余的空步骤，应该删除
+                if step_type == "having_filter" and (not conditions or len(conditions) == 0):
+                    errors.append("having_filter step has no conditions. If you don't need to filter by aggregated metrics, do NOT add an empty having_filter step - omit it entirely. Only add having_filter when you have specific metric conditions like 'clicks > 50' or 'cvr > 0.03'.")
+
+                # 规则3: 同一个步骤不能同时包含 where 条件（field）和 having 条件（metric）
+                # where 和 having 必须分开到不同步骤
+                if conditions and isinstance(conditions, list):
+                    has_field_cond = False
+                    has_metric_cond = False
+                    for cond in conditions:
+                        if isinstance(cond, dict):
+                            if "field" in cond:
+                                has_field_cond = True
+                            if "metric" in cond:
+                                has_metric_cond = True
+                    if has_field_cond and has_metric_cond:
+                        errors.append("One step cannot contain both 'field' (where) conditions and 'metric' (having) conditions. where conditions filter dimension attributes and must go with cross_level_down/where_filter; having conditions filter aggregated metrics and must be in a separate final step. They must be separated.")
+
+        # Validate time_range.granularity
+        if plan.analysis_plan and plan.analysis_plan.time_range:
+            granularity = plan.analysis_plan.time_range.granularity
+            if granularity not in {"day", "week", "month"}:
+                errors.append(f"Invalid granularity '{granularity}'. time_range.granularity must be one of: 'day', 'week', 'month'. Do not use '1d', '1w', '1M', 'daily', 'weekly'.")
+
+        # Validate audience_distribution steps
+        if plan.analysis_plan and plan.analysis_plan.steps:
+            for step in plan.analysis_plan.steps:
+                if step.analysis_type == "audience_distribution" and not step.audience_type:
+                    errors.append("For audience_distribution analysis step, audience_type (audience dimension like 'audience_gender') must be specified. One analysis step can only contain one audience dimension. If you have multiple dimensions, split into multiple steps.")
 
         return errors
 

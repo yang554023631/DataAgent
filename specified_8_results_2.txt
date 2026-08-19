@@ -1,0 +1,267 @@
+/Users/simon/miniconda3/lib/python3.12/site-packages/langgraph/cache/base/__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+Step step_3 attempt 1 failed, retrying: Having filter step step_3 has no conditions
+Step step_3 all attempts failed: Having filter step step_3 has no conditions
+Step step_3 failed: Having filter step step_3 has no conditions
+Traceback (most recent call last):
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 114, in execute
+    entity_ids = self._execute_step_with_retry(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 207, in _execute_step_with_retry
+    raise last_exception
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 193, in _execute_step_with_retry
+    return self._execute_step(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 241, in _execute_step
+    dsl, matched_ids = self._build_dsl_for_step(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 305, in _build_dsl_for_step
+    dsl = self._build_having_filter_dsl(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 481, in _build_having_filter_dsl
+    raise ValueError(f"Having filter step {step.step_id} has no conditions")
+ValueError: Having filter step step_3 has no conditions
+[AnalysisNode] Unexpected error: Having filter step step_3 has no conditions
+Traceback (most recent call last):
+  File "/Users/simon/AL/DataAgent/backend/src/graph/nodes.py", line 1616, in analysis_node
+    filter_result = filter_executor.execute(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 114, in execute
+    entity_ids = self._execute_step_with_retry(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 207, in _execute_step_with_retry
+    raise last_exception
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 193, in _execute_step_with_retry
+    return self._execute_step(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 241, in _execute_step
+    dsl, matched_ids = self._build_dsl_for_step(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 305, in _build_dsl_for_step
+    dsl = self._build_having_filter_dsl(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 481, in _build_having_filter_dsl
+    raise ValueError(f"Having filter step {step.step_id} has no conditions")
+ValueError: Having filter step step_3 has no conditions
+Step step_2 attempt 1 failed, retrying: Having filter step step_2 has no conditions
+Step step_2 all attempts failed: Having filter step step_2 has no conditions
+Step step_2 failed: Having filter step step_2 has no conditions
+Traceback (most recent call last):
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 114, in execute
+    entity_ids = self._execute_step_with_retry(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 207, in _execute_step_with_retry
+    raise last_exception
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 193, in _execute_step_with_retry
+    return self._execute_step(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 241, in _execute_step
+    dsl, matched_ids = self._build_dsl_for_step(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 305, in _build_dsl_for_step
+    dsl = self._build_having_filter_dsl(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 481, in _build_having_filter_dsl
+    raise ValueError(f"Having filter step {step.step_id} has no conditions")
+ValueError: Having filter step step_2 has no conditions
+[AnalysisNode] Unexpected error: Having filter step step_2 has no conditions
+Traceback (most recent call last):
+  File "/Users/simon/AL/DataAgent/backend/src/graph/nodes.py", line 1616, in analysis_node
+    filter_result = filter_executor.execute(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 114, in execute
+    entity_ids = self._execute_step_with_retry(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 207, in _execute_step_with_retry
+    raise last_exception
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 193, in _execute_step_with_retry
+    return self._execute_step(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 241, in _execute_step
+    dsl, matched_ids = self._build_dsl_for_step(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 305, in _build_dsl_for_step
+    dsl = self._build_having_filter_dsl(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 481, in _build_having_filter_dsl
+    raise ValueError(f"Having filter step {step.step_id} has no conditions")
+ValueError: Having filter step step_2 has no conditions
+Plan validation failed: ['having_filter cannot be the first step. having filter needs entity IDs from previous steps, must come after where/cross_level_down']
+CoT planning CotResultStatus.VALIDATION_FAILED, retrying...
+不支持的实体类型: ad_group
+Step step_2 attempt 1 failed, retrying: Having filter step step_2 has no conditions
+Step step_2 all attempts failed: Having filter step step_2 has no conditions
+Step step_2 failed: Having filter step step_2 has no conditions
+Traceback (most recent call last):
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 114, in execute
+    entity_ids = self._execute_step_with_retry(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 207, in _execute_step_with_retry
+    raise last_exception
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 193, in _execute_step_with_retry
+    return self._execute_step(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 241, in _execute_step
+    dsl, matched_ids = self._build_dsl_for_step(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 305, in _build_dsl_for_step
+    dsl = self._build_having_filter_dsl(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 481, in _build_having_filter_dsl
+    raise ValueError(f"Having filter step {step.step_id} has no conditions")
+ValueError: Having filter step step_2 has no conditions
+[AnalysisNode] Unexpected error: Having filter step step_2 has no conditions
+Traceback (most recent call last):
+  File "/Users/simon/AL/DataAgent/backend/src/graph/nodes.py", line 1616, in analysis_node
+    filter_result = filter_executor.execute(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 114, in execute
+    entity_ids = self._execute_step_with_retry(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 207, in _execute_step_with_retry
+    raise last_exception
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 193, in _execute_step_with_retry
+    return self._execute_step(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 241, in _execute_step
+    dsl, matched_ids = self._build_dsl_for_step(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 305, in _build_dsl_for_step
+    dsl = self._build_having_filter_dsl(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 481, in _build_having_filter_dsl
+    raise ValueError(f"Having filter step {step.step_id} has no conditions")
+ValueError: Having filter step step_2 has no conditions
+Step step_2 attempt 1 failed, retrying: Having filter step step_2 has no conditions
+Step step_2 all attempts failed: Having filter step step_2 has no conditions
+Step step_2 failed: Having filter step step_2 has no conditions
+Traceback (most recent call last):
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 114, in execute
+    entity_ids = self._execute_step_with_retry(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 207, in _execute_step_with_retry
+    raise last_exception
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 193, in _execute_step_with_retry
+    return self._execute_step(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 241, in _execute_step
+    dsl, matched_ids = self._build_dsl_for_step(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 305, in _build_dsl_for_step
+    dsl = self._build_having_filter_dsl(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 481, in _build_having_filter_dsl
+    raise ValueError(f"Having filter step {step.step_id} has no conditions")
+ValueError: Having filter step step_2 has no conditions
+[AnalysisNode] Unexpected error: Having filter step step_2 has no conditions
+Traceback (most recent call last):
+  File "/Users/simon/AL/DataAgent/backend/src/graph/nodes.py", line 1616, in analysis_node
+    filter_result = filter_executor.execute(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 114, in execute
+    entity_ids = self._execute_step_with_retry(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 207, in _execute_step_with_retry
+    raise last_exception
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 193, in _execute_step_with_retry
+    return self._execute_step(
+           ^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 241, in _execute_step
+    dsl, matched_ids = self._build_dsl_for_step(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 305, in _build_dsl_for_step
+    dsl = self._build_having_filter_dsl(
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/simon/AL/DataAgent/backend/src/nl_dsl/filter_executor.py", line 481, in _build_having_filter_dsl
+    raise ValueError(f"Having filter step {step.step_id} has no conditions")
+ValueError: Having filter step step_2 has no conditions
+🚀 开始运行指定的 8 个 e2e 测试用例
+📌 广告主ID: 6
+----------------------------------------------------------------------------------------------------
+
+🔹 测试 9: 模糊名称查询 - 包含digital + 排序
+   查询: 找出 digital_0 名称带 digital 的广告计划，按消耗排序
+   状态: success
+   预期分析类型: entity_table, 实际: AnalysisType.ENTITY_TABLE
+   数据点数量: 0
+   响应时间: 63.64s
+--------------------------------------------------------------------------------
+
+🔹 测试 12: 模糊查询 + 排序 + TopN - ad_group
+   查询: 在 digital_0 中找出名称包含六一八的所有广告组，按消耗降序排列前三
+      第 2 次重试...
+   状态: error
+   预期分析类型: entity_table, 实际: unknown
+   响应时间: 55.06s
+   错误信息: 2次重试全部失败，最后一次错误: {'type': 'analysis_error', 'message': 'Having filter step step_2 has no conditions'}
+--------------------------------------------------------------------------------
+
+🔹 测试 15: 模糊名称查询 - creative
+   查询: 列出 digital_0 名称含尊享的所有创意及消耗
+   状态: success
+   预期分析类型: entity_table, 实际: AnalysisType.ENTITY_TABLE
+   数据点数量: 0
+   响应时间: 20.86s
+--------------------------------------------------------------------------------
+
+🔹 测试 18: 混合筛选 - status + 名称contains
+   查询: digital_0 投放中的广告计划，名称含有 best，列出消耗和点击
+   状态: success
+   预期分析类型: entity_table, 实际: AnalysisType.ENTITY_TABLE
+   数据点数量: 0
+   响应时间: 24.58s
+--------------------------------------------------------------------------------
+
+🔹 测试 19: 混合筛选 - 名称 + having点击
+   查询: 找出 digital_0 下名称含 mini 的创意，点击量大于50
+   状态: success
+   预期分析类型: entity_table, 实际: AnalysisType.ENTITY_TABLE
+   数据点数量: 1
+   响应时间: 24.49s
+--------------------------------------------------------------------------------
+
+🔹 测试 50: Ad Group TopN - 点击率前五
+   查询: 列出广告主6点击率从高到低排前五的广告组
+   状态: success
+   预期分析类型: entity_table, 实际: AnalysisType.ENTITY_TABLE
+   数据点数量: 5
+   响应时间: 38.59s
+--------------------------------------------------------------------------------
+
+🔹 测试 52: Creative TopN - 转化率前三
+   查询: 广告主6转化率最高的三个创意
+      第 2 次重试...
+   状态: error
+   预期分析类型: entity_table, 实际: unknown
+   响应时间: 58.68s
+   错误信息: 2次重试全部失败，最后一次错误: {'type': 'analysis_error', 'message': 'Having filter step step_2 has no conditions'}
+--------------------------------------------------------------------------------
+
+🔹 测试 54: 受众分布 - 操作系统占比
+   查询: 广告主6按不同操作系统看消耗占比
+   状态: success
+   预期分析类型: audience_distribution, 实际: AnalysisType.AUDIENCE_DISTRIBUTION
+   数据点数量: 3
+   响应时间: 12.88s
+--------------------------------------------------------------------------------
+
+====================================================================================================
+=== 📊 测试汇总报告 ===
+总测试用例数: 8
+✅ 成功: 6
+❓ 需要澄清: 0
+❌ 失败: 2
+总耗时: 298.77s
+====================================================================================================
+
+=== ❌ 失败测试详情 ===
+测试 12: 模糊查询 + 排序 + TopN - ad_group
+错误: 2次重试全部失败，最后一次错误: {'type': 'analysis_error', 'message': 'Having filter step step_2 has no conditions'}
+数据行数: 0
+------------------------------------------------------------
+测试 52: Creative TopN - 转化率前三
+错误: 2次重试全部失败，最后一次错误: {'type': 'analysis_error', 'message': 'Having filter step step_2 has no conditions'}
+数据行数: 0
+------------------------------------------------------------
+
+✅ 结果已保存到: /Users/simon/AL/DataAgent/specified_8_results.json

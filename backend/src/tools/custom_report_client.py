@@ -35,9 +35,12 @@ DIMENSION_NAME_MAP = {
     "data_hour": "小时",
     "channel": "渠道",
     "campaign_id": "计划ID",
+    "campaign_name": "计划名称",
     "adgroup_id": "广告组ID",
+    "adgroup_name": "广告组名称",
     "advertiser_id": "广告主ID",
     "creative_id": "创意ID",
+    "creative_name": "创意名称",
     "industry": "行业",
 }
 
@@ -58,7 +61,7 @@ AUDIENCE_VALUE_MAPS = {
         "1.0": "18-24岁",
         "2.0": "25-34岁",
         "3.0": "35-44岁",
-        "4.0": "45-54岁",
+        "4.0": "18-24岁",
         "5.0": "55岁以上",
     },
     "audience_os": {
@@ -145,6 +148,26 @@ def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
     time_range = model_dict.get("time_range", {})
     advertiser_ids = model_dict.get("advertiser_ids", [])
 
+    # 字段 -> 维度索引映射：哪些字段只存在于维度表
+    FIELD_TO_DIM_INDEX = {
+        "campaign_name": "campaign",
+        "adgroup_name": "adgroup",
+        "creative_name": "creative",
+        "status": "campaign",          # 计划状态只在维度表
+        "campaign_status": "campaign",
+        "adgroup_status": "adgroup",
+        "creative_status": "creative",
+    }
+
+    # ID字段名映射：每个维度表对应的ID字段名
+    DIM_ID_FIELD = {
+        "campaign": "campaign_id",
+        "adgroup": "adgroup_id",
+        "creative": "creative_id",
+    }
+
+    # 事实表对应的ID字段名和DIM_ID_FIELD一致
+
     # 选择索引
     use_audience_index = False
     if group_by:
@@ -180,15 +203,93 @@ def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
     if advertiser_ids:
         bool_must.append({"terms": {"advertiser_id": [int(adv_id) for adv_id in advertiser_ids]}})
 
+    # 预处理筛选：维度表字段筛选需要先去维度表查ID
+    from elasticsearch import Elasticsearch
     # 其他过滤条件
     for f in filters:
         field = f.get("field") if isinstance(f, dict) else getattr(f, "field", None)
-        op = f.get("op", "eq") if isinstance(f, dict) else getattr(f, "op", "eq")
+        # 兼容: prompt输出 operator，旧格式是 op
+        op = f.get("operator", f.get("op", "eq")) if isinstance(f, dict) else getattr(f, "operator", getattr(f, "op", "eq"))
         value = f.get("value") if isinstance(f, dict) else getattr(f, "value", None)
 
         if field and value is not None:
+            # 处理只存在维度表的字段筛选：需要先去维度表查出匹配的ID，再用ID过滤事实表
+            if field in FIELD_TO_DIM_INDEX:
+                dim_index = FIELD_TO_DIM_INDEX[field]
+                dim_id_field = DIM_ID_FIELD[dim_index]
+                # 在维度表搜索满足条件的实体
+                must_clauses = []
+                # Try to convert to number if possible for numeric fields
+                try:
+                    if isinstance(value, str):
+                        if '.' in value:
+                            value = float(value)
+                        else:
+                            value = int(value)
+                except (ValueError, TypeError):
+                    pass
+
+                if op == "like":
+                    # 模糊匹配，名称包含子串：使用 wildcard
+                    must_clauses.append({"wildcard": {field: f"*{value}*"}})
+                elif op == "eq" or op == "=":
+                    must_clauses.append({"term": {field: value}})
+                elif op == "gt":
+                    must_clauses.append({"range": {field: {"gt": value}}})
+                elif op == "gte":
+                    must_clauses.append({"range": {field: {"gte": value}}})
+                elif op == "lt":
+                    must_clauses.append({"range": {field: {"lt": value}}})
+                elif op == "lte":
+                    must_clauses.append({"range": {field: {"lte": value}}})
+                elif op == "in" and isinstance(value, list):
+                    # Convert each item in the list to number if possible
+                    converted_values = []
+                    for v in value:
+                        try:
+                            if isinstance(v, str):
+                                if '.' in v:
+                                    converted_values.append(float(v))
+                                else:
+                                    converted_values.append(int(v))
+                            else:
+                                converted_values.append(v)
+                        except (ValueError, TypeError):
+                            converted_values.append(v)
+                    must_clauses.append({"terms": {field: converted_values}})
+
+                # 如果已经有广告主过滤，维度表也要加上，减少结果
+                if advertiser_ids:
+                    must_clauses.append({"terms": {"advertiser_id": [int(aid) for aid in advertiser_ids]}})
+
+                search_result = es_client.search(
+                    index=dim_index,
+                    query={"bool": {"must": must_clauses}},
+                    size=1000
+                )
+                # 提取匹配到的ID
+                matched_ids = []
+                for hit in search_result["hits"]["hits"]:
+                    eid = hit["_source"].get(dim_id_field)
+                    if eid is not None:
+                        matched_ids.append(int(eid))
+                # 如果有匹配到ID，添加ID筛选到事实表
+                if matched_ids:
+                    bool_must.append({"terms": {dim_id_field: matched_ids}})
+                # 如果没有匹配到，结果肯定是空，不用继续
+                continue
+            # 普通字段（存在事实表）直接筛选
             if op == "eq":
                 bool_must.append({"term": {field: value}})
+            elif op == "like":
+                # 模糊匹配，名称包含子串
+                # 使用 match 而不是 wildcard，因为名称字段是 text 类型已经分词
+                # match 分词后匹配，可以找到包含关键词的文档
+                bool_must.append({
+                    "match": {
+                        field: value
+                    }
+                })
             elif op == "in" and isinstance(value, list):
                 bool_must.append({"terms": {field: value}})
             elif op == "gt":
@@ -199,6 +300,11 @@ def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
                 bool_must.append({"range": {field: {"lt": value}}})
             elif op == "lte":
                 bool_must.append({"range": {field: {"lte": value}}})
+            elif op == "between" and isinstance(value, list) and len(value) == 2:
+                # 区间查询，转换为 gt + lt
+                min_val, max_val = value
+                bool_must.append({"range": {field: {"gt": min_val}}})
+                bool_must.append({"range": {field: {"lt": max_val}}})
 
     # 受众维度需要额外过滤 audience_type
     if use_audience_index and group_by:
@@ -228,6 +334,13 @@ def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
     if group_by and len(group_by) > 0:
         current = aggs
 
+        # 获取 top_n 和 sort 配置
+        top_n = model_dict.get("top_n")
+        sort_info = model_dict.get("sort")
+
+        # 存储名称字段映射，最后需要查询维度表补充名称
+        name_fields_to_lookup = []  # [(id_field, name_field), ...]
+
         for i, gb in enumerate(group_by):
             field = gb.get("field", "") if isinstance(gb, dict) else str(gb)
             agg_name = f"group_{i}"
@@ -238,12 +351,42 @@ def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
             # 受众维度（性别、年龄、OS、兴趣）都存储在 audience_tag_value 字段中
             elif field.startswith("audience_"):
                 actual_field = "audience_tag_value"
+            # 对于 *_name 名称字段，事实表不存在，我们只按 *_id 聚合，最后查询维度表补充名称
+            elif field == "campaign_name":
+                actual_field = "campaign_id"
+                name_fields_to_lookup.append(("campaign_id", "campaign_name"))
+            elif field == "adgroup_name":
+                actual_field = "adgroup_id"
+                name_fields_to_lookup.append(("adgroup_id", "adgroup_name"))
+            elif field == "creative_name":
+                actual_field = "creative_id"
+                name_fields_to_lookup.append(("creative_id", "creative_name"))
+
+            # 构建 terms 聚合配置
+            terms_config = {
+                "field": actual_field,
+                "size": top_n if (top_n and isinstance(top_n, int)) else 1000,
+            }
+
+            # 如果是最后一层分组且有排序要求，按指定指标排序
+            if sort_info and i == len(group_by) - 1:
+                sort_field = sort_info.get("field")
+                sort_order = sort_info.get("order", "desc")
+                # ES terms 聚合按聚合后的指标值排序
+                # 基础指标: sum_{sort_field}.value
+                # 衍生指标 (ctr/cvr/cpc/cpm): {sort_field}.value
+                from src.nl_dsl.dsl_templates.common import is_derived_metric
+                if is_derived_metric(sort_field):
+                    terms_config["order"] = {
+                        f"{sort_field}.value": sort_order
+                    }
+                else:
+                    terms_config["order"] = {
+                        f"sum_{sort_field}.value": sort_order
+                    }
 
             current[agg_name] = {
-                "terms": {
-                    "field": actual_field,
-                    "size": 1000,
-                },
+                "terms": terms_config,
                 "aggs": {}
             }
             current = current[agg_name]["aggs"]
@@ -342,7 +485,7 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
                         except (ValueError, TypeError):
                             mapped_path.append(val_str)
                     else:
-                        mapped_path.append(val_str)
+                        mapped_path.append(val)
 
                 row = {}
                 # 每个维度拆成独立列
@@ -414,12 +557,78 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
 
         result = list(aggregated.values())
 
+    # 查询维度表补充名称（当聚合按ID，但分组包含名称字段时）
+    from src.tools.hierarchy_utils import get_entity_names
+    if group_by:
+        # 检查哪些分组字段需要查询名称
+        for gb in group_by:
+            field = gb.get("field", "") if isinstance(gb, dict) else str(gb)
+            # 如果分组按campaign_name，实际聚合是campaign_id，需要补充名称
+            if field == "campaign_name":
+                # 收集所有需要查询的ID
+                entity_ids = []
+                for row in result:
+                    # 实际聚合结果中存储的是 campaign_id
+                    if "计划ID" in row and row["计划ID"] is not None:
+                        try:
+                            entity_ids.append(int(row["计划ID"]))
+                        except (ValueError, TypeError):
+                            pass
+                if entity_ids:
+                    # 查询名称
+                    names_map = get_entity_names("campaign", entity_ids)
+                    # 补充名称列
+                    name_col_name = DIMENSION_NAME_MAP.get("campaign_name", "campaign_name")
+                    for row in result:
+                        if "计划ID" in row:
+                            eid = int(row["计划ID"])
+                            row[name_col_name] = names_map.get(eid, f"ID:{eid}")
+            elif field == "adgroup_name":
+                # 收集所有需要查询的ID
+                entity_ids = []
+                for row in result:
+                    if "广告组ID" in row and row["广告组ID"] is not None:
+                        try:
+                            entity_ids.append(int(row["广告组ID"]))
+                        except (ValueError, TypeError):
+                            pass
+                if entity_ids:
+                    names_map = get_entity_names("adgroup", entity_ids)
+                    name_col_name = DIMENSION_NAME_MAP.get("adgroup_name", "adgroup_name")
+                    for row in result:
+                        if "广告组ID" in row:
+                            eid = int(row["广告组ID"])
+                            row[name_col_name] = names_map.get(eid, f"ID:{eid}")
+            elif field == "creative_name":
+                # 收集所有需要查询的ID
+                entity_ids = []
+                for row in result:
+                    if "创意ID" in row and row["创意ID"] is not None:
+                        try:
+                            entity_ids.append(int(row["创意ID"]))
+                        except (ValueError, TypeError):
+                            pass
+                if entity_ids:
+                    names_map = get_entity_names("creative", entity_ids)
+                    name_col_name = DIMENSION_NAME_MAP.get("creative_name", "creative_name")
+                    for row in result:
+                        if "创意ID" in row:
+                            eid = int(row["创意ID"])
+                            row[name_col_name] = names_map.get(eid, f"ID:{eid}")
+
     # 计算衍生指标 CTR (点击率) = clicks / impressions
     if result and "clicks" in metrics and "impressions" in metrics:
         for row in result:
             impressions = row.get("impressions", 0)
             clicks = row.get("clicks", 0)
             row["ctr"] = clicks / impressions if impressions > 0 else 0
+
+    # 计算衍生指标 CVR (转化率) = conversions / clicks
+    if result and "conversions" in metrics and "clicks" in metrics:
+        for row in result:
+            clicks = row.get("clicks", 0)
+            conversions = row.get("conversions", 0)
+            row["cvr"] = conversions / clicks if clicks > 0 else 0
 
     # 按维度进行自然排序（小时按数字排序，而非字符串排序）
     if group_by and len(result) > 1:

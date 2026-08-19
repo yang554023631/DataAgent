@@ -1,0 +1,82 @@
+[
+  {
+    "test_id": 9,
+    "test_name": "模糊名称查询 - 包含digital + 排序",
+    "query": "找出 digital_0 四月份 名称带 digital 的广告计划，按消耗排序",
+    "status": "success",
+    "analysis_type": "entity_table",
+    "error_message": null,
+    "attempts": 1,
+    "response_time": 10.91
+  },
+  {
+    "test_id": 12,
+    "test_name": "模糊查询 + 排序 + TopN - ad_group",
+    "query": "在 digital_0 四月份 中找出名称包含六一八的所有广告组，按消耗降序排列前三",
+    "status": "success",
+    "analysis_type": "entity_table",
+    "error_message": null,
+    "attempts": 1,
+    "response_time": 11.13
+  },
+  {
+    "test_id": 15,
+    "test_name": "模糊名称查询 - creative",
+    "query": "列出 digital_0 四月份 名称含尊享的所有创意及消耗",
+    "status": "success",
+    "analysis_type": "entity_table",
+    "error_message": null,
+    "attempts": 1,
+    "response_time": 15.46
+  },
+  {
+    "test_id": 18,
+    "test_name": "混合筛选 - status + 名称contains",
+    "query": "digital_0 四月份 投放中的广告计划，名称含有 best，列出消耗和点击",
+    "status": "success",
+    "analysis_type": "entity_table",
+    "error_message": null,
+    "attempts": 1,
+    "response_time": 29.65
+  },
+  {
+    "test_id": 19,
+    "test_name": "混合筛选 - 名称 + having点击",
+    "query": "找出 digital_0 四月份 下名称含 mini 的创意，点击量大于50的",
+    "status": "success",
+    "analysis_type": "entity_table",
+    "error_message": null,
+    "attempts": 1,
+    "response_time": 14.89
+  },
+  {
+    "test_id": 50,
+    "test_name": "Ad Group TopN - 点击率前五",
+    "query": "列出广告主6 四月份 点击率从高到低排前五的广告组",
+    "status": "success",
+    "analysis_type": "entity_table",
+    "error_message": null,
+    "attempts": 1,
+    "response_time": 11.5
+  },
+  {
+    "test_id": 52,
+    "test_name": "Creative TopN - 转化率前三",
+    "query": "广告主6 四月份 转化率最高的三个创意",
+    "status": "success",
+    "analysis_type": "entity_table",
+    "error_message": null,
+    "attempts": 1,
+    "response_time": 14.26
+  },
+  {
+    "test_id": 54,
+    "test_name": "受众分布 - 操作系统占比",
+    "query": "广告主6 四月份 按不同操作系统看消耗占比",
+    "status": "success",
+    "analysis_type": "audience_distribution",
+    "error_message": null,
+    "attempts": 1,
+    "response_time": 16.27
+  }
+]

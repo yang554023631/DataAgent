@@ -212,7 +212,11 @@ def build_entity_table(
         if order_by == group_by_level or order_by == level_field:
             order_path = "_key"
         elif is_derived_metric(order_by):
-            order_path = order_by
+            # Derived metrics are bucket_script aggregations - ES cannot sort terms by pipeline aggregation output
+            # Fallback: sort by the first dependency base metric instead (this gives a reasonable approximate sort)
+            derived = DERIVED_METRICS[order_by]
+            first_dep = derived["depends_on"][0]
+            order_path = f"sum_{first_dep}>value"
         else:
             order_path = f"sum_{order_by}>value"
 
@@ -328,14 +332,26 @@ def build_audience_distribution(
     advertiser_ids: List[str],
     start_date: str,
     end_date: str,
-    metric: str,
+    metrics: List[str],
     audience_type: str,
     index: str = "ad_stat_audience",
 ) -> Dict[str, Any]:
     """A6: 受众分布分析"""
-    data_type = get_data_type(metric)
-    if data_type is None:
-        raise ValueError(f"Unknown metric: {metric}")
+    # Separate base metrics and derived metrics
+    base_metrics = []
+    derived_metrics = []
+    for metric in metrics:
+        if is_derived_metric(metric):
+            derived_metrics.append(metric)
+            base_metrics.extend(DERIVED_METRICS[metric]["depends_on"])
+        else:
+            base_metrics.append(metric)
+
+    # Remove duplicates from base_metrics
+    base_metrics = list(set(base_metrics))
+
+    # Get data types for base metrics
+    data_types = [get_data_type(m) for m in base_metrics if get_data_type(m) is not None]
 
     # Map audience dimension field name to audience_type number
     audience_type_map = {
@@ -351,7 +367,7 @@ def build_audience_distribution(
     if audience_type_num is None:
         raise ValueError(f"Unknown audience dimension: {audience_type}")
 
-    filters = build_common_filters(advertiser_ids, start_date, end_date, [data_type])
+    filters = build_common_filters(advertiser_ids, start_date, end_date, data_types)
     filters.append({"term": {"audience_type": audience_type_num}})
 
     dsl = {
@@ -365,12 +381,22 @@ def build_audience_distribution(
         "aggs": {
             "by_audience": {
                 "terms": {"field": "audience_tag_value", "size": 100},
-                "aggs": {
-                    "metric_sum": {"sum": {"field": "data_value"}}
-                }
+                "aggs": {}
             }
         },
     }
+
+    terms_aggs = dsl["aggs"]["by_audience"]["aggs"]
+
+    # Add base metric sum aggregations
+    base_aggs = build_base_metric_sum_aggs(base_metrics)
+    terms_aggs.update(base_aggs)
+
+    # Add derived metric bucket_script aggregations
+    for derived_metric in derived_metrics:
+        derived_agg = build_bucket_script(derived_metric)
+        terms_aggs.update(derived_agg)
+
     return dsl
 
 
@@ -406,17 +432,24 @@ def build_summary(
             }
         },
         "size": 0,
-        "aggs": {},
+        "aggs": {
+            # Wrap everything in a single global bucket to satisfy bucket_script requirement
+            # bucket_script must be inside another aggregation that creates buckets
+            "all_data": {
+                "filter": {"match_all": {}},
+                "aggs": {}
+            }
+        },
     }
 
-    # Add base metric sum aggregations
+    # Add base metric sum aggregations inside the global bucket
     base_aggs = build_base_metric_sum_aggs(base_metrics)
-    dsl["aggs"].update(base_aggs)
+    dsl["aggs"]["all_data"]["aggs"].update(base_aggs)
 
     # Add derived metric bucket_script aggregations
     for derived_metric in derived_metrics:
         derived_agg = build_bucket_script(derived_metric)
-        dsl["aggs"].update(derived_agg)
+        dsl["aggs"]["all_data"]["aggs"].update(derived_agg)
 
     return dsl
 

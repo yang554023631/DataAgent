@@ -66,8 +66,32 @@ class IntentLLMClient:
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=user_prompt),
                 ]
-                response = await self.llm.ainvoke(messages)
-                content = response.content.strip()
+
+                # 如果提供了 schema，让 LLM 输出 JSON 格式然后我们手动解析
+                # 火山引擎 ARK 的 with_structured_output 不兼容 Langchain，所以手动解析
+                import json
+                from pydantic import ValidationError
+
+                if schema is not None:
+                    # Add explicit JSON instruction to prompt
+                    schema_instructions = f"\n\n你必须严格输出符合以下 JSON Schema 的数据，不要输出任何额外内容：\n{schema.model_json_schema()}"
+                    messages[-1] = HumanMessage(content=messages[-1].content + schema_instructions)
+                    # Enable JSON mode response format
+                    llm_with_json_mode = self.llm.bind(response_format={"type": "json_object"})
+                    response = await llm_with_json_mode.ainvoke(messages)
+                    content = response.content.strip()
+                    # Parse and validate
+                    parsed_data = json.loads(content)
+                    validated = schema.model_validate(parsed_data)
+                    content = json.dumps(validated.model_dump(), ensure_ascii=False)
+                else:
+                    if json_mode:
+                        llm_with_json_mode = self.llm.bind(response_format={"type": "json_object"})
+                        response = await llm_with_json_mode.ainvoke(messages)
+                        content = response.content.strip()
+                    else:
+                        response = await self.llm.ainvoke(messages)
+                        content = response.content.strip()
 
                 if attempt > 1:
                     logger.info(f"LLM调用成功（第{attempt}次重试）")
