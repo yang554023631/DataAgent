@@ -1,0 +1,418 @@
+[
+  {
+    "id": 9,
+    "name": "9: 找出 digital_0 名称带 digital 的广告计划，按消耗排序",
+    "query": "找出 digital_0 名称带 digital 的广告计划，按消耗排序",
+    "passed": false,
+    "message": "Expected success=True, got report_type=empty: Unknown error",
+    "elapsed": 49.415127992630005,
+    "full_response": {
+      "status": "completed",
+      "result": {
+        "query_intent": {
+          "advertiser_ids": [
+            "6"
+          ],
+          "metrics": [
+            "cost"
+          ],
+          "dimensions": [
+            "campaign_id",
+            "campaign_name"
+          ],
+          "filters": [
+            {
+              "field": "campaign_name",
+              "operator": "like",
+              "value": "digital",
+              "type": "where"
+            }
+          ],
+          "is_comparison": false,
+          "time_range": {
+            "start": "",
+            "end": ""
+          },
+          "ad_level": "campaign"
+        },
+        "query_request": null,
+        "query_result": {},
+        "analysis": {},
+        "final_report": {
+          "report_type": "empty",
+          "title": "📭 消耗 实体表格 (2000-01-01 ~ 2026-08-17)",
+          "highlights": [
+            {
+              "type": "negative",
+              "text": "⚠️ 时间范围过大 (9725 天)，建议不超过 3 年"
+            }
+          ],
+          "data_table": {
+            "columns": [],
+            "rows": []
+          },
+          "chart_config": null,
+          "metadata": {
+            "generated_at": "2026-08-17T01:03:21.024777",
+            "entity_level": "campaign",
+            "total_entities": 0,
+            "metrics": [
+              "cost"
+            ],
+            "analysis_type": "entity_table",
+            "chart_type": "table",
+            "time_range": {
+              "start_date": "2000-01-01",
+              "end_date": "2026-08-17",
+              "granularity": "day"
+            }
+          },
+          "next_queries": [
+            "查看最近7天的整体数据",
+            "查看全部广告主"
+          ],
+          "suggestions": [
+            "时间范围过大 (9725 天)，建议不超过 3 年"
+          ]
+        },
+        "warnings": []
+      }
+    }
+  },
+  {
+    "id": 18,
+    "name": "18: digital_0 投放中的广告计划，名称含有 best，列出消耗和点击",
+    "query": "digital_0 投放中的广告计划，名称含有 best，列出消耗和点击",
+    "passed": false,
+    "message": "Expected success=True, got report_type=empty: Unknown error",
+    "elapsed": 74.35871076583862,
+    "full_response": {
+      "status": "completed",
+      "result": {
+        "query_intent": {
+          "advertiser_ids": [
+            "6"
+          ],
+          "metrics": [
+            "cost",
+            "clicks"
+          ],
+          "dimensions": [
+            "campaign_id",
+            "campaign_name"
+          ],
+          "filters": [
+            {
+              "field": "status",
+              "operator": "eq",
+              "value": 1,
+              "type": "where"
+            },
+            {
+              "field": "campaign_name",
+              "operator": "like",
+              "value": "best",
+              "type": "where"
+            }
+          ],
+          "is_comparison": false,
+          "time_range": {
+            "start": "",
+            "end": ""
+          },
+          "ad_level": "campaign"
+        },
+        "query_request": null,
+        "query_result": {},
+        "analysis": {},
+        "final_report": {
+          "report_type": "empty",
+          "title": "📭 消耗 实体表格 (2000-01-01 ~ 2026-08-17)",
+          "highlights": [
+            {
+              "type": "negative",
+              "text": "⚠️ 时间范围过大 (9725 天)，建议不超过 3 年"
+            }
+          ],
+          "data_table": {
+            "columns": [],
+            "rows": []
+          },
+          "chart_config": null,
+          "metadata": {
+            "generated_at": "2026-08-17T01:04:35.383494",
+            "entity_level": "campaign",
+            "total_entities": 0,
+            "metrics": [
+              "cost",
+              "clicks"
+            ],
+            "analysis_type": "entity_table",
+            "chart_type": "table",
+            "time_range": {
+              "start_date": "2000-01-01",
+              "end_date": "2026-08-17",
+              "granularity": "day"
+            }
+          },
+          "next_queries": [
+            "查看最近7天的整体数据",
+            "查看全部广告主"
+          ],
+          "suggestions": [
+            "时间范围过大 (9725 天)，建议不超过 3 年"
+          ]
+        },
+        "warnings": []
+      }
+    }
+  },
+  {
+    "id": 19,
+    "name": "19: 找出 digital_0 下名称含 mini 的创意，点击量大于50的",
+    "query": "找出 digital_0 下名称含 mini 的创意，点击量大于50的",
+    "passed": false,
+    "message": "Expected success=True, got report_type=empty: Unknown error",
+    "elapsed": 58.724241971969604,
+    "full_response": {
+      "status": "completed",
+      "result": {
+        "query_intent": {
+          "advertiser_ids": [
+            "6"
+          ],
+          "metrics": [
+            "clicks"
+          ],
+          "dimensions": [
+            "creative_id",
+            "creative_name"
+          ],
+          "filters": [
+            {
+              "field": "creative_name",
+              "operator": "like",
+              "value": "mini",
+              "type": "where"
+            },
+            {
+              "field": "clicks",
+              "operator": "gt",
+              "value": 50,
+              "type": "having"
+            }
+          ],
+          "is_comparison": false,
+          "time_range": {
+            "start": "",
+            "end": ""
+          },
+          "ad_level": "creative"
+        },
+        "query_request": null,
+        "query_result": {},
+        "analysis": {},
+        "final_report": {
+          "report_type": "empty",
+          "title": "📭 点击量 实体表格 (2000-01-01 ~ 2026-08-17)",
+          "highlights": [
+            {
+              "type": "negative",
+              "text": "⚠️ 时间范围过大 (9725 天)，建议不超过 3 年"
+            }
+          ],
+          "data_table": {
+            "columns": [],
+            "rows": []
+          },
+          "chart_config": null,
+          "metadata": {
+            "generated_at": "2026-08-17T01:05:34.108189",
+            "entity_level": "creative",
+            "total_entities": 33,
+            "metrics": [
+              "clicks"
+            ],
+            "analysis_type": "entity_table",
+            "chart_type": "table",
+            "time_range": {
+              "start_date": "2000-01-01",
+              "end_date": "2026-08-17",
+              "granularity": "day"
+            }
+          },
+          "next_queries": [
+            "查看最近7天的整体数据",
+            "查看全部广告主"
+          ],
+          "suggestions": [
+            "时间范围过大 (9725 天)，建议不超过 3 年"
+          ]
+        },
+        "warnings": []
+      }
+    }
+  },
+  {
+    "id": 50,
+    "name": "50: 列出广告主6点击率从高到低排前五的广告组",
+    "query": "列出广告主6点击率从高到低排前五的广告组",
+    "passed": false,
+    "message": "Expected success=True, got report_type=empty: Unknown error",
+    "elapsed": 45.35609292984009,
+    "full_response": {
+      "status": "completed",
+      "result": {
+        "query_intent": {
+          "advertiser_ids": [
+            "6"
+          ],
+          "metrics": [
+            "conversions",
+            "impressions",
+            "cost",
+            "ctr",
+            "clicks"
+          ],
+          "dimensions": [
+            "adgroup_id",
+            "adgroup_name"
+          ],
+          "filters": [],
+          "is_comparison": false,
+          "time_range": {
+            "start": "",
+            "end": ""
+          },
+          "ad_level": "ad_group"
+        },
+        "query_request": null,
+        "query_result": {},
+        "analysis": {},
+        "final_report": {
+          "report_type": "empty",
+          "title": "📭 conversions 实体表格 (2000-01-01 ~ 2026-08-17)",
+          "highlights": [
+            {
+              "type": "negative",
+              "text": "⚠️ 时间范围过大 (9725 天)，建议不超过 3 年"
+            }
+          ],
+          "data_table": {
+            "columns": [],
+            "rows": []
+          },
+          "chart_config": null,
+          "metadata": {
+            "generated_at": "2026-08-17T01:06:19.463446",
+            "entity_level": "ad_group",
+            "total_entities": 0,
+            "metrics": [
+              "conversions",
+              "impressions",
+              "cost",
+              "ctr",
+              "clicks"
+            ],
+            "analysis_type": "entity_table",
+            "chart_type": "table",
+            "time_range": {
+              "start_date": "2000-01-01",
+              "end_date": "2026-08-17",
+              "granularity": "day"
+            }
+          },
+          "next_queries": [
+            "查看最近7天的整体数据",
+            "查看全部广告主"
+          ],
+          "suggestions": [
+            "时间范围过大 (9725 天)，建议不超过 3 年"
+          ]
+        },
+        "warnings": []
+      }
+    }
+  },
+  {
+    "id": 52,
+    "name": "52: 广告主6转化率最高的三个创意",
+    "query": "广告主6转化率最高的三个创意",
+    "passed": false,
+    "message": "Expected success=True, got report_type=empty: Unknown error",
+    "elapsed": 66.84382486343384,
+    "full_response": {
+      "status": "completed",
+      "result": {
+        "query_intent": {
+          "advertiser_ids": [
+            "6"
+          ],
+          "metrics": [
+            "conversions",
+            "impressions",
+            "cost",
+            "cvr",
+            "clicks"
+          ],
+          "dimensions": [
+            "creative_id",
+            "creative_name"
+          ],
+          "filters": [],
+          "is_comparison": false,
+          "time_range": {
+            "start": "",
+            "end": ""
+          },
+          "ad_level": "advertiser"
+        },
+        "query_request": null,
+        "query_result": {},
+        "analysis": {},
+        "final_report": {
+          "report_type": "empty",
+          "title": "📭 conversions 实体表格 (2000-01-01 ~ 2026-08-17)",
+          "highlights": [
+            {
+              "type": "negative",
+              "text": "⚠️ 时间范围过大 (9725 天)，建议不超过 3 年"
+            }
+          ],
+          "data_table": {
+            "columns": [],
+            "rows": []
+          },
+          "chart_config": null,
+          "metadata": {
+            "generated_at": "2026-08-17T01:07:26.307548",
+            "entity_level": "creative",
+            "total_entities": 80,
+            "metrics": [
+              "conversions",
+              "impressions",
+              "cost",
+              "cvr",
+              "clicks"
+            ],
+            "analysis_type": "entity_table",
+            "chart_type": "table",
+            "time_range": {
+              "start_date": "2000-01-01",
+              "end_date": "2026-08-17",
+              "granularity": "day"
+            }
+          },
+          "next_queries": [
+            "查看最近7天的整体数据",
+            "查看全部广告主"
+          ],
+          "suggestions": [
+            "时间范围过大 (9725 天)，建议不超过 3 年"
+          ]
+        },
+        "warnings": []
+      }
+    }
+  }
+]

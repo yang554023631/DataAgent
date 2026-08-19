@@ -1,6 +1,7 @@
 import logging
 import asyncio
-from typing import Optional, Literal
+from typing import Optional, Literal, Type
+from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -36,6 +37,7 @@ class IntentLLMClient:
         system_prompt: str,
         user_prompt: str,
         json_mode: bool = True,
+        schema: Optional[Type[BaseModel]] = None,
     ) -> str:
         """
         调用 LLM，支持重试
@@ -43,7 +45,10 @@ class IntentLLMClient:
         Args:
             system_prompt: 系统提示词
             user_prompt: 用户输入提示词
-            json_mode: 是否期望 JSON 输出（仅用于日志和提示，不强制结构化输出）
+            json_mode: 是否期望 JSON 输出
+            schema: 如果提供，则使用 json_schema 模式强制输出符合该pydantic模型结构，None则：
+                - json_mode=True → 用 json_object 模式（只要求合法JSON，不约束结构）
+                - json_mode=False → 普通文本输出
 
         Returns:
             LLM 响应文本（已strip）
@@ -61,8 +66,32 @@ class IntentLLMClient:
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=user_prompt),
                 ]
-                response = await self.llm.ainvoke(messages)
-                content = response.content.strip()
+
+                # 如果提供了 schema，让 LLM 输出 JSON 格式然后我们手动解析
+                # 火山引擎 ARK 的 with_structured_output 不兼容 Langchain，所以手动解析
+                import json
+                from pydantic import ValidationError
+
+                if schema is not None:
+                    # Add explicit JSON instruction to prompt
+                    schema_instructions = f"\n\n你必须严格输出符合以下 JSON Schema 的数据，不要输出任何额外内容：\n{schema.model_json_schema()}"
+                    messages[-1] = HumanMessage(content=messages[-1].content + schema_instructions)
+                    # Enable JSON mode response format
+                    llm_with_json_mode = self.llm.bind(response_format={"type": "json_object"})
+                    response = await llm_with_json_mode.ainvoke(messages)
+                    content = response.content.strip()
+                    # Parse and validate
+                    parsed_data = json.loads(content)
+                    validated = schema.model_validate(parsed_data)
+                    content = json.dumps(validated.model_dump(), ensure_ascii=False)
+                else:
+                    if json_mode:
+                        llm_with_json_mode = self.llm.bind(response_format={"type": "json_object"})
+                        response = await llm_with_json_mode.ainvoke(messages)
+                        content = response.content.strip()
+                    else:
+                        response = await self.llm.ainvoke(messages)
+                        content = response.content.strip()
 
                 if attempt > 1:
                     logger.info(f"LLM调用成功（第{attempt}次重试）")

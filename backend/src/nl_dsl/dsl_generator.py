@@ -84,6 +84,7 @@ class DslGenerator:
             system_prompt=QUERY_PLANNING_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             json_mode=True,
+            schema=QueryPlan,
         )
 
         try:
@@ -100,7 +101,7 @@ class DslGenerator:
                     "output_fields": [],
                     "purpose": "单步查询",
                 }],
-                "final_output": "step_1.output",
+                "final_output": "step_1_output",
             }
             plan = QueryPlan(**plan_data)
 
@@ -193,10 +194,12 @@ class DslGenerator:
             error_message=retry_info.error_message,
             schema_context=schema_context[:2000],
         )
+        from src.nl_dsl.models import ReflectionResult
         response = await self._dsl_llm.call(
             system_prompt=REFLECTION_SYSTEM_PROMPT,
             user_prompt=user_prompt,
             json_mode=True,
+            schema=ReflectionResult,
         )
         try:
             data = json.loads(response)

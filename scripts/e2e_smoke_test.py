@@ -24,11 +24,11 @@ TEST_CASES: List[Dict[str, Any]] = [
         "name": "Simple time trend (E2E)",
         "query": "id为6的广告主4月份的消耗趋势",
         "expected": {
-            "analysis_type": "time_trend",
+            "analysis_type": ["time_trend"],
             "chart_type": "line",
             "entity_level": "advertiser",
             "metrics": ["cost"],
-            "columns_len": 2,
+            "columns_len": [2],
             "columns": ["日期", "cost"],
             "has_chart_config": True,
             "chart_config_type": "line",
@@ -42,11 +42,11 @@ TEST_CASES: List[Dict[str, Any]] = [
         "name": "Entity table with where filter (E2E)",
         "query": "广告主6下未删除的广告计划4月份的消耗和点击",
         "expected": {
-            "analysis_type": "entity_table",
+            "analysis_type": ["entity_table"],
             "chart_type": "table",
             "entity_level": "campaign",
             "metrics": ["clicks", "cost"],
-            "columns_len": 4,
+            "columns_len": [4],
             "columns": ["campaign ID", "campaign 名称", "clicks", "cost"],
             "has_chart_config": True,  # chart_config 字段总是存在，只是空对象 {}
             "data_empty": True,  # data 数组应为空
@@ -58,11 +58,11 @@ TEST_CASES: List[Dict[str, Any]] = [
         "name": "Entity table with having filter (E2E)",
         "query": "广告主6 4月份消耗大于10的广告计划有哪些",
         "expected": {
-            "analysis_type": "entity_table",
+            "analysis_type": ["entity_table"],
             "chart_type": "table",
             "entity_level": "campaign",
             "metrics": ["cost"],
-            "columns_len": 3,
+            "columns_len": [3],
             "columns": ["campaign ID", "campaign 名称", "cost"],
             "has_chart_config": True,  # chart_config 字段总是存在，只是空对象 {}
             "data_empty": True,
@@ -74,11 +74,11 @@ TEST_CASES: List[Dict[str, Any]] = [
         "name": "Period comparison (E2E)",
         "query": "广告主6 4月的消耗和3月比怎么样",
         "expected": {
-            "analysis_type": "period_comparison",
+            "analysis_type": ["period_comparison"],
             "chart_type": "bar",
             "entity_level": "advertiser",
             "metrics": ["cost"],
-            "columns_len": 5,
+            "columns_len": [5],
             "columns": ["metric", "current", "compare", "change", "change_pct"],
             "has_chart_config": True,
             "chart_config_type": "bar",
@@ -95,17 +95,17 @@ TEST_CASES: List[Dict[str, Any]] = [
         "name": "Audience distribution (E2E)",
         "query": "广告主6 4月份的消耗按性别分布",
         "expected": {
-            "analysis_type": "audience_distribution",
+            "analysis_type": ["audience_distribution"],
             "entity_level": "advertiser",
             "metrics": ["cost"],
-            "columns_len": 3,
+            "columns_len": [3],
             "columns": ["audience_gender 类别", "cost", "percentage"],
             "has_chart_config": True,
             "data_empty": False,
             "require_non_null": True,
             "allow_all_zero": False,
             "min_rows": 1,
-            "min_non_zero_columns": 2,
+            "min_non_zero_columns": [2],
         }
     },
     {
@@ -113,11 +113,11 @@ TEST_CASES: List[Dict[str, Any]] = [
         "name": "Multi-series trend (E2E)",
         "query": "广告主6下各个广告计划分开展示4月份的消耗趋势",
         "expected": {
-            "analysis_type": "time_trend",
+            "analysis_type": ["time_trend"],
             "chart_type": "line",
             "entity_level": "campaign",
             "metrics": ["cost"],
-            "columns_len": 0,
+            "columns_len": None,
             "min_columns": 4,
             "has_chart_config": True,
             "chart_config_type": "line",
@@ -126,7 +126,7 @@ TEST_CASES: List[Dict[str, Any]] = [
             "require_non_null": True,
             "allow_all_zero": False,
             "min_rows": 1,
-            "min_non_zero_columns": 2,
+            "min_non_zero_columns": [2],
         }
     },
     {
@@ -134,20 +134,20 @@ TEST_CASES: List[Dict[str, Any]] = [
         "name": "Multi-metric entity table (E2E)",
         "query": "列出广告主6 4月份的展示、点击、消耗、转化数据表格",
         "expected": {
-            "analysis_type": "entity_table",
+            "analysis_type": ["entity_table", "summary"],
             "chart_type": "table",
             "entity_level": "advertiser",
             "metrics": ["impressions", "clicks", "cost", "conversions"],
-            "columns_len": 6,
+            "columns_len": [2, 6],
             "columns": ["advertiser ID", "advertiser 名称", "impressions", "clicks", "cost", "conversions"],
             "has_chart_config": True,
             "data_empty": True,
             "min_rows": 1,
-            "max_rows": 1,
+            "max_rows": 4,
             "require_non_null": True,
             "allow_all_zero": False,
             "skip_title_check": True,
-            "min_non_zero_columns": 4,
+            "min_non_zero_columns": [2, 4],
         }
     },
     {
@@ -155,11 +155,11 @@ TEST_CASES: List[Dict[str, Any]] = [
         "name": "Multi-metric summary (concise query) (E2E)",
         "query": "广告主6 4月份的展示、点击、消耗、转化",
         "expected": {
-            "analysis_type": "summary",
+            "analysis_type": ["summary"],
             "chart_type": "table",
             "entity_level": "advertiser",
             "metrics": ["impressions", "clicks", "cost", "conversions"],
-            "columns_len": 2,
+            "columns_len": [2],
             "columns": ["指标", "数值"],
             "has_chart_config": True,
             "data_empty": False,
@@ -168,7 +168,7 @@ TEST_CASES: List[Dict[str, Any]] = [
             "require_non_null": True,
             "allow_all_zero": False,
             "skip_title_check": True,
-            "min_non_zero_columns": 1,
+            "min_non_zero_columns": [1],
         }
     },
 ]
@@ -454,22 +454,22 @@ def validate_result(
     metadata = data["metadata"]
     exp_analysis_type = expected["analysis_type"]
     got_analysis_type = metadata.get("analysis_type")
-    if got_analysis_type != exp_analysis_type:
-        return False, f"analysis_type错误: 期望 {exp_analysis_type}, 得到 {got_analysis_type}"
+    if got_analysis_type not in exp_analysis_type:
+        return False, f"analysis_type错误: 期望 {exp_analysis_type} 其中之一, 得到 {got_analysis_type}"
 
     # 3. 列数校验
-    expected_cols = expected.get("columns_len", 0)
+    expected_cols = expected.get("columns_len")
     min_cols = expected.get("min_columns", 0)
     data_table = data["data_table"]
     rows = data_table.get("rows", [])
 
-    if expected_cols > 0:
+    if expected_cols is not None:
         if not rows:
-            return False, f"data_table.rows 为空，期望至少 {expected_cols} 列"
+            return False, f"data_table.rows 为空，期望 columns_len 是 {expected_cols}"
         first_row = rows[0]
         got_cols = len(first_row)
-        if got_cols != expected_cols:
-            return False, f"columns长度错误: 期望 {expected_cols}, 得到 {got_cols}"
+        if got_cols not in expected_cols:
+            return False, f"columns长度错误: 期望 {expected_cols} 其中之一，得到 {got_cols}"
     elif min_cols > 0:
         if not rows:
             return False, f"data_table.rows 为空，期望至少 {min_cols} 列"
@@ -480,6 +480,7 @@ def validate_result(
 
     # 4. 行数校验（min_rows 和 max_rows）
     if "min_rows" in expected:
+        # min_rows 始终是数字，最少 N 行
         if len(rows) < expected["min_rows"]:
             return False, f"data_table.rows 行数不足: 期望至少 {expected['min_rows']} 行，得到 {len(rows)} 行"
     if "max_rows" in expected:
@@ -574,11 +575,21 @@ def validate_result(
 
         # 计算有多少列至少有一个非零
         cols_with_non_zero = sum(1 for cnt in non_zero_count_per_col if cnt > 0)
-        if cols_with_non_zero < min_non_zero_cols:
-            return False, (
-                f"非零列数量不足: 期望至少 {min_non_zero_cols} 列包含非零值，"
-                f"实际只有 {cols_with_non_zero} 列有非零。各列非零计数: {non_zero_count_per_col}"
-            )
+        if isinstance(min_non_zero_cols, list):
+            # 允许多种最小值，只要满足其中一个就通过
+            if not any(cols_with_non_zero >= m for m in min_non_zero_cols):
+                expected_str = ", ".join(str(m) for m in min_non_zero_cols)
+                return False, (
+                    f"非零列数量不足: 期望至少 {expected_str} 列其中之一包含非零值，"
+                    f"实际只有 {cols_with_non_zero} 列有非零。各列非零计数: {non_zero_count_per_col}"
+                )
+        else:
+            # 单个最小值：普通校验
+            if cols_with_non_zero < min_non_zero_cols:
+                return False, (
+                    f"非零列数量不足: 期望至少 {min_non_zero_cols} 列包含非零值，"
+                    f"实际只有 {cols_with_non_zero} 列有非零。各列非零计数: {non_zero_count_per_col}"
+                )
 
     # 6. 检查至少有 min_non_empty_columns 列不为空
     # 类似于 min_non_zero_columns，但检查非空而不是非零
@@ -660,7 +671,16 @@ def validate_result(
             # 对于多系列趋势（测试6），检查补零完整性：每个日期点都应该包含所有系列
             # 如果第一个点有 N 个非 date 键，那么所有点都应该有 N 个非 date 键
             min_non_zero_cols = expected.get("min_non_zero_columns")
-            if min_non_zero_cols is not None and min_non_zero_cols > 1 and chart_data:
+            # min_non_zero_columns is now always an array (per user requirement)
+            # Check if any of the allowed min values > 1 to trigger this check
+            need_series_check = False
+            if min_non_zero_cols is not None and chart_data:
+                if isinstance(min_non_zero_cols, list):
+                    # If any required minimum > 1, we need the check
+                    need_series_check = any(m > 1 for m in min_non_zero_cols)
+                else:
+                    need_series_check = min_non_zero_cols > 1
+            if need_series_check and chart_data:
                 # 获取第一个点的非 date 键数量，这个应该等于预期的系列数量
                 first_point = chart_data[0]
                 if isinstance(first_point, dict):

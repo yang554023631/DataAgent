@@ -12,6 +12,7 @@ from .dsl_templates import (
     extract_entity_ids,
     validate_es_dsl,
     LEVEL_TO_FIELD,
+    get_level_index,
     is_derived_metric,
 )
 
@@ -19,6 +20,26 @@ logger = logging.getLogger(__name__)
 
 # ID 数量软上限
 MAX_IDS = 500
+
+# 字段 -> 维度索引映射：哪些字段只存在于维度表
+FIELD_TO_DIM_INDEX = {
+    "campaign_name": "campaign",
+    "ad_group_name": "adgroup",
+    "adgroup_name": "adgroup",  # alias for both naming conventions
+    "creative_name": "creative",
+    "status": "campaign",          # 计划状态只在维度表
+    "campaign_status": "campaign",
+    "ad_group_status": "adgroup",
+    "adgroup_status": "adgroup",  # alias for both naming conventions
+    "creative_status": "creative",
+}
+
+# ID字段名映射：每个维度表对应的ID字段名
+DIM_ID_FIELD = {
+    "campaign": "campaign_id",
+    "adgroup": "ad_group_id",
+    "creative": "creative_id",
+}
 
 
 class FilterExecutor:
@@ -216,14 +237,18 @@ class FilterExecutor:
                 previous_entity_level=previous_entity_level,
             )
 
-        # 构建 DSL
-        dsl = self._build_dsl_for_step(
+        # 构建 DSL，如果所有条件都是维度表独有，我们已经得到匹配 IDs，直接返回
+        dsl, matched_ids = self._build_dsl_for_step(
             step=step,
             advertiser_ids=advertiser_ids,
             time_range=time_range,
             previous_entity_ids=previous_entity_ids,
             previous_entity_level=previous_entity_level,
         )
+
+        # 如果我们已经通过维度表找到了匹配的 IDs，直接返回它们
+        if matched_ids is not None:
+            return matched_ids
 
         # 如果是全量筛选，直接返回
         if dsl is None:
@@ -253,7 +278,7 @@ class FilterExecutor:
         time_range: Dict[str, str],
         previous_entity_ids: Optional[List[Any]] = None,
         previous_entity_level: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> tuple[Optional[Dict[str, Any]], Optional[List[Any]]]:
         """
         为筛选步骤构建 DSL
 
@@ -265,7 +290,7 @@ class FilterExecutor:
             previous_entity_level: 上一步输出的实体层级
 
         Returns:
-            Elasticsearch DSL 查询
+            Tuple of (Elasticsearch DSL query, matched entity IDs from dimension lookup if any)
         """
         step_type = step.step_type
 
@@ -277,22 +302,25 @@ class FilterExecutor:
                 previous_entity_level=previous_entity_level,
             )
         elif step_type == "having_filter":
-            return self._build_having_filter_dsl(
+            dsl = self._build_having_filter_dsl(
                 step=step,
                 advertiser_ids=advertiser_ids,
                 time_range=time_range,
                 previous_entity_ids=previous_entity_ids,
                 previous_entity_level=previous_entity_level,
             )
+            return (dsl, None)
         elif step_type == "cross_level_up":
-            return self._build_cross_level_up_dsl(
+            dsl = self._build_cross_level_up_dsl(
                 step=step,
                 advertiser_ids=advertiser_ids,
                 previous_entity_ids=previous_entity_ids,
                 previous_entity_level=previous_entity_level,
             )
+            return (dsl, None)
         elif step_type == "full_filter":
-            return build_full_filter(advertiser_ids, step.level, step.index)
+            dsl = build_full_filter(advertiser_ids, step.level, step.index)
+            return (dsl, None)
         else:
             raise ValueError(f"Unknown step type: {step_type}")
 
@@ -302,16 +330,101 @@ class FilterExecutor:
         advertiser_ids: List[str],
         previous_entity_ids: Optional[List[Any]] = None,
         previous_entity_level: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], Optional[List[Any]]]:
         """构建 where 筛选 DSL"""
         # 把 FilterCondition 转换为字典格式
         condition_dicts = []
+        dimension_conditions_need_lookup = []
+
+        # 分离条件：哪些条件需要先在维度表搜索获取 ID
         for cond in step.conditions:
-            condition_dicts.append({
-                "field": cond.field,
-                "operator": cond.operator,
-                "value": cond.value,
-            })
+            field = cond.field
+            if field in FIELD_TO_DIM_INDEX:
+                dimension_conditions_need_lookup.append(cond)
+            else:
+                condition_dicts.append({
+                    "field": cond.field,
+                    "operator": cond.operator,
+                    "value": cond.value,
+                })
+
+        # 如果有维度表字段需要先查找 ID
+        matched_ids_from_dimension = None
+        if dimension_conditions_need_lookup:
+            # 所有这些条件都在同一个维度表，因为同一个筛选步骤是针对同一层级
+            # 所以取第一个条件的维度表即可
+            first_field = dimension_conditions_need_lookup[0].field
+            dim_index = FIELD_TO_DIM_INDEX[first_field]
+            dim_id_field = DIM_ID_FIELD[dim_index]
+
+            # 构建维度表查询条件
+            must_clauses = []
+            for cond in dimension_conditions_need_lookup:
+                field = cond.field
+                op = cond.operator
+                value = cond.value
+
+                # Try to convert to number if possible for numeric fields
+                try:
+                    if isinstance(value, str):
+                        if '.' in value:
+                            value = float(value)
+                        else:
+                            value = int(value)
+                except (ValueError, TypeError):
+                    pass
+
+                if op == "like":
+                    must_clauses.append({"wildcard": {field: f"*{value}*"}})
+                elif op == "eq":
+                    must_clauses.append({"term": {field: value}})
+                elif op == "gt":
+                    must_clauses.append({"range": {field: {"gt": value}}})
+                elif op == "gte":
+                    must_clauses.append({"range": {field: {"gte": value}}})
+                elif op == "lt":
+                    must_clauses.append({"range": {field: {"lt": value}}})
+                elif op == "lte":
+                    must_clauses.append({"range": {field: {"lte": value}}})
+                elif op == "in" and isinstance(value, list):
+                    must_clauses.append({"terms": {field: value}})
+
+            # 如果有广告主过滤，维度表也要加上
+            if advertiser_ids:
+                must_clauses.append({"terms": {"advertiser_id": [int(aid) for aid in advertiser_ids]}})
+
+            # 如果有上一步的实体 ID，维度表也要加上
+            if previous_entity_ids and previous_entity_level:
+                previous_level_field = LEVEL_TO_FIELD.get(
+                    previous_entity_level,
+                    f"{previous_entity_level}_id",
+                )
+                converted_previous_ids = []
+                for eid in previous_entity_ids:
+                    try:
+                        converted_previous_ids.append(int(eid))
+                    except ValueError:
+                        converted_previous_ids.append(eid)
+                must_clauses.append({"terms": {previous_level_field: converted_previous_ids}})
+
+            # 在维度表搜索
+            dsl_dim = {
+                "query": {"bool": {"must": must_clauses}},
+                "size": 1000,
+            }
+            response = self.es_client.search(index=dim_index, body=dsl_dim)
+
+            # 提取匹配到的 ID
+            matched_ids = []
+            for hit in response["hits"]["hits"]:
+                eid = hit["_source"].get(dim_id_field)
+                if eid is not None:
+                    try:
+                        matched_ids.append(int(eid))
+                    except (ValueError, TypeError):
+                        matched_ids.append(eid)
+
+            matched_ids_from_dimension = matched_ids
 
         # 构建带条件的 DSL
         dsl = build_where_dimension_filter(
@@ -335,12 +448,24 @@ class FilterExecutor:
                     converted_previous_ids.append(int(eid))
                 except ValueError:
                     converted_previous_ids.append(eid)
-            # 添加 terms 过滤条件
-            dsl["query"]["bool"]["filter"].append(
-                {"terms": {previous_level_field: converted_previous_ids}}
-            )
+            # 如果我们已经从维度表找到了匹配ID，就不需要再加上一步过滤了，因为维度表已经过滤过
+            if not matched_ids_from_dimension:
+                dsl["query"]["bool"]["filter"].append(
+                    {"terms": {previous_level_field: converted_previous_ids}}
+                )
 
-        return dsl
+        # 如果我们从维度表找到了匹配 ID，这些就是最终结果
+        # 直接返回 (dsl, matched_ids) 给 _execute_step
+        if matched_ids_from_dimension is not None:
+            target_level_field = LEVEL_TO_FIELD.get(step.level, f"{step.level}_id")
+            dsl["query"]["bool"]["filter"].append(
+                {"terms": {target_level_field: matched_ids_from_dimension}}
+            )
+            # Return DSL and the matched IDs directly - no need to query again
+            return (dsl, matched_ids_from_dimension)
+
+        # No matched from dimension - return (dsl, None)
+        return (dsl, None)
 
     def _build_having_filter_dsl(
         self,
@@ -449,21 +574,111 @@ class FilterExecutor:
 
         Step 1: 过滤高层级实体得到高层级 ID
         Step 2: 用高层级 ID 过滤低层级实体得到低层级 ID
+        如果条件包含维度表独有字段（名称、状态等），先在维度表过滤得到 IDs
         """
         # 目标层级从 output_field 推断
         target_level = step.output_field.replace("_id", "")
-
-        # ====== 第一步: 过滤高层级实体 ======
-        condition_dicts = []
-        for cond in step.conditions:
-            condition_dicts.append({
-                "field": cond.field,
-                "operator": cond.operator,
-                "value": cond.value,
-            })
-
         high_level = step.level
 
+        # 分离条件：哪些条件需要先在维度表搜索获取 ID
+        condition_dicts = []
+        dimension_conditions_need_lookup = []
+        for cond in step.conditions:
+            field = cond.field
+            if field in FIELD_TO_DIM_INDEX:
+                dimension_conditions_need_lookup.append(cond)
+            else:
+                condition_dicts.append({
+                    "field": cond.field,
+                    "operator": cond.operator,
+                    "value": cond.value,
+                })
+
+        # 如果有维度表字段需要先查找 ID → 条件是针对目标层级（低层级）的，直接在维度表查询
+        matched_ids_from_dimension = None
+        if dimension_conditions_need_lookup:
+            # 所有这些条件都在同一个维度表（目标维度）
+            first_field = dimension_conditions_need_lookup[0].field
+            dim_index = FIELD_TO_DIM_INDEX[first_field]
+            dim_id_field = DIM_ID_FIELD[dim_index]
+
+            # 构建维度表查询条件
+            must_clauses = []
+            for cond in dimension_conditions_need_lookup:
+                field = cond.field
+                op = cond.operator
+                value = cond.value
+
+                # Try to convert to number if possible for numeric fields
+                try:
+                    if isinstance(value, str):
+                        if '.' in value:
+                            value = float(value)
+                        else:
+                            value = int(value)
+                except (ValueError, TypeError):
+                    pass
+
+                if op == "like" or op == "contains":
+                    must_clauses.append({"wildcard": {field: f"*{value}*"}})
+                elif op == "eq" or op == "=":
+                    must_clauses.append({"term": {field: value}})
+                elif op == "gt":
+                    must_clauses.append({"range": {field: {"gt": value}}})
+                elif op == "gte":
+                    must_clauses.append({"range": {field: {"gte": value}}})
+                elif op == "lt":
+                    must_clauses.append({"range": {field: {"lt": value}}})
+                elif op == "lte":
+                    must_clauses.append({"range": {field: {"lte": value}}})
+                elif op == "in" and isinstance(value, list):
+                    must_clauses.append({"terms": {field: value}})
+
+            # 如果有广告主过滤，维度表也要加上
+            if advertiser_ids:
+                must_clauses.append({"terms": {"advertiser_id": [int(aid) for aid in advertiser_ids]}})
+
+            # 如果有上一步的实体 ID（高层级），维度表也要加上（例如：从 advertiser 到 campaign，要保留 advertiser 过滤）
+            if previous_entity_ids and previous_entity_level:
+                # previous_entity_level 是高层级（例如 advertiser），我们需要在维度表上按高层级 ID 过滤
+                previous_level_field = LEVEL_TO_FIELD.get(
+                    previous_entity_level,
+                    f"{previous_entity_level}_id",
+                )
+                converted_previous_ids = []
+                for eid in previous_entity_ids:
+                    try:
+                        converted_previous_ids.append(int(eid))
+                    except ValueError:
+                        converted_previous_ids.append(eid)
+                must_clauses.append({"terms": {previous_level_field: converted_previous_ids}})
+
+            # 在维度表搜索
+            dsl_dim = {
+                "query": {"bool": {"must": must_clauses}},
+                "size": 1000,
+            }
+            response = self.es_client.search(index=dim_index, body=dsl_dim)
+
+            # 提取匹配到的 ID
+            matched_ids = []
+            for hit in response["hits"]["hits"]:
+                eid = hit["_source"].get(dim_id_field)
+                if eid is not None:
+                    try:
+                        matched_ids.append(int(eid))
+                    except (ValueError, TypeError):
+                        matched_ids.append(eid)
+
+            matched_ids_from_dimension = matched_ids
+
+            # 如果我们已经从维度表找到了匹配 IDs，并且没有剩下的非维度条件，直接返回这些 IDs
+            # 因为目标层级就是低层级，维度表已经给出所有匹配的低层级 ID
+            if not condition_dicts:
+                return matched_ids_from_dimension
+
+        # 如果还有非维度条件，继续执行传统的两步聚合
+        # ====== 第一步: 过滤高层级实体 ======
         dsl_step1 = build_cross_level_down_filter_step1(
             advertiser_ids=advertiser_ids,
             high_level=high_level,
@@ -499,7 +714,7 @@ class FilterExecutor:
             return []
 
         # ====== 第二步: 查询低层级实体 ======
-        # 构建第二步 DSL: 查询目标层级，用高层级 ID 过滤
+        # 构建第二步 DSL: 查询目标层级，用高层级 ID 过滤 + 维度表 IDs 过滤（如果有）
         high_level_field = LEVEL_TO_FIELD.get(high_level, f"{high_level}_id")
 
         # Convert advertiser_ids to integer if possible (dimension tables store integer IDs)
@@ -518,14 +733,21 @@ class FilterExecutor:
             except ValueError:
                 converted_high_level_ids.append(hid)
 
+        filters = [
+            {"terms": {"advertiser_id": converted_advertiser_ids}},
+            {"terms": {high_level_field: converted_high_level_ids}},
+        ]
+
+        # 如果我们从维度表找到了匹配 IDs，也加上过滤
+        if matched_ids_from_dimension is not None:
+            target_level_field = LEVEL_TO_FIELD.get(target_level, f"{target_level}_id")
+            filters.append({"terms": {target_level_field: matched_ids_from_dimension}})
+
         dsl_step2 = {
-            "index": target_level,  # 目标层级索引
+            "index": get_level_index(target_level),  # 目标层级索引，使用转换后的实际索引名
             "query": {
                 "bool": {
-                    "filter": [
-                        {"terms": {"advertiser_id": converted_advertiser_ids}},
-                        {"terms": {high_level_field: converted_high_level_ids}},
-                    ]
+                    "filter": filters
                 }
             },
             "size": 0,

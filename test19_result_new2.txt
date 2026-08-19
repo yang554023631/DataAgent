@@ -1,0 +1,15 @@
+
+============================================================
+Testing: 找出 广告主 digital_0 下名称含 mini 的创意，点击量大于50
+============================================================
+
+Create session status: 200
+Created session: c4accb7c-1a30-4220-a6e5-69afa40aba38
+
+Sending query... (this may take a few minutes)
+
+Response status: 200
+
+Result status: completed
+Report type: error
+Message: 分析过程中发生错误

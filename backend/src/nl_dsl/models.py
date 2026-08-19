@@ -17,7 +17,7 @@ class QueryStep(BaseModel):
 class QueryPlan(BaseModel):
     """查询计划"""
     steps: List[QueryStep] = Field(default_factory=list)
-    final_output: str = "step_1.output"
+    final_output: str = "step_1_output"
 
     def get_step(self, step_id: str) -> Optional[QueryStep]:
         for s in self.steps:
@@ -33,6 +33,12 @@ class RetryInfo(BaseModel):
     error_message: str = ""
     previous_dsl: Optional[Dict[str, Any]] = None
     reflection: str = ""
+
+
+class ReflectionResult(BaseModel):
+    """DSL反思修正结果 - 修复之前生成错误的DSL"""
+    reflection: str = Field(description="反思分析，说明之前错在哪里，如何修正")
+    fixed_dsl: Dict[str, Any] = Field(description="修正后的完整ES DSL JSON")
 
 
 class NlDslResult(BaseModel):
@@ -102,7 +108,7 @@ class EmptyCheckResult(BaseModel):
 
 class FilterCondition(BaseModel):
     """单个过滤条件"""
-    field: str                           # 字段名，如 campaign_id、data_value、creative_name
+    field: Optional[str] = None           # 字段名，如 campaign_id、data_value、creative_name (for where)
     operator: str                        # = / != / > / < / >= / <= / contains / in / match
     value: Any                           # 条件值
     dimension_slice: Optional[Dict[str, Any]] = None  # 受众维度切片，如 {audience_type: "gender", audience_tag: "male"}

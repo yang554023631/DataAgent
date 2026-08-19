@@ -29,7 +29,8 @@ class ReportIntentResult(BaseModel):
     """报表意图识别结果"""
     # 必填字段
     advertiser_ids: List[str] = Field(default_factory=list)
-    time_range: Optional[ReportTimeRange] = None
+    advertiser_names: List[str] = Field(default_factory=list, description="用户提到的广告主名称，将自动搜索转换为ID")
+    time_range: ReportTimeRange = Field(default_factory=lambda: ReportTimeRange(start_date="", end_date="", is_lifetime=True))
     metrics: List[str] = Field(default_factory=list)
     ad_level: Optional[str] = Field(default=None, description="campaign / ad_group / creative")
 
@@ -39,6 +40,10 @@ class ReportIntentResult(BaseModel):
     is_comparison: bool = False
     compare_time_range: Optional[ReportTimeRange] = None
     top_n: Optional[int] = None
+    sort: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="排序规则: {field: 排序字段名, order: desc 降序 / asc 升序}，配合 top_n 使用"
+    )
     chart_type: Optional[str] = None
 
     # 元信息
@@ -82,3 +87,11 @@ class KnowledgeIntentResult(BaseModel):
     core_topics: List[str] = Field(default_factory=list)
     query_rewrite: str = Field(default="")
     confidence: float = Field(default=1.0)
+
+# ==================== 意图变更检测 ====================
+
+class IntentChangeDetectionResult(BaseModel):
+    """意图变更检测结果 - 判断用户澄清是否改变了原意图"""
+    has_changed: bool = Field(description="是否改变了原意图类别")
+    new_category: Optional[str] = Field(default=None, description="新的意图类别: report / knowledge，仅在has_changed=true时设置")
+    reason: str = Field(description="判断原因")

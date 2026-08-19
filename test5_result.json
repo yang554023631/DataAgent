@@ -1,0 +1,128 @@
+{
+  "success_count": 1,
+  "error_count": 0,
+  "total_time": 65.2,
+  "results": [
+    {
+      "test_id": 5,
+      "test_name": "Audience distribution (E2E)",
+      "query": "广告主6 4月份的消耗按性别分布",
+      "status": "success",
+      "analysis_type": "audience_distribution",
+      "data_points": 2,
+      "has_chart_config": true,
+      "all_zero": false,
+      "response_time": 65.2,
+      "error_message": null,
+      "retries": 0,
+      "raw_response": {
+        "status": "completed",
+        "result": {
+          "query_intent": {
+            "advertiser_ids": [
+              "6"
+            ],
+            "metrics": [
+              "cost"
+            ],
+            "dimensions": [
+              "audience_gender"
+            ],
+            "filters": [],
+            "is_comparison": false,
+            "time_range": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "ad_level": "advertiser"
+          },
+          "query_request": null,
+          "query_result": {},
+          "analysis": {},
+          "final_report": {
+            "report_type": "success",
+            "title": "广告主ID=6 消耗 受众分布 (2026-04-01 ~ 2026-04-30)",
+            "chart_config": {
+              "type": "pie",
+              "title": "消耗 分布",
+              "x_axis": null,
+              "y_axis": null,
+              "series_field": null,
+              "series": [
+                {
+                  "name": "男性"
+                },
+                {
+                  "name": "女性"
+                }
+              ]
+            },
+            "data": [
+              {
+                "label": "男性",
+                "value": 9900
+              },
+              {
+                "label": "女性",
+                "value": 9223
+              }
+            ],
+            "data_table": {
+              "columns": [
+                "audience_gender 类别",
+                "cost",
+                "占比"
+              ],
+              "rows": [
+                [
+                  "男性",
+                  9900,
+                  51.770119751085076
+                ],
+                [
+                  "女性",
+                  9223,
+                  48.22988024891492
+                ]
+              ]
+            },
+            "quality_info": {
+              "passed": true,
+              "issues": [],
+              "warnings": [],
+              "actions": []
+            },
+            "highlights": [
+              {
+                "type": "info",
+                "text": "📊 共 2 条数据记录"
+              }
+            ],
+            "metadata": {
+              "generated_at": "2026-08-14T17:07:39.809917",
+              "entity_level": "advertiser",
+              "total_entities": 1,
+              "metrics": [
+                "cost"
+              ],
+              "analysis_type": "audience_distribution",
+              "chart_type": "pie",
+              "time_range": {
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-30",
+                "granularity": "day"
+              }
+            },
+            "cot_reasoning_summary": "用户需求为查询广告主6在2026年4月的消耗按性别维度的分布情况，首先筛选出广告主ID为6的对应数据，再按受众性别维度聚合消耗指标，使用饼图展示各性别的消耗占比分布",
+            "next_queries": [
+              "查看不同受众的转化情况",
+              "对比历史受众分布",
+              "按受众查看趋势"
+            ]
+          },
+          "warnings": []
+        }
+      }
+    }
+  ]
+}

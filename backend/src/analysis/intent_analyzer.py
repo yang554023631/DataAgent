@@ -189,7 +189,8 @@ def simple_map_metrics(text: str) -> List[str]:
 
     使用正则边界匹配，避免子串误匹配（如"分开展示"中的"展示"不要匹配成指标）
     注意：在 Unicode Python 正则中，中文汉字 isalnum() → True，所以\w包含汉字
-    因此我们需要用不同的方式：只要求指标前面不能跟小写字母/阿拉伯数字，避免嵌入到其他词中
+    因此我们需要用不同的方式：只要求指标前面不能跟小写字母，避免嵌入到其他英文词中
+    数字是允许的（比如"广告主6转化率"中的6在转化率前面，应该允许匹配）
     """
     metrics = []
     text_lower = text.lower()
@@ -197,9 +198,9 @@ def simple_map_metrics(text: str) -> List[str]:
     for alias, standard in METRIC_MAPPING.items():
         alias_lower = alias.lower()
         # Use lookaround assertions that work with Chinese:
-        # - 断言前面不是小写字母或数字 → 保证指标不嵌入在其他词中
-        # - 断言后面不是小写字母或数字 → 同上
-        pattern = r'(?<![a-z0-9])%s(?![a-z0-9])' % re.escape(alias_lower)
+        # - 断言前面不是小写字母 → 保证指标不嵌入在英文词中（数字是允许的，如"广告主6转化率"）
+        # - 断言后面不是小写字母或数字 → 保证指标不跟后续字母/数字连在一起
+        pattern = r'(?<![a-z])%s(?![a-z0-9])' % re.escape(alias_lower)
         matches = list(re.finditer(pattern, text_lower))
         if matches:
             # Special case: "展示" as verb in "分开展示" - skip this occurrence
@@ -574,11 +575,22 @@ class IntentAnalyzer:
 
     def _build_field_context(self, extractions: Dict[str, Any]) -> FieldContext:
         """构建 FieldContext 对象"""
+        from datetime import date
         advertiser_ids = extractions.get("advertiser_ids")
         time_range = extractions.get("time_range")
         target_level = extractions.get("target_level")
         metrics = extractions.get("metrics")
         audience_dimension = extractions.get("audience_dimension")
+
+        # If user didn't specify a time range, use a very wide default (all history)
+        # This is required because AnalysisPlan requires time_range to be non-null
+        if time_range is None:
+            today_str = date.today().isoformat()
+            time_range = AnalysisTimeRange(
+                start_date="2000-01-01",
+                end_date=today_str,
+                granularity="day"
+            )
 
         return FieldContext(
             advertiser_ids=advertiser_ids if advertiser_ids is not None else None,

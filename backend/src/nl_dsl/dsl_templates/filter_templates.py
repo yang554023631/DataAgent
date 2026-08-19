@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional
 from .common import (
     get_data_type,
     get_level_field,
+    get_level_index,
     is_derived_metric,
     build_bucket_script,
     build_base_metric_sum_aggs,
@@ -127,7 +128,7 @@ def build_where_dimension_filter(
 ) -> Dict[str, Any]:
     """F1: Where 型维度属性筛选"""
     if index is None:
-        index = level
+        index = get_level_index(level)
     level_field = get_level_field(level)
     # Convert advertiser_ids to integer if possible (dimension tables store integer IDs)
     converted_advertiser_ids = []
@@ -164,7 +165,7 @@ def build_cross_level_up_filter(
 ) -> Dict[str, Any]:
     """F3-1: 自下而上跨层级筛选（属性条件）"""
     if index is None:
-        index = low_level
+        index = get_level_index(low_level)
     target_field = get_level_field(target_level)
     condition = _build_field_condition(low_level_field, low_level_operator, low_level_value)
 
@@ -204,7 +205,7 @@ def build_cross_level_down_filter_step1(
 ) -> Dict[str, Any]:
     """F4-2: 自上而下跨层级筛选 - 第一步：查高层级 ID"""
     if index is None:
-        index = high_level
+        index = get_level_index(high_level)
     high_field = get_level_field(high_level)
     # Convert advertiser_ids to integer if possible
     converted_advertiser_ids = []
@@ -241,7 +242,7 @@ def build_full_filter(
     但在筛选执行阶段我们仍然需要先获取所有实体ID才能进行下一步筛选。
     """
     if index is None:
-        index = level
+        index = get_level_index(level)
     level_field = get_level_field(level)
     # Convert advertiser_ids to integer if possible (dimension tables store integer IDs)
     converted_advertiser_ids = []

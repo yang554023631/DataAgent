@@ -123,6 +123,13 @@ class AnalysisComparison(BaseModel):
 
 from typing import Union
 
+class AnalysisStepPlan(BaseModel):
+    """A single analysis step for multi-step analysis (e.g., multiple audience distributions)."""
+    analysis_type: AnalysisType = Field(..., description="Type of analysis")
+    chart_type: ChartType = Field(..., description="Type of chart to generate")
+    audience_type: Optional[str] = Field(None, description="Audience dimension for audience_distribution analysis")
+
+
 class AnalysisPlan(BaseModel):
     """Analysis plan (the analysis part, different from existing AnalysisPlan)."""
     analysis_type: AnalysisType = Field(..., description="Type of analysis")
@@ -138,6 +145,7 @@ class AnalysisPlan(BaseModel):
     limit: int = Field(100, description="Limit number of results")
     chart_config: Optional[AnalysisChartConfig] = Field(None, description="Optional custom chart configuration")
     quality_checks: List[QualityCheck] = Field(default_factory=list, description="Quality checks to apply")
+    steps: List[AnalysisStepPlan] = Field(default_factory=list, description="Multiple analysis steps (for multi-step analysis)")
 
 
 # =============================================================================
@@ -200,6 +208,7 @@ __all__ = [
     # Analysis Plan
     "AnalysisTimeRange",
     "AnalysisComparison",
+    "AnalysisStepPlan",
     "AnalysisPlan",
     # Field Context
     "FieldContext",

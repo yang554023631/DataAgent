@@ -7,8 +7,9 @@ import logging
 import sys
 import os
 import asyncio
-# Add project root to sys.path to import src.analysis and src.nl_dsl
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+# Add backend directory to sys.path to import src.analysis and src.nl_dsl
+# src folder is inside backend directory
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from typing import Dict, Any, Optional, List
 from src.tools.executor import execute_ad_report_query
 from src.agents.nlu_agent import nlu_agent
@@ -1053,7 +1054,7 @@ def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> 
                 else:
                     name_maps[entity_type] = {}
             print(f"[debug-name] name_insertions={name_insertions}, final columns before insert: {columns}, rows sample[0]={rows[0] if rows else '[]'}")
-            logger.info(f"[debug-name] name_insertions={name_insertions}, final columns before insert: {columns}, rows sample[0]={rows[0] if rows else '[]'}")
+            logger.info(f"[debug-name] name_insertions={name_insertions}, final columns before insert: {columns}, rows sample[0]={rows[0] if rows else 'empty'}")
 
             # 按位置从后往前插入（避免索引偏移）
             for current_idx, entity_type, name_display in sorted(name_insertions, key=lambda x: -x[0]):
@@ -1178,7 +1179,7 @@ def _build_failure_guide_report(error_info, user_input: str) -> dict:
             {
                 "type": "info",
                 "text": "  • \"对比 [广告主] 本月和上月的 CTR 变化\""
-            }
+            },
         ],
         "data_table": {"columns": [], "rows": []},
         "chart_config": None,
@@ -1326,6 +1327,12 @@ async def analysis_node(state: dict) -> dict:
 
     # 延迟导入 CoT 分析模块
     try:
+        # Ensure backend is in sys.path
+        if 'src' not in sys.modules:
+            current_dir = os.path.dirname(__file__)
+            backend_dir = os.path.join(current_dir, '..', '..')
+            if backend_dir not in sys.path:
+                sys.path.insert(0, backend_dir)
         from src.analysis.intent_analyzer import IntentAnalyzer, create_intent_analyzer
         from src.analysis.cot_planner import CotPlanner, CotResultStatus, get_cot_planner
         from src.analysis.report_formatter import ReportFormatter
@@ -1334,14 +1341,17 @@ async def analysis_node(state: dict) -> dict:
         from src.nl_dsl.quality_checker import QualityChecker
         from src.nl_dsl.empty_checker import EmptyResultChecker
         from src.analysis.models import (
-            AnalysisPlanResult, FieldContext, CotReasoning,
+            AnalysisPlanResult, FieldContext, CotReasoning, AnalysisTimeRange,
             FilterPlan, FilterResult, AnalysisResult, QualityResult
         )
-    except ImportError:
+    except ImportError as e:
         # 如果模块不存在，返回错误
-        logger.error("CoT analysis modules not found")
+        import traceback
+        logger.error(f"CoT analysis modules not found: {e}")
+        logger.error(f"sys.path: {sys.path}")
+        logger.error(traceback.format_exc())
         return {
-            "error": {"type": "analysis_error", "message": "CoT analysis modules not available"},
+            "error": {"type": "analysis_error", "message": f"CoT analysis modules not available: {e}"},
             "execution_trace": [{"step": "init", "status": "failed", "error": "Modules not found"}]
         }
 
@@ -1392,14 +1402,38 @@ async def analysis_node(state: dict) -> dict:
         await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 1: IntentAnalyzer started")
 
-        try:
-            intent_analyzer = create_intent_analyzer()
-            intent_result = intent_analyzer.analyze(
-                user_input=user_input,
-                conversation_history=conversation_history,
+        # 如果 report_intent_result 已经存在（来自 report_intent_node），
+        # 重用其中已经提取好的字段，特别是已经转换好的 advertiser_ids
+        if report_intent:
+            # 从 report_intent_result 中提取已处理好的信息
+            ri_advertiser_ids = report_intent.get("advertiser_ids", [])
+            ri_time_range = report_intent.get("time_range")
+            ri_metrics = report_intent.get("metrics", [])
+            ri_ad_level = report_intent.get("ad_level")
+
+            # 转换时间范围格式
+            converted_time_range = None
+            if ri_time_range:
+                # report_intent.time_range 已经是 dict 格式: {start_date, end_date, unit}
+                converted_time_range = AnalysisTimeRange(
+                    start_date=ri_time_range["start_date"],
+                    end_date=ri_time_range["end_date"],
+                    granularity=ri_time_range["unit"]
+                )
+
+            # 构建 FieldContext，重用已经提取的信息
+            # 特别是 advertiser_ids 已经完成了名称→ID转换
+            field_context = FieldContext(
+                advertiser_ids=ri_advertiser_ids if ri_advertiser_ids else None,
+                time_range=converted_time_range,
+                target_level=ri_ad_level,
+                metrics=ri_metrics if ri_metrics else None,
+                audience_dimension=None,
+                compare_time_range=None,
+                entity_ids=None,
+                additional_fields={}
             )
 
-            field_context = intent_result.field_context
             updates["field_context"] = field_context.model_dump() if field_context else None
 
             event = {
@@ -1411,23 +1445,49 @@ async def analysis_node(state: dict) -> dict:
                     "target_level": getattr(field_context, "target_level", None),
                     "time_range": getattr(field_context, "time_range", None).model_dump()
                         if getattr(field_context, "time_range", None) is not None else None
+                },
+            }
+            execution_trace.append(event)
+            await _push_sse_event(event)
+            logger.info(f"[AnalysisNode] Step 1: reused fields from report_intent, advertiser_ids={ri_advertiser_ids}")
+        else:
+            # 没有 report_intent，重新提取
+            try:
+                intent_analyzer = create_intent_analyzer()
+                intent_result = intent_analyzer.analyze(
+                    user_input=user_input,
+                    conversation_history=conversation_history,
+                )
+
+                field_context = intent_result.field_context
+                updates["field_context"] = field_context.model_dump() if field_context else None
+
+                event = {
+                    "step": "intent_analyzer",
+                    "status": "success",
+                    "duration_ms": int((time.time() - step_start) * 1000),
+                    "extracted_fields": {
+                        "metrics": getattr(field_context, "metrics", []),
+                        "target_level": getattr(field_context, "target_level", None),
+                        "time_range": getattr(field_context, "time_range", None).model_dump()
+                            if getattr(field_context, "time_range", None) is not None else None
+                    },
                 }
-            }
-            execution_trace.append(event)
-            await _push_sse_event(event)
-            logger.info(f"[AnalysisNode] Step 1: IntentAnalyzer completed")
-        except Exception as e:
-            logger.exception(f"[AnalysisNode] Step 1 failed: {e}")
-            event = {
-                "step": "intent_analyzer",
-                "status": "failed",
-                "error": str(e),
-                "duration_ms": int((time.time() - step_start) * 1000)
-            }
-            execution_trace.append(event)
-            await _push_sse_event(event)
-            # 继续执行 - CotPlanner 可以处理没有 field_context 的情况
-            field_context = None
+                execution_trace.append(event)
+                await _push_sse_event(event)
+                logger.info(f"[AnalysisNode] Step 1: IntentAnalyzer completed")
+            except Exception as e:
+                logger.exception(f"[AnalysisNode] Step 1 failed: {e}")
+                event = {
+                    "step": "intent_analyzer",
+                    "status": "failed",
+                    "error": str(e),
+                    "duration_ms": int((time.time() - step_start) * 1000),
+                }
+                execution_trace.append(event)
+                await _push_sse_event(event)
+                # 继续执行 - CotPlanner 可以处理没有 field_context 的情况
+                field_context = None
 
         # 如果是重新进入且有之前的 field_context，优先使用之前的（结合新的）
         if is_reentry and previous_field_context:
@@ -1451,7 +1511,7 @@ async def analysis_node(state: dict) -> dict:
         logger.info(f"[AnalysisNode] Step 2: CotPlanner started")
 
         cot_planner = get_cot_planner()
-        cot_result = cot_planner.plan(
+        cot_result = await cot_planner.plan(
             user_input=user_input,
             conversation_history=conversation_history,
             field_context=field_context,
@@ -1483,7 +1543,7 @@ async def analysis_node(state: dict) -> dict:
             event = {
                 "step": "cot_planner",
                 "status": "hitl_required",
-                "duration_ms": int((time.time() - step_start) * 1000)
+                "duration_ms": int((time.time() - step_start) * 1000),
             }
             execution_trace.append(event)
             await _push_sse_event(event)
@@ -1499,7 +1559,7 @@ async def analysis_node(state: dict) -> dict:
                 "step": "cot_planner",
                 "status": "failed",
                 "error": error_msg,
-                "duration_ms": int((time.time() - step_start) * 1000)
+                "duration_ms": int((time.time() - step_start) * 1000),
             }
             execution_trace.append(event)
             await _push_sse_event(event)
@@ -1620,7 +1680,7 @@ async def analysis_node(state: dict) -> dict:
         event = {
             "step": "empty_result_checker",
             "status": "success",
-            "duration_ms": int((time.time() - step_start) * 1000)
+            "duration_ms": int((time.time() - step_start) * 1000),
         }
         execution_trace.append(event)
         await _push_sse_event(event)

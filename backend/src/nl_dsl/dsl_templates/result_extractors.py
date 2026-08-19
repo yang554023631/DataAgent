@@ -132,17 +132,28 @@ def extract_summary_data(es_response: Dict[str, Any], metrics: List[str]) -> Dic
         Dict of {metric_name: metric_value}
     """
     aggs = es_response.get("aggregations", {})
+    # All aggregations are now inside the 'all_data' bucket wrapper
+    if "all_data" in aggs:
+        # Check if it's the terms aggregation approach (single bucket)
+        if "buckets" in aggs["all_data"] and len(aggs["all_data"]["buckets"]) > 0:
+            aggs = aggs["all_data"]["buckets"][0]
+        else:
+            # Fallback for global or filter approach
+            aggs = aggs["all_data"].get("aggs", {})
     result = {}
 
     for metric in metrics:
         # Check for derived metrics first
         if metric in ["ctr", "cvr", "cpc", "cpm"]:
             if metric in aggs:
-                # Derived metric: same structure -> metric -> { bucket_script, aggs: { value: { value } } }
+                # Derived metric: bucket_script directly outputs value at metric.value
                 agg_container = aggs[metric]
                 if "value" in agg_container:
                     value_agg = agg_container["value"]
-                    result[metric] = value_agg.get("value", None)
+                    if isinstance(value_agg, dict):
+                        result[metric] = value_agg.get("value", None)
+                    else:
+                        result[metric] = value_agg
                 else:
                     result[metric] = agg_container.get("value", None)
         else:
@@ -150,15 +161,27 @@ def extract_summary_data(es_response: Dict[str, Any], metrics: List[str]) -> Dic
             agg_key = f"sum_{metric}"
             if agg_key in aggs:
                 # agg structure: agg_key -> { filter: ..., aggs: { value: { sum: ... } } }
-                # value is nested one level deeper: aggs[agg_key].value.value
+                # value is nested inside aggs: agg_key -> aggs -> value -> value
                 agg_container = aggs[agg_key]
-                if "value" in agg_container:
-                    value_agg = agg_container["value"]
-                    result[metric] = value_agg.get("value", None)
+                if "aggs" in agg_container and "value" in agg_container["aggs"]:
+                    # full path: agg_container.aggs.value.value
+                    value_agg = agg_container["aggs"]["value"]
+                    if isinstance(value_agg, dict):
+                        result[metric] = value_agg.get("value", None)
+                    else:
+                        result[metric] = value_agg
                     logger.debug(f"extract_summary: metric={metric}, got value={result[metric]}, type={type(result[metric])}")
+                elif "value" in agg_container:
+                    # direct path
+                    value_agg = agg_container["value"]
+                    if isinstance(value_agg, dict):
+                        result[metric] = value_agg.get("value", None)
+                    else:
+                        result[metric] = value_agg
+                    logger.debug(f"extract_summary (direct): metric={metric}, got value={result[metric]}, type={type(result[metric])}")
                 else:
                     result[metric] = agg_container.get("value", None)
-                    logger.debug(f"extract_summary (else): metric={metric}, got value={result[metric]}, type={type(result[metric])}")
+                    logger.debug(f"extract_summary (fallback): metric={metric}, got value={result[metric]}, type={type(result[metric])}")
 
     logger.debug(f"extract_summary final result={result}")
     return result
@@ -201,14 +224,14 @@ def extract_comparison_data(es_response: Dict[str, Any], metrics: List[str]) -> 
     return result
 
 
-def extract_audience_data(es_response: Dict[str, Any]) -> Dict[str, float]:
+def extract_audience_data(es_response: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
     """Extract audience distribution data from ES response.
 
     Args:
         es_response: Full Elasticsearch response dict
 
     Returns:
-        Dict of {audience_value: metric_value}
+        Dict of {audience_value: {metric_name: metric_value}}
     """
     audience_agg = es_response.get("aggregations", {}).get("by_audience", {})
     buckets = audience_agg.get("buckets", [])
@@ -216,9 +239,35 @@ def extract_audience_data(es_response: Dict[str, Any]) -> Dict[str, float]:
     result = {}
     for bucket in buckets:
         audience_key = bucket["key"]
-        metric_value = bucket.get("metric_sum", {}).get("value", None)
-        if metric_value is not None:
-            result[audience_key] = metric_value
+        metric_values = {}
+        # Extract all metric values from the bucket
+        for key in bucket:
+            if key == "key" or key == "doc_count":
+                continue
+            # For base metrics: sum_{metric} has structure: {filter: ..., aggs: {value: {sum: ...}}}
+            # In ES response: bucket[key] -> {doc_count: ..., value: {value: 123.45}}
+            # Because the 'aggs' key from DSL is removed in response and sub-aggregations are promoted to top level.
+            # This matches the logic in extract_entity_table_data which handles the same case.
+            if key.startswith("sum_"):
+                metric_name = key[4:]  # remove "sum_" prefix
+                if "value" in bucket[key] and isinstance(bucket[key]["value"], dict) and "value" in bucket[key]["value"]:
+                    # Correct path: bucket[key].value.value
+                    value = bucket[key]["value"].get("value")
+                elif "value" in bucket[key]:
+                    # Fallback: if already flattened (value is directly a number)
+                    value = bucket[key]["value"]
+                else:
+                    value = None
+                if value is not None:
+                    metric_values[metric_name] = value
+            else:
+                # For derived metrics: directly get value from bucket_script
+                # bucket_script puts value directly at bucket[key].value
+                value = bucket.get(key, {}).get("value")
+                if value is not None:
+                    metric_values[key] = value
+        if metric_values:
+            result[audience_key] = metric_values
 
     return result
 

@@ -6,9 +6,22 @@ from src.nl_dsl.field_mapping import METRICS
 LEVEL_TO_FIELD: Dict[str, str] = {
     "advertiser": "advertiser_id",
     "campaign": "campaign_id",
-    "ad_group": "adgroup_id",
+    "ad_group": "ad_group_id",
     "creative": "creative_id"
 }
+
+# Level to corresponding index name mapping
+LEVEL_TO_INDEX: Dict[str, str] = {
+    "advertiser": "advertiser",
+    "campaign": "campaign",
+    "ad_group": "ad_group",
+    "creative": "creative"
+}
+
+
+def get_level_index(level: str) -> str:
+    """Get the actual index name for a given entity level."""
+    return LEVEL_TO_INDEX.get(level, level)
 
 
 # Derived metrics definitions
@@ -128,6 +141,8 @@ def build_common_filters(
 
     Automatically converts advertiser_ids to integer if possible,
     because ES mapping stores advertiser_id as integer. Keep as string if UUID.
+
+    If start_date and end_date are both empty, no date filter is added (full lifetime).
     """
     filters = []
 
@@ -140,8 +155,12 @@ def build_common_filters(
             converted_ids.append(adv_id)
     filters.append({"terms": {"advertiser_id": converted_ids}})
 
-    # Date range filter
-    filters.append(build_time_filter(start_date, end_date, date_field))
+    # Date range filter - only add if at least one date is non-empty
+    if start_date or end_date:
+        # If one is empty, use default min/max
+        actual_start = start_date if start_date else "1970-01-01"
+        actual_end = end_date if end_date else "2100-01-01"
+        filters.append(build_time_filter(actual_start, actual_end, date_field))
 
     # Optional data type terms filter
     if data_types is not None:

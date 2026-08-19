@@ -58,10 +58,14 @@ DIMENSION_MAPPING = {
     "活动": "campaign_id",
     "广告计划": "campaign_id",
     "计划": "campaign_id",
+    "计划名称": "campaign_name",
+    "名称": "campaign_name",
     "广告组": "adgroup_id",
     "组": "adgroup_id",
+    "广告组名称": "adgroup_name",
     "创意": "creative_id",
     "素材": "creative_id",
+    "创意名称": "creative_name",
     "性别": "audience_gender",
     "按性别": "audience_gender",
     "年龄段": "audience_age",
@@ -135,10 +139,10 @@ def map_metrics(text: str) -> List[str]:
     for term, standard in METRIC_MAPPING.items():
         term_lower = term.lower()
         # 匹配规则：
-        # - 断言前面不是小写字母/数字，避免指标嵌入到更大的词语中
+        # - 断言前面不是小写字母，避免指标嵌入到更大的英文词语中（数字是允许的，如"广告主6转化率"）
         # - 断言后面不是小写字母/数字，同上
         # Special case: "展示"作为动词在"分开展示"中不要匹配
-        pattern = r'(?<![a-z0-9])%s(?![a-z0-9])' % re.escape(term_lower)
+        pattern = r'(?<![a-z])%s(?![a-z0-9])' % re.escape(term_lower)
         if not re.search(pattern, text_lower):
             continue
         if term == "展示":
