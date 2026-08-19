@@ -1,4 +1,0 @@
-  File "/Users/simon/AL/DataAgent/scripts/diversified_query_test_part2.py", line 89
-    "prediction_reason": "where+TopN组合",需要增加一步where",
-                                                   ^
-SyntaxError: unterminated string literal (detected at line 89)
