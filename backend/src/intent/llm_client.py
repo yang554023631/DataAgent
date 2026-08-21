@@ -1,5 +1,7 @@
 import logging
 import asyncio
+import json
+import time
 from typing import Optional, Literal, Type
 from pydantic import BaseModel
 from langchain_openai import ChatOpenAI
@@ -7,6 +9,8 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from src.rag.agents import get_llm
 
+# 专门的 logger 用于 LLM 使用统计
+llm_usage_logger = logging.getLogger("llm_usage")
 logger = logging.getLogger(__name__)
 
 # 单例缓存
@@ -57,6 +61,7 @@ class IntentLLMClient:
             Exception: 所有重试都失败时抛出最后一次异常
         """
         last_exception = None
+        start_time = time.time()
 
         for attempt in range(1, self.max_retries + 1):
             try:
@@ -69,7 +74,6 @@ class IntentLLMClient:
 
                 # 如果提供了 schema，让 LLM 输出 JSON 格式然后我们手动解析
                 # 火山引擎 ARK 的 with_structured_output 不兼容 Langchain，所以手动解析
-                import json
                 from pydantic import ValidationError
 
                 if schema is not None:
@@ -92,6 +96,26 @@ class IntentLLMClient:
                     else:
                         response = await self.llm.ainvoke(messages)
                         content = response.content.strip()
+
+                # 统计 token 和 耗时
+                elapsed_ms = int((time.time() - start_time) * 1000)
+                prompt_tokens = 0
+                if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                    prompt_tokens = response.usage_metadata.get('input_tokens', 0)
+                elif hasattr(response, 'usage') and response.usage:
+                    if hasattr(response.usage, 'prompt_tokens'):
+                        prompt_tokens = response.usage.prompt_tokens
+
+                # 记录 JSON 日志
+                model_name = getattr(self.llm, 'model_name', "unknown")
+                llm_usage_logger.info(json.dumps({
+                    "event": "llm_call",
+                    "prompt_tokens": prompt_tokens,
+                    "elapsed_ms": elapsed_ms,
+                    "model": model_name,
+                    "attempt": attempt,
+                    "timestamp": time.time()
+                }, ensure_ascii=False))
 
                 if attempt > 1:
                     logger.info(f"LLM调用成功（第{attempt}次重试）")
