@@ -249,7 +249,12 @@ def send_message(
         resp = requests.post(url, json={"content": content}, timeout=timeout)
         if resp.status_code != 200:
             return None
-        return resp.json()
+        data = resp.json()
+        # 从响应头提取 request_id，放到返回数据中
+        request_id = resp.headers.get("X-Request-ID")
+        if request_id:
+            data["request_id"] = request_id
+        return data
     except Exception:
         return None
 
@@ -827,6 +832,11 @@ def run_single_test(
                 if numeric_values:
                     all_zero_flag = all(v == 0 for v in numeric_values)
 
+                # 提取 request_id
+                request_id = None
+                if result and isinstance(result, dict):
+                    request_id = result.get("request_id")
+
                 detailed_result = {
                     "test_id": test_case["id"],
                     "test_name": test_case["name"],
@@ -839,6 +849,7 @@ def run_single_test(
                     "response_time": round(elapsed, 2),
                     "error_message": None,
                     "retries": attempt,  # 记录重试次数
+                    "request_id": request_id,
                 }
 
                 # Always save raw response for debugging
@@ -851,6 +862,10 @@ def run_single_test(
 
     # 所有重试都失败了，返回最后一次的错误
     elapsed = time.time() - start_time
+    # 提取 request_id
+    request_id = None
+    if last_result and isinstance(last_result, dict):
+        request_id = last_result.get("request_id")
     return {
         "test_id": test_case["id"],
         "test_name": test_case["name"],
@@ -863,6 +878,7 @@ def run_single_test(
         "response_time": round(elapsed, 2),
         "error_message": f"{max_retries}次重试全部失败，最后一次错误: {last_error}",
         "retries": max_retries,
+        "request_id": request_id,
         "raw_response": last_result,
     }
 

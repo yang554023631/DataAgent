@@ -48,6 +48,7 @@ from src.analysis.prompts import (
     build_cot_user_prompt,
     build_field_context_section,
 )
+from src.skills.cot import get_cot_skill
 from src.analysis.intent_analyzer import IntentAnalyzer, IntentAnalysisResult
 from src.analysis.fewshot_retriever import FewshotRetriever, get_fewshot_retriever
 from src.nl_dsl.dsl_templates.common import DERIVED_METRICS
@@ -159,8 +160,28 @@ class CotPlanner:
 
         # Get today's date for the system prompt
         today_str = date.today().isoformat()
-        # 用 replace 而不是 format，避免 prompt 中的 JSON 花括号被解析为格式占位符
-        system_prompt = COT_SYSTEM_PROMPT.replace("{today_date}", today_str)
+
+        # Get analysis type from intent analysis and get corresponding skill
+        analysis_type = None
+        if intent_result and hasattr(intent_result, 'analysis_type_hint'):
+            analysis_type = intent_result.analysis_type_hint
+
+        # If we have a specific analysis type, use the skill-based prompt to save tokens
+        # Otherwise fall back to full COT_SYSTEM_PROMPT (for safety)
+        try:
+            if analysis_type:
+                cot_skill = get_cot_skill(analysis_type)
+                full_system_prompt = cot_skill.get_system_prompt()
+                system_prompt = full_system_prompt.replace("{today_date}", today_str)
+                logger.debug(f"Using skill-based prompt for analysis_type: {analysis_type}")
+            else:
+                # No analysis type hint, use full prompt
+                system_prompt = COT_SYSTEM_PROMPT.replace("{today_date}", today_str)
+                logger.debug("No analysis type hint, using full COT system prompt")
+        except ValueError as e:
+            # Skill not found, fall back to full prompt
+            logger.warning(f"Skill not found for analysis_type {analysis_type}, falling back to full prompt: {e}")
+            system_prompt = COT_SYSTEM_PROMPT.replace("{today_date}", today_str)
 
         # Step 4: Call LLM with retry
         retry_count = 0

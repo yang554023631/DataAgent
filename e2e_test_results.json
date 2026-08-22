@@ -1,0 +1,1802 @@
+{
+  "success_count": 8,
+  "error_count": 0,
+  "total_time": 310.63,
+  "results": [
+    {
+      "test_id": 1,
+      "test_name": "Simple time trend (E2E)",
+      "query": "id为6的广告主4月份的消耗趋势",
+      "status": "success",
+      "analysis_type": [
+        "time_trend"
+      ],
+      "data_points": 27,
+      "has_chart_config": true,
+      "all_zero": false,
+      "response_time": 24.33,
+      "error_message": null,
+      "retries": 0,
+      "request_id": "ce659cff-519c-4ee6-8134-74bf43df0833",
+      "raw_response": {
+        "status": "completed",
+        "result": {
+          "query_intent": {
+            "advertiser_ids": [
+              "6"
+            ],
+            "metrics": [
+              "cost"
+            ],
+            "dimensions": [
+              "data_date"
+            ],
+            "filters": [],
+            "is_comparison": false,
+            "time_range": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "ad_level": "advertiser"
+          },
+          "query_request": null,
+          "query_result": {},
+          "analysis": {},
+          "final_report": {
+            "report_type": "success",
+            "title": "广告主ID=6 消耗 趋势 (2026-04-01 ~ 2026-04-30)",
+            "chart_config": {
+              "type": "line",
+              "title": "消耗 趋势",
+              "x_axis": {
+                "field": "date",
+                "label": "日期"
+              },
+              "y_axis": {
+                "field": "cost",
+                "label": "cost"
+              },
+              "series_field": null,
+              "series": null
+            },
+            "data": [
+              {
+                "date": "2026-04-01",
+                "cost": 376.0
+              },
+              {
+                "date": "2026-04-02",
+                "cost": 596.0
+              },
+              {
+                "date": "2026-04-03",
+                "cost": 502.0
+              },
+              {
+                "date": "2026-04-04",
+                "cost": 905.0
+              },
+              {
+                "date": "2026-04-05",
+                "cost": 1434.0
+              },
+              {
+                "date": "2026-04-06",
+                "cost": 372.0
+              },
+              {
+                "date": "2026-04-07",
+                "cost": 842.0
+              },
+              {
+                "date": "2026-04-08",
+                "cost": 1275.0
+              },
+              {
+                "date": "2026-04-09",
+                "cost": 422.0
+              },
+              {
+                "date": "2026-04-10",
+                "cost": 296.0
+              },
+              {
+                "date": "2026-04-11",
+                "cost": 69.0
+              },
+              {
+                "date": "2026-04-12",
+                "cost": 895.0
+              },
+              {
+                "date": "2026-04-13",
+                "cost": 360.0
+              },
+              {
+                "date": "2026-04-14",
+                "cost": 616.0
+              },
+              {
+                "date": "2026-04-15",
+                "cost": 938.0
+              },
+              {
+                "date": "2026-04-16",
+                "cost": 435.0
+              },
+              {
+                "date": "2026-04-17",
+                "cost": 707.0
+              },
+              {
+                "date": "2026-04-18",
+                "cost": 518.0
+              },
+              {
+                "date": "2026-04-19",
+                "cost": 596.0
+              },
+              {
+                "date": "2026-04-20",
+                "cost": 313.0
+              },
+              {
+                "date": "2026-04-21",
+                "cost": 1109.0
+              },
+              {
+                "date": "2026-04-22",
+                "cost": 2200.0
+              },
+              {
+                "date": "2026-04-23",
+                "cost": 781.0
+              },
+              {
+                "date": "2026-04-24",
+                "cost": 1047.0
+              },
+              {
+                "date": "2026-04-25",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-26",
+                "cost": 943.0
+              },
+              {
+                "date": "2026-04-27",
+                "cost": 576.0
+              }
+            ],
+            "data_table": {
+              "columns": [
+                "日期",
+                "cost"
+              ],
+              "rows": [
+                [
+                  "2026-04-01",
+                  "¥376.00"
+                ],
+                [
+                  "2026-04-02",
+                  "¥596.00"
+                ],
+                [
+                  "2026-04-03",
+                  "¥502.00"
+                ],
+                [
+                  "2026-04-04",
+                  "¥905.00"
+                ],
+                [
+                  "2026-04-05",
+                  "¥1,434.00"
+                ],
+                [
+                  "2026-04-06",
+                  "¥372.00"
+                ],
+                [
+                  "2026-04-07",
+                  "¥842.00"
+                ],
+                [
+                  "2026-04-08",
+                  "¥1,275.00"
+                ],
+                [
+                  "2026-04-09",
+                  "¥422.00"
+                ],
+                [
+                  "2026-04-10",
+                  "¥296.00"
+                ],
+                [
+                  "2026-04-11",
+                  "¥69.00"
+                ],
+                [
+                  "2026-04-12",
+                  "¥895.00"
+                ],
+                [
+                  "2026-04-13",
+                  "¥360.00"
+                ],
+                [
+                  "2026-04-14",
+                  "¥616.00"
+                ],
+                [
+                  "2026-04-15",
+                  "¥938.00"
+                ],
+                [
+                  "2026-04-16",
+                  "¥435.00"
+                ],
+                [
+                  "2026-04-17",
+                  "¥707.00"
+                ],
+                [
+                  "2026-04-18",
+                  "¥518.00"
+                ],
+                [
+                  "2026-04-19",
+                  "¥596.00"
+                ],
+                [
+                  "2026-04-20",
+                  "¥313.00"
+                ],
+                [
+                  "2026-04-21",
+                  "¥1,109.00"
+                ],
+                [
+                  "2026-04-22",
+                  "¥2,200.00"
+                ],
+                [
+                  "2026-04-23",
+                  "¥781.00"
+                ],
+                [
+                  "2026-04-24",
+                  "¥1,047.00"
+                ],
+                [
+                  "2026-04-25",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-26",
+                  "¥943.00"
+                ],
+                [
+                  "2026-04-27",
+                  "¥576.00"
+                ]
+              ]
+            },
+            "quality_info": {
+              "passed": true,
+              "issues": [],
+              "warnings": [],
+              "actions": []
+            },
+            "highlights": [
+              {
+                "type": "info",
+                "text": "📊 共 27 条数据记录"
+              },
+              {
+                "type": "info",
+                "text": "📈 消耗：总计 ¥19,123.00，平均 ¥708.26，最高 ¥2,200.00，最低 ¥0.00"
+              },
+              {
+                "type": "positive",
+                "text": "🟢 消耗 呈现上升趋势"
+              }
+            ],
+            "metadata": {
+              "generated_at": "2026-08-22T16:54:50.185967",
+              "entity_level": "advertiser",
+              "total_entities": 1,
+              "metrics": [
+                "cost"
+              ],
+              "analysis_type": "time_trend",
+              "chart_type": "line",
+              "time_range": {
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-30",
+                "granularity": "day"
+              }
+            },
+            "cot_reasoning_summary": null,
+            "next_queries": [
+              "按广告计划维度拆分趋势",
+              "对比上周同期数据",
+              "查看受众分布情况"
+            ]
+          },
+          "warnings": []
+        },
+        "request_id": "ce659cff-519c-4ee6-8134-74bf43df0833"
+      }
+    },
+    {
+      "test_id": 2,
+      "test_name": "Entity table with where filter (E2E)",
+      "query": "广告主6下未删除的广告计划4月份的消耗和点击",
+      "status": "success",
+      "analysis_type": [
+        "entity_table"
+      ],
+      "data_points": 2,
+      "has_chart_config": true,
+      "all_zero": false,
+      "response_time": 43.46,
+      "error_message": null,
+      "retries": 0,
+      "request_id": "11b5895e-64eb-4add-b0e8-0b57fbbb8203",
+      "raw_response": {
+        "status": "completed",
+        "result": {
+          "query_intent": {
+            "advertiser_ids": [
+              "6"
+            ],
+            "metrics": [
+              "clicks",
+              "cost"
+            ],
+            "dimensions": [
+              "campaign_name",
+              "campaign_id"
+            ],
+            "filters": [
+              {
+                "field": "status",
+                "operator": "eq",
+                "value": 1,
+                "type": "where"
+              }
+            ],
+            "is_comparison": false,
+            "time_range": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "ad_level": "campaign"
+          },
+          "query_request": null,
+          "query_result": {},
+          "analysis": {},
+          "final_report": {
+            "report_type": "success",
+            "title": "点击量 实体表格 (2026-04-01 ~ 2026-04-30)",
+            "chart_config": {},
+            "data": [],
+            "data_table": {
+              "columns": [
+                "campaign ID",
+                "campaign 名称",
+                "clicks",
+                "cost"
+              ],
+              "rows": [
+                [
+                  13,
+                  "旗舰43_best",
+                  "363,701.0",
+                  "¥17,750.00"
+                ],
+                [
+                  12,
+                  "热门_14",
+                  "20,783.0",
+                  "¥1,373.00"
+                ]
+              ]
+            },
+            "quality_info": {
+              "passed": true,
+              "issues": [],
+              "warnings": [],
+              "actions": []
+            },
+            "highlights": [
+              {
+                "type": "info",
+                "text": "✅ 数据加载完成，共 2 条记录"
+              }
+            ],
+            "metadata": {
+              "generated_at": "2026-08-22T16:55:33.650338",
+              "entity_level": "campaign",
+              "total_entities": 11,
+              "metrics": [
+                "clicks",
+                "cost"
+              ],
+              "analysis_type": "entity_table",
+              "chart_type": "table",
+              "time_range": {
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-30",
+                "granularity": "day"
+              }
+            },
+            "cot_reasoning_summary": null,
+            "next_queries": [
+              "查看时间趋势变化",
+              "对比不同时期表现",
+              "下钻到广告组维度"
+            ]
+          },
+          "warnings": []
+        },
+        "request_id": "11b5895e-64eb-4add-b0e8-0b57fbbb8203"
+      }
+    },
+    {
+      "test_id": 3,
+      "test_name": "Entity table with having filter (E2E)",
+      "query": "广告主6 4月份消耗大于10的广告计划有哪些",
+      "status": "success",
+      "analysis_type": [
+        "entity_table"
+      ],
+      "data_points": 2,
+      "has_chart_config": true,
+      "all_zero": false,
+      "response_time": 62.66,
+      "error_message": null,
+      "retries": 0,
+      "request_id": "48bc84cf-6f72-4073-863d-7698e4c0d044",
+      "raw_response": {
+        "status": "completed",
+        "result": {
+          "query_intent": {
+            "advertiser_ids": [
+              "6"
+            ],
+            "metrics": [
+              "cost"
+            ],
+            "dimensions": [
+              "campaign_name",
+              "campaign_id"
+            ],
+            "filters": [
+              {
+                "field": "cost",
+                "operator": "gt",
+                "value": 10,
+                "type": "having"
+              }
+            ],
+            "is_comparison": false,
+            "time_range": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "ad_level": "campaign"
+          },
+          "query_request": null,
+          "query_result": {},
+          "analysis": {},
+          "final_report": {
+            "report_type": "success",
+            "title": "消耗 实体表格 (2026-04-01 ~ 2026-04-30)",
+            "chart_config": {},
+            "data": [],
+            "data_table": {
+              "columns": [
+                "campaign ID",
+                "campaign 名称",
+                "cost"
+              ],
+              "rows": [
+                [
+                  13,
+                  "旗舰43_best",
+                  "¥17,750.00"
+                ],
+                [
+                  12,
+                  "热门_14",
+                  "¥1,373.00"
+                ]
+              ]
+            },
+            "quality_info": {
+              "passed": true,
+              "issues": [],
+              "warnings": [],
+              "actions": []
+            },
+            "highlights": [
+              {
+                "type": "info",
+                "text": "✅ 数据加载完成，共 2 条记录"
+              }
+            ],
+            "metadata": {
+              "generated_at": "2026-08-22T16:56:36.312246",
+              "entity_level": "campaign",
+              "total_entities": 2,
+              "metrics": [
+                "cost"
+              ],
+              "analysis_type": "entity_table",
+              "chart_type": "table",
+              "time_range": {
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-30",
+                "granularity": "day"
+              }
+            },
+            "cot_reasoning_summary": null,
+            "next_queries": [
+              "查看时间趋势变化",
+              "对比不同时期表现",
+              "下钻到广告组维度"
+            ]
+          },
+          "warnings": []
+        },
+        "request_id": "48bc84cf-6f72-4073-863d-7698e4c0d044"
+      }
+    },
+    {
+      "test_id": 4,
+      "test_name": "Period comparison (E2E)",
+      "query": "广告主6 4月的消耗和3月比怎么样",
+      "status": "success",
+      "analysis_type": [
+        "period_comparison"
+      ],
+      "data_points": 1,
+      "has_chart_config": true,
+      "all_zero": false,
+      "response_time": 33.79,
+      "error_message": null,
+      "retries": 0,
+      "request_id": "c207275e-bfc9-4297-9538-e4c9cd0cfa44",
+      "raw_response": {
+        "status": "completed",
+        "result": {
+          "query_intent": {
+            "advertiser_ids": [
+              "6"
+            ],
+            "metrics": [
+              "cost"
+            ],
+            "dimensions": [],
+            "filters": [],
+            "is_comparison": true,
+            "time_range": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "compare_time_range": {
+              "start": "2026-03-01",
+              "end": "2026-03-31"
+            },
+            "ad_level": "advertiser"
+          },
+          "query_request": null,
+          "query_result": {},
+          "analysis": {},
+          "final_report": {
+            "report_type": "success",
+            "title": "广告主ID=6 消耗 对比分析 (2026-04-01 ~ 2026-04-30)",
+            "chart_config": {
+              "type": "bar",
+              "title": "消耗 对比",
+              "x_axis": {
+                "field": "metric",
+                "label": "指标"
+              },
+              "y_axis": {
+                "field": "value",
+                "label": "数值"
+              },
+              "series_field": "period",
+              "series": null
+            },
+            "data": [
+              {
+                "metric": "cost",
+                "period": "4月",
+                "value": 19123.0
+              },
+              {
+                "metric": "cost",
+                "period": "3月",
+                "value": 12475.0
+              }
+            ],
+            "data_table": {
+              "columns": [
+                "指标",
+                "当前期",
+                "对比期",
+                "变化",
+                "变化率"
+              ],
+              "rows": [
+                [
+                  "cost",
+                  19123.0,
+                  12475.0,
+                  6648.0,
+                  53.29058116232465
+                ]
+              ]
+            },
+            "quality_info": {
+              "passed": true,
+              "issues": [],
+              "warnings": [],
+              "actions": []
+            },
+            "highlights": [
+              {
+                "type": "info",
+                "text": "📊 共 2 条数据记录"
+              }
+            ],
+            "metadata": {
+              "generated_at": "2026-08-22T16:57:10.105738",
+              "entity_level": "advertiser",
+              "total_entities": 1,
+              "metrics": [
+                "cost"
+              ],
+              "analysis_type": "period_comparison",
+              "chart_type": "bar",
+              "time_range": {
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-30",
+                "granularity": "month"
+              }
+            },
+            "cot_reasoning_summary": null,
+            "next_queries": [
+              "查看详细趋势图",
+              "按维度拆分对比",
+              "查看受众对比"
+            ]
+          },
+          "warnings": []
+        },
+        "request_id": "c207275e-bfc9-4297-9538-e4c9cd0cfa44"
+      }
+    },
+    {
+      "test_id": 5,
+      "test_name": "Audience distribution (E2E)",
+      "query": "广告主6 4月份的消耗按性别分布",
+      "status": "success",
+      "analysis_type": [
+        "audience_distribution"
+      ],
+      "data_points": 2,
+      "has_chart_config": true,
+      "all_zero": false,
+      "response_time": 36.13,
+      "error_message": null,
+      "retries": 0,
+      "request_id": "8c2f4d2d-a0e9-4ad4-b7f6-b7354d254b92",
+      "raw_response": {
+        "status": "completed",
+        "result": {
+          "query_intent": {
+            "advertiser_ids": [
+              "6"
+            ],
+            "metrics": [
+              "cost"
+            ],
+            "dimensions": [
+              "audience_gender"
+            ],
+            "filters": [],
+            "is_comparison": false,
+            "time_range": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "ad_level": "advertiser"
+          },
+          "query_request": null,
+          "query_result": {},
+          "analysis": {},
+          "final_report": {
+            "report_type": "success",
+            "title": "广告主ID=6 消耗 受众分布 (2026-04-01 ~ 2026-04-30)",
+            "chart_config": {
+              "type": "pie",
+              "title": "消耗 分布",
+              "x_axis": null,
+              "y_axis": null,
+              "series_field": null,
+              "series": [
+                {
+                  "name": "男性"
+                },
+                {
+                  "name": "女性"
+                }
+              ]
+            },
+            "data": [
+              {
+                "label": "男性",
+                "value": 9900.0
+              },
+              {
+                "label": "女性",
+                "value": 9223.0
+              }
+            ],
+            "data_table": {
+              "columns": [
+                "audience_gender 类别",
+                "cost",
+                "占比"
+              ],
+              "rows": [
+                [
+                  "男性",
+                  "¥9,900.00",
+                  51.770119751085076
+                ],
+                [
+                  "女性",
+                  "¥9,223.00",
+                  48.22988024891492
+                ]
+              ]
+            },
+            "quality_info": {
+              "passed": true,
+              "issues": [],
+              "warnings": [],
+              "actions": []
+            },
+            "highlights": [
+              {
+                "type": "info",
+                "text": "📊 共 2 条数据记录"
+              }
+            ],
+            "metadata": {
+              "generated_at": "2026-08-22T16:57:46.240522",
+              "entity_level": "advertiser",
+              "total_entities": 1,
+              "metrics": [
+                "cost"
+              ],
+              "analysis_type": "audience_distribution",
+              "chart_type": "pie",
+              "time_range": {
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-30",
+                "granularity": "day"
+              }
+            },
+            "cot_reasoning_summary": null,
+            "next_queries": [
+              "查看不同受众的转化情况",
+              "对比历史受众分布",
+              "按受众查看趋势"
+            ]
+          },
+          "warnings": []
+        },
+        "request_id": "8c2f4d2d-a0e9-4ad4-b7f6-b7354d254b92"
+      }
+    },
+    {
+      "test_id": 6,
+      "test_name": "Multi-series trend (E2E)",
+      "query": "广告主6下各个广告计划分开展示4月份的消耗趋势",
+      "status": "success",
+      "analysis_type": [
+        "time_trend"
+      ],
+      "data_points": 54,
+      "has_chart_config": true,
+      "all_zero": false,
+      "response_time": 28.74,
+      "error_message": null,
+      "retries": 0,
+      "request_id": "e1e1d714-e881-4a61-9b8f-8423848552f0",
+      "raw_response": {
+        "status": "completed",
+        "result": {
+          "query_intent": {
+            "advertiser_ids": [
+              "6"
+            ],
+            "metrics": [
+              "cost"
+            ],
+            "dimensions": [
+              "data_date",
+              "campaign_name",
+              "campaign_id"
+            ],
+            "filters": [],
+            "is_comparison": false,
+            "time_range": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "ad_level": "campaign"
+          },
+          "query_request": null,
+          "query_result": {},
+          "analysis": {},
+          "final_report": {
+            "report_type": "success",
+            "title": "消耗 趋势 (2026-04-01 ~ 2026-04-30)",
+            "chart_config": {
+              "type": "line",
+              "title": "消耗 趋势",
+              "x_axis": {
+                "field": "date",
+                "label": "日期"
+              },
+              "y_axis": {
+                "field": "cost",
+                "label": "cost"
+              },
+              "series_field": "campaign_id",
+              "series": [
+                {
+                  "name": "热门_14"
+                },
+                {
+                  "name": "旗舰43_best"
+                }
+              ]
+            },
+            "data": [
+              {
+                "date": "2026-04-01",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-01",
+                "campaign_id": "13",
+                "cost": 376.0
+              },
+              {
+                "date": "2026-04-02",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-02",
+                "campaign_id": "13",
+                "cost": 596.0
+              },
+              {
+                "date": "2026-04-03",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-03",
+                "campaign_id": "13",
+                "cost": 502.0
+              },
+              {
+                "date": "2026-04-04",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-04",
+                "campaign_id": "13",
+                "cost": 905.0
+              },
+              {
+                "date": "2026-04-05",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-05",
+                "campaign_id": "13",
+                "cost": 1434.0
+              },
+              {
+                "date": "2026-04-06",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-06",
+                "campaign_id": "13",
+                "cost": 372.0
+              },
+              {
+                "date": "2026-04-07",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-07",
+                "campaign_id": "13",
+                "cost": 842.0
+              },
+              {
+                "date": "2026-04-08",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-08",
+                "campaign_id": "13",
+                "cost": 1275.0
+              },
+              {
+                "date": "2026-04-09",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-09",
+                "campaign_id": "13",
+                "cost": 422.0
+              },
+              {
+                "date": "2026-04-10",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-10",
+                "campaign_id": "13",
+                "cost": 296.0
+              },
+              {
+                "date": "2026-04-11",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-11",
+                "campaign_id": "13",
+                "cost": 69.0
+              },
+              {
+                "date": "2026-04-12",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-12",
+                "campaign_id": "13",
+                "cost": 895.0
+              },
+              {
+                "date": "2026-04-13",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-13",
+                "campaign_id": "13",
+                "cost": 360.0
+              },
+              {
+                "date": "2026-04-14",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-14",
+                "campaign_id": "13",
+                "cost": 616.0
+              },
+              {
+                "date": "2026-04-15",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-15",
+                "campaign_id": "13",
+                "cost": 938.0
+              },
+              {
+                "date": "2026-04-16",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-16",
+                "campaign_id": "13",
+                "cost": 435.0
+              },
+              {
+                "date": "2026-04-17",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-17",
+                "campaign_id": "13",
+                "cost": 707.0
+              },
+              {
+                "date": "2026-04-18",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-18",
+                "campaign_id": "13",
+                "cost": 518.0
+              },
+              {
+                "date": "2026-04-19",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-19",
+                "campaign_id": "13",
+                "cost": 596.0
+              },
+              {
+                "date": "2026-04-20",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-20",
+                "campaign_id": "13",
+                "cost": 313.0
+              },
+              {
+                "date": "2026-04-21",
+                "campaign_id": "12",
+                "cost": 791.0
+              },
+              {
+                "date": "2026-04-21",
+                "campaign_id": "13",
+                "cost": 318.0
+              },
+              {
+                "date": "2026-04-22",
+                "campaign_id": "12",
+                "cost": 582.0
+              },
+              {
+                "date": "2026-04-22",
+                "campaign_id": "13",
+                "cost": 1618.0
+              },
+              {
+                "date": "2026-04-23",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-23",
+                "campaign_id": "13",
+                "cost": 781.0
+              },
+              {
+                "date": "2026-04-24",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-24",
+                "campaign_id": "13",
+                "cost": 1047.0
+              },
+              {
+                "date": "2026-04-25",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-25",
+                "campaign_id": "13",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-26",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-26",
+                "campaign_id": "13",
+                "cost": 943.0
+              },
+              {
+                "date": "2026-04-27",
+                "campaign_id": "12",
+                "cost": 0.0
+              },
+              {
+                "date": "2026-04-27",
+                "campaign_id": "13",
+                "cost": 576.0
+              }
+            ],
+            "data_table": {
+              "columns": [
+                "日期",
+                "campaign ID",
+                "campaign 名称",
+                "cost"
+              ],
+              "rows": [
+                [
+                  "2026-04-01",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-01",
+                  "13",
+                  "旗舰43_best",
+                  "¥376.00"
+                ],
+                [
+                  "2026-04-02",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-02",
+                  "13",
+                  "旗舰43_best",
+                  "¥596.00"
+                ],
+                [
+                  "2026-04-03",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-03",
+                  "13",
+                  "旗舰43_best",
+                  "¥502.00"
+                ],
+                [
+                  "2026-04-04",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-04",
+                  "13",
+                  "旗舰43_best",
+                  "¥905.00"
+                ],
+                [
+                  "2026-04-05",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-05",
+                  "13",
+                  "旗舰43_best",
+                  "¥1,434.00"
+                ],
+                [
+                  "2026-04-06",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-06",
+                  "13",
+                  "旗舰43_best",
+                  "¥372.00"
+                ],
+                [
+                  "2026-04-07",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-07",
+                  "13",
+                  "旗舰43_best",
+                  "¥842.00"
+                ],
+                [
+                  "2026-04-08",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-08",
+                  "13",
+                  "旗舰43_best",
+                  "¥1,275.00"
+                ],
+                [
+                  "2026-04-09",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-09",
+                  "13",
+                  "旗舰43_best",
+                  "¥422.00"
+                ],
+                [
+                  "2026-04-10",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-10",
+                  "13",
+                  "旗舰43_best",
+                  "¥296.00"
+                ],
+                [
+                  "2026-04-11",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-11",
+                  "13",
+                  "旗舰43_best",
+                  "¥69.00"
+                ],
+                [
+                  "2026-04-12",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-12",
+                  "13",
+                  "旗舰43_best",
+                  "¥895.00"
+                ],
+                [
+                  "2026-04-13",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-13",
+                  "13",
+                  "旗舰43_best",
+                  "¥360.00"
+                ],
+                [
+                  "2026-04-14",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-14",
+                  "13",
+                  "旗舰43_best",
+                  "¥616.00"
+                ],
+                [
+                  "2026-04-15",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-15",
+                  "13",
+                  "旗舰43_best",
+                  "¥938.00"
+                ],
+                [
+                  "2026-04-16",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-16",
+                  "13",
+                  "旗舰43_best",
+                  "¥435.00"
+                ],
+                [
+                  "2026-04-17",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-17",
+                  "13",
+                  "旗舰43_best",
+                  "¥707.00"
+                ],
+                [
+                  "2026-04-18",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-18",
+                  "13",
+                  "旗舰43_best",
+                  "¥518.00"
+                ],
+                [
+                  "2026-04-19",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-19",
+                  "13",
+                  "旗舰43_best",
+                  "¥596.00"
+                ],
+                [
+                  "2026-04-20",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-20",
+                  "13",
+                  "旗舰43_best",
+                  "¥313.00"
+                ],
+                [
+                  "2026-04-21",
+                  "12",
+                  "热门_14",
+                  "¥791.00"
+                ],
+                [
+                  "2026-04-21",
+                  "13",
+                  "旗舰43_best",
+                  "¥318.00"
+                ],
+                [
+                  "2026-04-22",
+                  "12",
+                  "热门_14",
+                  "¥582.00"
+                ],
+                [
+                  "2026-04-22",
+                  "13",
+                  "旗舰43_best",
+                  "¥1,618.00"
+                ],
+                [
+                  "2026-04-23",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-23",
+                  "13",
+                  "旗舰43_best",
+                  "¥781.00"
+                ],
+                [
+                  "2026-04-24",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-24",
+                  "13",
+                  "旗舰43_best",
+                  "¥1,047.00"
+                ],
+                [
+                  "2026-04-25",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-25",
+                  "13",
+                  "旗舰43_best",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-26",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-26",
+                  "13",
+                  "旗舰43_best",
+                  "¥943.00"
+                ],
+                [
+                  "2026-04-27",
+                  "12",
+                  "热门_14",
+                  "¥0.00"
+                ],
+                [
+                  "2026-04-27",
+                  "13",
+                  "旗舰43_best",
+                  "¥576.00"
+                ]
+              ]
+            },
+            "quality_info": {
+              "passed": true,
+              "issues": [],
+              "warnings": [],
+              "actions": []
+            },
+            "highlights": [
+              {
+                "type": "info",
+                "text": "📊 共 54 条数据记录"
+              },
+              {
+                "type": "info",
+                "text": "📈 消耗：总计 ¥19,123.00，平均 ¥354.13，最高 ¥1,618.00，最低 ¥0.00"
+              },
+              {
+                "type": "positive",
+                "text": "🟢 消耗 呈现上升趋势"
+              }
+            ],
+            "metadata": {
+              "generated_at": "2026-08-22T16:58:14.983724",
+              "entity_level": "campaign",
+              "total_entities": 11,
+              "metrics": [
+                "cost"
+              ],
+              "analysis_type": "time_trend",
+              "chart_type": "line",
+              "time_range": {
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-30",
+                "granularity": "day"
+              }
+            },
+            "cot_reasoning_summary": null,
+            "next_queries": [
+              "按广告计划维度拆分趋势",
+              "对比上周同期数据",
+              "查看受众分布情况"
+            ]
+          },
+          "warnings": []
+        },
+        "request_id": "e1e1d714-e881-4a61-9b8f-8423848552f0"
+      }
+    },
+    {
+      "test_id": 7,
+      "test_name": "Multi-metric entity table (E2E)",
+      "query": "列出广告主6 4月份的展示、点击、消耗、转化数据表格",
+      "status": "success",
+      "analysis_type": [
+        "entity_table",
+        "summary"
+      ],
+      "data_points": 4,
+      "has_chart_config": true,
+      "all_zero": false,
+      "response_time": 48.21,
+      "error_message": null,
+      "retries": 0,
+      "request_id": "4e97cfac-7438-4756-acf5-8284f6c8a21a",
+      "raw_response": {
+        "status": "completed",
+        "result": {
+          "query_intent": {
+            "advertiser_ids": [
+              "6"
+            ],
+            "metrics": [
+              "clicks",
+              "conversions",
+              "cost",
+              "impressions"
+            ],
+            "dimensions": [],
+            "filters": [],
+            "is_comparison": false,
+            "time_range": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "ad_level": "advertiser"
+          },
+          "query_request": null,
+          "query_result": {},
+          "analysis": {},
+          "final_report": {
+            "report_type": "success",
+            "title": "广告主ID=6 点击量 数据汇总 (2026-04-01 ~ 2026-04-30)",
+            "chart_config": {
+              "type": "table",
+              "title": "汇总指标",
+              "x_axis": null,
+              "y_axis": null,
+              "series_field": null,
+              "series": null
+            },
+            "data": [
+              {
+                "metric": "clicks",
+                "value": 384484.0
+              },
+              {
+                "metric": "conversions",
+                "value": 11760.0
+              },
+              {
+                "metric": "cost",
+                "value": 19123.0
+              },
+              {
+                "metric": "impressions",
+                "value": 17579756.0
+              }
+            ],
+            "data_table": {
+              "columns": [
+                "指标",
+                "数值"
+              ],
+              "rows": [
+                [
+                  "clicks",
+                  384484.0
+                ],
+                [
+                  "conversions",
+                  11760.0
+                ],
+                [
+                  "cost",
+                  19123.0
+                ],
+                [
+                  "impressions",
+                  17579756.0
+                ]
+              ]
+            },
+            "quality_info": {
+              "passed": true,
+              "issues": [],
+              "warnings": [],
+              "actions": []
+            },
+            "highlights": [
+              {
+                "type": "info",
+                "text": "📊 共 4 条数据记录"
+              }
+            ],
+            "metadata": {
+              "generated_at": "2026-08-22T16:59:03.194888",
+              "entity_level": "advertiser",
+              "total_entities": 1,
+              "metrics": [
+                "clicks",
+                "conversions",
+                "cost",
+                "impressions"
+              ],
+              "analysis_type": "summary",
+              "chart_type": "table",
+              "time_range": {
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-30",
+                "granularity": "day"
+              }
+            },
+            "cot_reasoning_summary": "本次分析针对广告主6 2026年4月的核心投放指标做整体汇总输出，所有参数符合要求，无缺失信息",
+            "next_queries": [
+              "查看时间趋势",
+              "对比分析",
+              "查看受众分布"
+            ]
+          },
+          "warnings": []
+        },
+        "request_id": "4e97cfac-7438-4756-acf5-8284f6c8a21a"
+      }
+    },
+    {
+      "test_id": 8,
+      "test_name": "Multi-metric summary (concise query) (E2E)",
+      "query": "广告主6 4月份的展示、点击、消耗、转化",
+      "status": "success",
+      "analysis_type": [
+        "summary"
+      ],
+      "data_points": 4,
+      "has_chart_config": true,
+      "all_zero": false,
+      "response_time": 33.29,
+      "error_message": null,
+      "retries": 0,
+      "request_id": "7d6a604f-c0cb-4b80-bafe-ad4d565bb336",
+      "raw_response": {
+        "status": "completed",
+        "result": {
+          "query_intent": {
+            "advertiser_ids": [
+              "6"
+            ],
+            "metrics": [
+              "clicks",
+              "conversions",
+              "cost",
+              "impressions"
+            ],
+            "dimensions": [],
+            "filters": [],
+            "is_comparison": false,
+            "time_range": {
+              "start": "2026-04-01",
+              "end": "2026-04-30"
+            },
+            "ad_level": "advertiser"
+          },
+          "query_request": null,
+          "query_result": {},
+          "analysis": {},
+          "final_report": {
+            "report_type": "success",
+            "title": "广告主ID=6 点击量 数据汇总 (2026-04-01 ~ 2026-04-30)",
+            "chart_config": {
+              "type": "table",
+              "title": "汇总指标",
+              "x_axis": null,
+              "y_axis": null,
+              "series_field": null,
+              "series": null
+            },
+            "data": [
+              {
+                "metric": "clicks",
+                "value": 384484.0
+              },
+              {
+                "metric": "conversions",
+                "value": 11760.0
+              },
+              {
+                "metric": "cost",
+                "value": 19123.0
+              },
+              {
+                "metric": "impressions",
+                "value": 17579756.0
+              }
+            ],
+            "data_table": {
+              "columns": [
+                "指标",
+                "数值"
+              ],
+              "rows": [
+                [
+                  "clicks",
+                  384484.0
+                ],
+                [
+                  "conversions",
+                  11760.0
+                ],
+                [
+                  "cost",
+                  19123.0
+                ],
+                [
+                  "impressions",
+                  17579756.0
+                ]
+              ]
+            },
+            "quality_info": {
+              "passed": true,
+              "issues": [],
+              "warnings": [],
+              "actions": []
+            },
+            "highlights": [
+              {
+                "type": "info",
+                "text": "📊 共 4 条数据记录"
+              }
+            ],
+            "metadata": {
+              "generated_at": "2026-08-22T16:59:36.484713",
+              "entity_level": "advertiser",
+              "total_entities": 1,
+              "metrics": [
+                "clicks",
+                "conversions",
+                "cost",
+                "impressions"
+              ],
+              "analysis_type": "summary",
+              "chart_type": "table",
+              "time_range": {
+                "start_date": "2026-04-01",
+                "end_date": "2026-04-30",
+                "granularity": "day"
+              }
+            },
+            "cot_reasoning_summary": null,
+            "next_queries": [
+              "查看时间趋势",
+              "对比分析",
+              "查看受众分布"
+            ]
+          },
+          "warnings": []
+        },
+        "request_id": "7d6a604f-c0cb-4b80-bafe-ad4d565bb336"
+      }
+    }
+  ]
+}
