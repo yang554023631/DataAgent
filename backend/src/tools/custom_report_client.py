@@ -3,9 +3,28 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from elasticsearch import Elasticsearch
 from src.models import QueryRequest, QueryResult
+from src.mcp.config import mcp_config
+from src.main import mcp_manager
 
-# ES 客户端
-es_client = Elasticsearch(["http://localhost:9200"])
+# 根据配置选择 MCP 或直连
+if mcp_config.use_mcp and mcp_manager is not None:
+    # 使用 MCP 客户端
+    from src.search.elasticsearch_mcp import get_elasticsearch_mcp_client
+    _es_mcp_client = get_elasticsearch_mcp_client(mcp_manager)
+
+    class EsClientProxy:
+        """MCP 模式下的 ES 客户端代理，接口兼容原 Elasticsearch 客户端"""
+        async def search(self, index: str, query: Dict[str, Any], size: int, aggs: Dict[str, Any], timeout: str) -> Dict[str, Any]:
+            body = {
+                "query": query,
+                "size": size,
+                "aggs": aggs,
+                "timeout": timeout
+            }
+            return await _es_mcp_client.search(index, body)
+else:
+    # 原有直连模式
+    es_client = Elasticsearch(["http://localhost:9200"])
 
 # data_type 映射
 DATA_TYPE_MAP = {
@@ -663,10 +682,16 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
 
 
 class CustomReportClient:
-    """CustomReport 服务客户端（直接 ES 查询）"""
+    """CustomReport 服务客户端
+
+    根据配置自动选择：MCP 模式 / 直连模式
+    """
 
     def __init__(self):
-        self.es_client = es_client
+        if mcp_config.use_mcp and mcp_manager is not None:
+            self.es_client = EsClientProxy()
+        else:
+            self.es_client = es_client
 
     async def execute_query(self, query_request: QueryRequest) -> QueryResult:
         """执行报表查询（直接查 ES）"""
