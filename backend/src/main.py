@@ -14,8 +14,8 @@ from src.config.logging_config import setup_logging
 from src.api.middleware import RequestTracingMiddleware
 from src.api.sessions import router as sessions_router
 from src.api.streaming import router as streaming_router
-from src.mcp.config import load_mcp_config
-from src.mcp.client import MCPClientManager
+from src.mcp_client.config import load_mcp_config
+from src.mcp_client.client import MCPClientManager
 from src.utils.logger import logger
 
 # 初始化日志（在所有模块导入之后、app 创建之前）

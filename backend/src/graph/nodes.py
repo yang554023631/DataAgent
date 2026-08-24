@@ -72,7 +72,7 @@ def _generate_suggested_queries(advertiser_name: str) -> list:
     return [t.format(name=advertiser_name) for t in templates]
 
 
-def _resolve_advertiser_from_feedback(feedback: str) -> list:
+async def _resolve_advertiser_from_feedback(feedback: str) -> list:
     """
     解析用户澄清反馈中的广告主信息，返回广告主ID列表。
 
@@ -89,7 +89,7 @@ def _resolve_advertiser_from_feedback(feedback: str) -> list:
 
     # 非数字 → 当作名称搜索
     from src.services.advertiser_service import get_advertiser_by_name
-    results = get_advertiser_by_name(feedback)
+    results = await get_advertiser_by_name(feedback)
     return [r["id"] for r in results]
 
 async def nlu_node(state: dict) -> dict:
@@ -168,7 +168,7 @@ async def advertiser_handle_node(state: dict) -> dict:
 
     if show_advertiser_list:
         # 展示广告主列表
-        advertisers = get_all_advertisers()
+        advertisers = await get_all_advertisers()
         final_report = {
             "title": "可用的广告主列表",
             "time_range": {"start": "", "end": ""},
@@ -211,7 +211,7 @@ async def advertiser_handle_node(state: dict) -> dict:
             }
         else:
             # 没有相似建议，展示所有广告主列表
-            advertisers = get_all_advertisers()
+            advertisers = await get_all_advertisers()
             final_report = {
                 "title": "未找到匹配的广告主，请选择正确的名称",
                 "time_range": {"start": "", "end": ""},
@@ -234,7 +234,7 @@ async def advertiser_handle_node(state: dict) -> dict:
 
     if need_advertiser_selection:
         # 提示用户选择广告主
-        advertisers = get_all_advertisers()
+        advertisers = await get_all_advertisers()
         final_report = {
             "title": "请选择要查看的广告主",
             "time_range": {"start": "", "end": ""},
@@ -794,7 +794,7 @@ async def reject_node_entry(state: dict) -> dict:
     return await reject_node_impl(state)
 
 
-def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> dict:
+async def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> dict:
     """
     构建 NL→DSL 成功的 final_report
 
@@ -1048,7 +1048,7 @@ def _build_nl_dsl_final_report(result, user_input: str, report_intent: dict) -> 
             name_maps = {}
             for entity_type, ids in entity_ids_by_type.items():
                 if ids:
-                    name_maps[entity_type] = get_entity_names(entity_type, list(ids))
+                    name_maps[entity_type] = await get_entity_names(entity_type, list(ids))
                     print(f"[debug-name] got {entity_type} names: {len(name_maps[entity_type])} names for {sorted(list(ids))} → {name_maps[entity_type]}")
                     logger.info(f"[debug-name] got {entity_type} names: {len(name_maps[entity_type])} names for {sorted(list(ids))} → {name_maps[entity_type]}")
                 else:
@@ -1263,7 +1263,7 @@ async def nl_dsl_node(state: dict) -> dict:
             return updates
 
         # 5. 成功：构建 final_report
-        final_report = _build_nl_dsl_final_report(result, user_input, report_intent)
+        final_report = await _build_nl_dsl_final_report(result, user_input, report_intent)
         updates["final_report"] = final_report
         updates["nl_dsl_result"] = result.model_dump()
 
@@ -1323,7 +1323,7 @@ async def analysis_node(state: dict) -> dict:
     - 处理澄清后的重新进入（cot_clarification 和 quality_hitl）
     """
     import time
-    from src.tools.custom_report_client import es_client
+    from src.tools.custom_report_client import custom_report_client
 
     # 延迟导入 CoT 分析模块
     try:
@@ -1604,7 +1604,7 @@ async def analysis_node(state: dict) -> dict:
         await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 3: FilterExecutor started")
 
-        filter_executor = FilterExecutor(es_client=es_client)
+        filter_executor = FilterExecutor(es_client=custom_report_client.es_client)
 
         # 构建时间范围
         plan_time_range = analysis_plan_result.analysis_plan.time_range
@@ -1613,7 +1613,7 @@ async def analysis_node(state: dict) -> dict:
             "end_date": plan_time_range.end_date
         }
 
-        filter_result = filter_executor.execute(
+        filter_result = await filter_executor.execute(
             filter_plan=analysis_plan_result.filter_plan,
             advertiser_ids=advertiser_ids,
             time_range=time_range_dict
@@ -1639,7 +1639,7 @@ async def analysis_node(state: dict) -> dict:
         await _push_sse_event(event)
         logger.info(f"[AnalysisNode] Step 3.5: EmptyResultChecker started")
 
-        empty_checker = EmptyResultChecker(es_client=es_client)
+        empty_checker = EmptyResultChecker(es_client=custom_report_client.es_client)
         empty_check_result = await empty_checker.async_check(
             analysis_plan=analysis_plan_result.analysis_plan,
             advertiser_ids=advertiser_ids,
@@ -1699,14 +1699,14 @@ async def analysis_node(state: dict) -> dict:
         entity_ids = filter_result.entity_ids
         entity_level = filter_result.entity_level
         if entity_ids and entity_level and len(entity_ids) > 0:
-            entity_name_resolver = get_entity_names(entity_level, entity_ids)
+            entity_name_resolver = await get_entity_names(entity_level, entity_ids)
 
         analysis_executor = AnalysisExecutor(
-            es_client=es_client,
+            es_client=custom_report_client.es_client,
             entity_name_resolver=entity_name_resolver
         )
 
-        analysis_result = analysis_executor.execute(
+        analysis_result = await analysis_executor.execute(
             analysis_plan=analysis_plan_result.analysis_plan,
             entity_ids=filter_result.entity_ids,
             entity_level=filter_result.entity_level,
@@ -1819,7 +1819,7 @@ async def analysis_node(state: dict) -> dict:
         logger.info(f"[AnalysisNode] Step 6: ReportFormatter started")
 
         report_formatter = ReportFormatter()
-        final_report = report_formatter.format(
+        final_report = await report_formatter.format(
             analysis_plan_result=analysis_plan_result,
             analysis_result=analysis_result,
             quality_result=quality_result,

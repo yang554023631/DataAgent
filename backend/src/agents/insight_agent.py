@@ -38,11 +38,11 @@ async def insight_agent(
     from src.tools.insight_rules import check_p11_advertiser_punished, check_p12_advertiser_arrears
     advertiser_level_insights = []
 
-    p11 = check_p11_advertiser_punished(query_result, query_context)
+    p11 = await check_p11_advertiser_punished(query_result, query_context)
     if p11:
         advertiser_level_insights.append(p11)
 
-    p12 = check_p12_advertiser_arrears(query_result, query_context)
+    p12 = await check_p12_advertiser_arrears(query_result, query_context)
     if p12:
         advertiser_level_insights.append(p12)
 
@@ -57,7 +57,7 @@ async def insight_agent(
     # 1. 调用规则引擎执行其他规则
     rule_insights = []
     if not no_data:
-        rule_insights = rule_engine.analyze(query_result, query_context)
+        rule_insights = await rule_engine.analyze(query_result, query_context)
         logger.info(f"规则引擎发现 {len(rule_insights)} 个洞察")
 
     # 合并广告主层级洞察和其他洞察

@@ -3,28 +3,54 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 from elasticsearch import Elasticsearch
 from src.models import QueryRequest, QueryResult
-from src.mcp.config import mcp_config
-from src.main import mcp_manager
+from src.mcp_client.config import mcp_config
 
-# 根据配置选择 MCP 或直连
-if mcp_config.use_mcp and mcp_manager is not None:
-    # 使用 MCP 客户端
-    from src.search.elasticsearch_mcp import get_elasticsearch_mcp_client
-    _es_mcp_client = get_elasticsearch_mcp_client(mcp_manager)
+# 根据配置选择 MCP 或直连 - 延迟导入 mcp_manager 避免循环依赖
+_es_mcp_client = None
+es_client = None
 
-    class EsClientProxy:
-        """MCP 模式下的 ES 客户端代理，接口兼容原 Elasticsearch 客户端"""
-        async def search(self, index: str, query: Dict[str, Any], size: int, aggs: Dict[str, Any], timeout: str) -> Dict[str, Any]:
-            body = {
-                "query": query,
-                "size": size,
-                "aggs": aggs,
-                "timeout": timeout
-            }
-            return await _es_mcp_client.search(index, body)
-else:
-    # 原有直连模式
-    es_client = Elasticsearch(["http://localhost:9200"])
+def _init_client():
+    """延迟初始化客户端，避免循环导入"""
+    global _es_mcp_client, es_client
+    from src.main import mcp_manager
+
+    if mcp_config.use_mcp and mcp_manager is not None:
+        # 使用 MCP 客户端
+        from src.search.elasticsearch_mcp import get_elasticsearch_mcp_client
+        _es_mcp_client = get_elasticsearch_mcp_client(mcp_manager)
+
+        class EsClientProxy:
+            """MCP 模式下的 ES 客户端代理，接口兼容原 Elasticsearch 客户端"""
+            async def search(self, index: str, body: Dict[str, Any] = None, query: Dict[str, Any] = None, size: int = None, aggs: Dict[str, Any] = None, timeout: str = None, sort: List[Dict[str, Any]] = None, _source: Any = None) -> Dict[str, Any]:
+                """支持两种调用方式：
+                1. 原生 ES: search(index=index, body=dsl) - body 包含完整查询
+                2. CustomReportClient 风格: search(index=index, query=query, size=size, aggs=aggs, timeout=timeout, sort=sort, _source=_source)
+                """
+                if body is not None:
+                    # 原生方式：整个查询在 body 中
+                    return await _es_mcp_client.search(index, body)
+                else:
+                    # 分解参数方式 - only add non-None keys
+                    body = {}
+                    if query is not None:
+                        body["query"] = query
+                    if size is not None:
+                        body["size"] = size
+                    if aggs is not None:
+                        body["aggs"] = aggs
+                    if timeout is not None:
+                        body["timeout"] = timeout
+                    if sort is not None:
+                        body["sort"] = sort
+                    if _source is not None:
+                        body["_source"] = _source
+                    return await _es_mcp_client.search(index, body)
+
+        return EsClientProxy()
+    else:
+        # 原有直连模式
+        es_client = Elasticsearch(["http://localhost:9200"])
+        return es_client
 
 # data_type 映射
 DATA_TYPE_MAP = {
@@ -154,7 +180,7 @@ AUDIENCE_VALUE_MAPS = {
 }
 
 
-def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
+async def build_es_query(query_request, es_client) -> tuple[str, Dict[str, Any]]:
     """构建 ES 查询"""
     # 兼容 QueryRequest 对象和 dict
     if hasattr(query_request, 'model_dump'):
@@ -281,7 +307,7 @@ def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
                 if advertiser_ids:
                     must_clauses.append({"terms": {"advertiser_id": [int(aid) for aid in advertiser_ids]}})
 
-                search_result = es_client.search(
+                search_result = await es_client.search(
                     index=dim_index,
                     query={"bool": {"must": must_clauses}},
                     size=1000
@@ -442,7 +468,7 @@ def build_es_query(query_request) -> tuple[str, Dict[str, Any]]:
     return index, es_query
 
 
-def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> List[Dict[str, Any]]:
+async def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> List[Dict[str, Any]]:
     """解析 ES 查询结果"""
     result = []
 
@@ -595,7 +621,7 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
                             pass
                 if entity_ids:
                     # 查询名称
-                    names_map = get_entity_names("campaign", entity_ids)
+                    names_map = await get_entity_names("campaign", entity_ids)
                     # 补充名称列
                     name_col_name = DIMENSION_NAME_MAP.get("campaign_name", "campaign_name")
                     for row in result:
@@ -612,7 +638,7 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
                         except (ValueError, TypeError):
                             pass
                 if entity_ids:
-                    names_map = get_entity_names("adgroup", entity_ids)
+                    names_map = await get_entity_names("adgroup", entity_ids)
                     name_col_name = DIMENSION_NAME_MAP.get("adgroup_name", "adgroup_name")
                     for row in result:
                         if "广告组ID" in row:
@@ -628,7 +654,7 @@ def parse_es_result(response: Dict[str, Any], query_request, group_by: list) -> 
                         except (ValueError, TypeError):
                             pass
                 if entity_ids:
-                    names_map = get_entity_names("creative", entity_ids)
+                    names_map = await get_entity_names("creative", entity_ids)
                     name_col_name = DIMENSION_NAME_MAP.get("creative_name", "creative_name")
                     for row in result:
                         if "创意ID" in row:
@@ -688,10 +714,14 @@ class CustomReportClient:
     """
 
     def __init__(self):
-        if mcp_config.use_mcp and mcp_manager is not None:
-            self.es_client = EsClientProxy()
-        else:
-            self.es_client = es_client
+        self._es_client = None
+
+    @property
+    def es_client(self):
+        """延迟初始化，避免循环导入"""
+        if self._es_client is None:
+            self._es_client = _init_client()
+        return self._es_client
 
     async def execute_query(self, query_request: QueryRequest) -> QueryResult:
         """执行报表查询（直接查 ES）"""
@@ -702,9 +732,9 @@ class CustomReportClient:
             group_by = model_dict.get("group_by", [])
 
             # 构建 ES 查询
-            index, es_query = build_es_query(query_request)
+            index, es_query = await build_es_query(query_request, self.es_client)
 
-            response = self.es_client.search(
+            response = await self.es_client.search(
                 index=index,
                 query=es_query["query"],
                 size=es_query["size"],
@@ -713,7 +743,7 @@ class CustomReportClient:
             )
 
             # 解析结果
-            data = parse_es_result(response.body, query_request, group_by)
+            data = await parse_es_result(response.body, query_request, group_by)
 
             execution_time = int((time.time() - start_time) * 1000)
 
@@ -732,5 +762,15 @@ class CustomReportClient:
             )
 
 
-# 单例
-custom_report_client = CustomReportClient()
+# 单例 - 模块导入时不立即实例化，避免循环导入
+# 实际实例在第一次使用时创建
+_custom_report_client = None
+
+def __getattr__(name):
+    """延迟属性访问，解决循环导入问题"""
+    global _custom_report_client
+    if name == "custom_report_client":
+        if _custom_report_client is None:
+            _custom_report_client = CustomReportClient()
+        return _custom_report_client
+    raise AttributeError(f"module {__name__} has no attribute {name}")

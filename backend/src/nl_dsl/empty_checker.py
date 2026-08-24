@@ -106,13 +106,13 @@ class EmptyResultChecker:
             logger.info(f"EmptyResultChecker.async_check: got ids from filter_result: len={len(ids) if ids else 0}, level={level}")
 
         # 并行运行静态检查组和ES轻量查询组
+        # _run_static_checks is sync, _run_es_checks is async
         static_task = asyncio.to_thread(
             self._run_static_checks,
             analysis_plan=analysis_plan,
             entity_ids=ids,
         )
-        es_task = asyncio.to_thread(
-            self._run_es_checks,
+        es_task = self._run_es_checks(
             analysis_plan=analysis_plan,
             advertiser_ids=advertiser_ids,
             entity_ids=ids,
@@ -267,7 +267,7 @@ class EmptyResultChecker:
 
         return EmptyCheckResult(found_error=False)
 
-    def _run_es_checks(
+    async def _run_es_checks(
         self,
         analysis_plan: AnalysisPlan,
         advertiser_ids: List[str],
@@ -307,7 +307,7 @@ class EmptyResultChecker:
             filters.append({"terms": {level_field: entity_ids}})
 
         # 执行 1: 检查文档总数
-        doc_count = self._get_doc_count(filters)
+        doc_count = await self._get_doc_count(filters)
         logger.info(f"EmptyResultChecker _run_es_checks: doc_count={doc_count}, entity_ids len={len(entity_ids) if entity_ids else None}, entity_level={entity_level}")
         if doc_count == 0:
             return EmptyCheckResult(
@@ -344,7 +344,7 @@ class EmptyResultChecker:
                 logger.info(f"EmptyResultChecker adding entity filter: level={entity_level}, len(entity_ids)={len(entity_ids)}, first 5={entity_ids[:5]}, all int? {all(isinstance(x, int) for x in entity_ids)}")
                 core_filters.append({"terms": {level_field: entity_ids}})
 
-            core_sum = self._get_metrics_sum(core_filters, list(core_data_types))
+            core_sum = await self._get_metrics_sum(core_filters, list(core_data_types))
             if core_sum == 0:
                 return EmptyCheckResult(
                     found_error=True,
@@ -357,7 +357,7 @@ class EmptyResultChecker:
 
         return EmptyCheckResult(found_error=False)
 
-    def _get_doc_count(self, filters: List[Dict[str, Any]]) -> int:
+    async def _get_doc_count(self, filters: List[Dict[str, Any]]) -> int:
         """获取文档总数"""
         dsl = {
             "query": {
@@ -369,14 +369,14 @@ class EmptyResultChecker:
         }
 
         try:
-            response = self.es_client.search(index="ad_stat_data", body=dsl)
+            response = await self.es_client.search(index="ad_stat_data", body=dsl)
             return response.get("hits", {}).get("total", {}).get("value", 0)
         except Exception as e:
             logger.warning(f"Failed to get doc count: {str(e)}")
             # 出错时假设存在文档，继续后续流程
             return 1
 
-    def _get_metrics_sum(
+    async def _get_metrics_sum(
         self,
         filters: List[Dict[str, Any]],
         data_types: List[int],
@@ -403,7 +403,7 @@ class EmptyResultChecker:
         }
 
         try:
-            response = self.es_client.search(index="ad_stat_data", body=dsl)
+            response = await self.es_client.search(index="ad_stat_data", body=dsl)
             total_sum = 0.0
             aggregations = response.get("aggregations", {})
             for dt in data_types:

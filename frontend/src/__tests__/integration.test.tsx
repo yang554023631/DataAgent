@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { useChatStore } from '../stores/chatStore'
 import ChatMessage from '../components/ChatMessage'
 import { apiService } from '../services/api'
@@ -190,7 +190,7 @@ expect(messages[messages.length - 1].finalReportV2).toEqual(mockReport)
       mockStreamSuccess(finalReportAfterClarification)
 
       // Mock submitClarification to return our final report
-      apiService.submitClarification.mockResolvedValue({
+      (apiService.submitClarification as any).mockResolvedValue({
         result: {
           final_report: finalReportAfterClarification
         }
@@ -239,7 +239,7 @@ expect(messages[messages.length - 1].finalReportV2).toEqual(finalReportAfterClar
       mockStreamSuccess(finalReportAfterContinue)
 
       // Mock submitClarification to return our final report
-      apiService.submitClarification.mockResolvedValue({
+      (apiService.submitClarification as any).mockResolvedValue({
         result: {
           final_report: finalReportAfterContinue
         }
@@ -280,7 +280,7 @@ expect(messages[messages.length - 1].finalReportV2).toEqual(finalReportAfterCont
       mockStreamSuccess(finalReportAfterRephrase)
 
       // Mock submitClarification to return our final report
-      apiService.submitClarification.mockResolvedValue({
+      (apiService.submitClarification as any).mockResolvedValue({
         result: {
           final_report: finalReportAfterRephrase
         }

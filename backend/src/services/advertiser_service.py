@@ -1,14 +1,11 @@
 from typing import List, Dict, Any
-from elasticsearch import Elasticsearch
-
-# ES 客户端
-es_client = Elasticsearch(["http://localhost:9200"])
+from src.tools.custom_report_client import custom_report_client
 
 
-def get_all_advertisers() -> List[Dict[str, str]]:
+async def get_all_advertisers() -> List[Dict[str, str]]:
     """获取所有可用的广告主列表（从 ES）"""
     try:
-        response = es_client.search(
+        response = await custom_report_client.es_client.search(
             index="advertiser",
             query={"term": {"is_deleted": 0}},
             size=100,
@@ -26,11 +23,11 @@ def get_all_advertisers() -> List[Dict[str, str]]:
         return []
 
 
-def get_advertiser_by_id(advertiser_id: str) -> Dict[str, str]:
+async def get_advertiser_by_id(advertiser_id: str) -> Dict[str, str]:
     """根据 ID 获取广告主信息"""
     try:
         adv_id = int(advertiser_id) if isinstance(advertiser_id, str) else advertiser_id
-        response = es_client.search(
+        response = await custom_report_client.es_client.search(
             index="advertiser",
             query={"bool": {"must": [
                 {"term": {"advertiser_id": adv_id}},
@@ -48,10 +45,10 @@ def get_advertiser_by_id(advertiser_id: str) -> Dict[str, str]:
     return None
 
 
-def get_advertiser_by_name(name_keyword: str) -> List[Dict[str, str]]:
+async def get_advertiser_by_name(name_keyword: str) -> List[Dict[str, str]]:
     """根据名称关键词搜索广告主"""
     try:
-        response = es_client.search(
+        response = await custom_report_client.es_client.search(
             index="advertiser",
             query={"bool": {"must": [
                 {"match": {"advertiser_name": name_keyword}},
@@ -81,7 +78,7 @@ def is_advertiser_list_query(user_input: str) -> bool:
     return any(keyword in user_input for keyword in list_keywords)
 
 
-def extract_advertiser_from_input(user_input: str) -> List[str]:
+async def extract_advertiser_from_input(user_input: str) -> List[str]:
     """
     从用户输入中提取广告主（精确匹配模式）
 
@@ -89,7 +86,7 @@ def extract_advertiser_from_input(user_input: str) -> List[str]:
     1. 广告主完整名称出现在输入中（如 "mini_6_autumn"）
     2. 广告主 ID 数字精确匹配
     """
-    advertisers = get_all_advertisers()
+    advertisers = await get_all_advertisers()
     result = []
     import re
 
@@ -105,7 +102,7 @@ def extract_advertiser_from_input(user_input: str) -> List[str]:
     return result
 
 
-def get_similar_advertiser_names(input_text: str, top_n: int = 5) -> List[Dict[str, str]]:
+async def get_similar_advertiser_names(input_text: str, top_n: int = 5) -> List[Dict[str, str]]:
     """
     获取与输入文本相似的广告主名称列表（用于拼写纠错/建议）
 
@@ -114,7 +111,7 @@ def get_similar_advertiser_names(input_text: str, top_n: int = 5) -> List[Dict[s
     - 子串包含
     - 共同字符比例
     """
-    advertisers = get_all_advertisers()
+    advertisers = await get_all_advertisers()
 
     # 提取输入中的潜在广告主名称片段（支持中英文）
     import re

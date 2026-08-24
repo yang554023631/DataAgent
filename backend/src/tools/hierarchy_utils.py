@@ -4,8 +4,7 @@
 """
 from typing import Dict, List, Set, Tuple, Optional
 from datetime import datetime, timedelta
-from elasticsearch import Elasticsearch
-from .custom_report_client import es_client
+from .custom_report_client import custom_report_client
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,7 +30,7 @@ def get_date_range_from_query(time_range: Dict) -> Tuple[str, str]:
     return start_date, end_date
 
 
-def get_ad_groups_for_advertiser(
+async def get_ad_groups_for_advertiser(
     advertiser_ids: List[int],
     start_date: str,
     end_date: str
@@ -56,7 +55,7 @@ def get_ad_groups_for_advertiser(
     }
 
     try:
-        response = es_client.search(index="ad_stat_data", **query)
+        response = await custom_report_client.es_client.search(index="ad_stat_data", **query)
         ad_group_ids = {
             bucket["key"]
             for bucket in response["aggregations"]["by_adgroup"]["buckets"]
@@ -68,7 +67,7 @@ def get_ad_groups_for_advertiser(
         return set()
 
 
-def get_campaigns_for_ad_groups(
+async def get_campaigns_for_ad_groups(
     ad_group_ids: Set[int],
     start_date: str,
     end_date: str
@@ -93,7 +92,7 @@ def get_campaigns_for_ad_groups(
     }
 
     try:
-        response = es_client.search(index="ad_stat_data", **query)
+        response = await custom_report_client.es_client.search(index="ad_stat_data", **query)
         campaign_ids = {
             bucket["key"]
             for bucket in response["aggregations"]["by_campaign"]["buckets"]
@@ -105,7 +104,7 @@ def get_campaigns_for_ad_groups(
         return set()
 
 
-def get_creatives_for_ad_groups(
+async def get_creatives_for_ad_groups(
     ad_group_ids: Set[int],
     start_date: str,
     end_date: str
@@ -130,7 +129,7 @@ def get_creatives_for_ad_groups(
     }
 
     try:
-        response = es_client.search(index="ad_stat_data", **query)
+        response = await custom_report_client.es_client.search(index="ad_stat_data", **query)
         creative_ids = {
             bucket["key"]
             for bucket in response["aggregations"]["by_creative"]["buckets"]
@@ -142,7 +141,7 @@ def get_creatives_for_ad_groups(
         return set()
 
 
-def get_advertiser_hierarchy(
+async def get_advertiser_hierarchy(
     advertiser_ids: List[int],
     time_range: Dict
 ) -> Dict[str, Set[int]]:
@@ -163,9 +162,9 @@ def get_advertiser_hierarchy(
     """
     start_date, end_date = get_date_range_from_query(time_range)
 
-    ad_group_ids = get_ad_groups_for_advertiser(advertiser_ids, start_date, end_date)
-    campaign_ids = get_campaigns_for_ad_groups(ad_group_ids, start_date, end_date)
-    creative_ids = get_creatives_for_ad_groups(ad_group_ids, start_date, end_date)
+    ad_group_ids = await get_ad_groups_for_advertiser(advertiser_ids, start_date, end_date)
+    campaign_ids = await get_campaigns_for_ad_groups(ad_group_ids, start_date, end_date)
+    creative_ids = await get_creatives_for_ad_groups(ad_group_ids, start_date, end_date)
 
     return {
         "advertiser_ids": set(advertiser_ids),
@@ -175,7 +174,7 @@ def get_advertiser_hierarchy(
     }
 
 
-def get_advertiser_status(advertiser_ids: List[int]) -> Dict[int, Dict]:
+async def get_advertiser_status(advertiser_ids: List[int]) -> Dict[int, Dict]:
     """
     批量查询广告主状态信息
 
@@ -197,7 +196,7 @@ def get_advertiser_status(advertiser_ids: List[int]) -> Dict[int, Dict]:
     }
 
     try:
-        response = es_client.search(index="advertiser", **query)
+        response = await custom_report_client.es_client.search(index="advertiser", **query)
         result = {}
 
         for hit in response["hits"]["hits"]:
@@ -231,7 +230,7 @@ def get_advertiser_status(advertiser_ids: List[int]) -> Dict[int, Dict]:
         return {}
 
 
-def get_ad_group_level_metrics(
+async def get_ad_group_level_metrics(
     ad_group_ids: Set[int],
     start_date: str,
     end_date: str
@@ -279,7 +278,7 @@ def get_ad_group_level_metrics(
     }
 
     try:
-        response = es_client.search(index="ad_stat_data", **query)
+        response = await custom_report_client.es_client.search(index="ad_stat_data", **query)
         result = []
 
         for bucket in response["aggregations"]["by_adgroup"]["buckets"]:
@@ -315,7 +314,7 @@ def get_ad_group_level_metrics(
         return []
 
 
-def get_entity_names(entity_type: str, entity_ids: List[int]) -> Dict[int, str]:
+async def get_entity_names(entity_type: str, entity_ids: List[int]) -> Dict[int, str]:
     """
     批量查询实体名称（广告主/计划/广告组/创意）
 
@@ -351,7 +350,7 @@ def get_entity_names(entity_type: str, entity_ids: List[int]) -> Dict[int, str]:
     }
 
     try:
-        response = es_client.search(index=index_name, **query)
+        response = await custom_report_client.es_client.search(index=index_name, **query)
         result = {}
         for hit in response["hits"]["hits"]:
             source = hit["_source"]

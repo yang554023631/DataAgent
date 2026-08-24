@@ -2,10 +2,12 @@
 Elasticsearch MCP 客户端适配器
 通过 MCP Client 调用远程 ES MCP Server 执行查询，接口兼容原有直连版本
 """
+import logging
 from typing import List, Dict, Any, Optional
-from src.mcp.client import MCPClientManager
-from src.utils.logger import logger
+from src.mcp_client.client import MCPClientManager
 from mcp.types import CallToolResult
+
+logger = logging.getLogger(__name__)
 
 class ElasticsearchMCPClient:
     """Elasticsearch MCP 客户端，通过 MCP 协议执行只读搜索"""

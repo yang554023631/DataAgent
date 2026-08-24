@@ -191,7 +191,7 @@ describe('ChatMessage', () => {
       time_range: { start: '', end: '' },
       metrics: [],  // 空数组，没有指标数据
       highlights: [
-        { type: 'info', text: '💡 点击以下广告主名称即可查看对应数据' },
+        { type: 'info' as const, text: '💡 点击以下广告主名称即可查看对应数据' },
       ],
       data_table: {
         columns: ['广告主ID', '广告主名称'],
@@ -265,7 +265,7 @@ describe('ChatMessage', () => {
         { name: '曝光量', value: '250,000', trend: 'up' as const },
       ],
       highlights: [
-        { type: 'positive', text: '点击量环比增长 15%' },
+        { type: 'positive' as const, text: '点击量环比增长 15%' },
       ],
       data_table: {
         columns: ['月份', '点击量', '曝光量'],

@@ -324,7 +324,7 @@ describe('ChartRenderer', () => {
         { date: '2026-04-02', campaign_name: '计划B', cost: 90 },
       ];
 
-      const { container } = render(
+      render(
         <ChartRenderer
           report={{ chart_config: chartConfig, is_comparison: false }}
           data={data}

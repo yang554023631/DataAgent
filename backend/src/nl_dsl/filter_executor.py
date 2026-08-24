@@ -54,7 +54,7 @@ class FilterExecutor:
         """
         self.es_client = es_client
 
-    def execute(
+    async def execute(
         self,
         filter_plan: FilterPlan,
         advertiser_ids: List[str],
@@ -111,7 +111,7 @@ class FilterExecutor:
 
             try:
                 # 执行步骤（带重试）
-                entity_ids = self._execute_step_with_retry(
+                entity_ids = await self._execute_step_with_retry(
                     step=step,
                     advertiser_ids=advertiser_ids,
                     time_range=time_range,
@@ -164,7 +164,7 @@ class FilterExecutor:
             truncated=any(t.get("truncated", False) for t in trace),
         )
 
-    def _execute_step_with_retry(
+    async def _execute_step_with_retry(
         self,
         step: FilterStep,
         advertiser_ids: List[str],
@@ -190,7 +190,7 @@ class FilterExecutor:
 
         for attempt in range(1, max_attempts + 1):
             try:
-                return self._execute_step(
+                return await self._execute_step(
                     step=step,
                     advertiser_ids=advertiser_ids,
                     time_range=time_range,
@@ -206,7 +206,7 @@ class FilterExecutor:
 
         raise last_exception
 
-    def _execute_step(
+    async def _execute_step(
         self,
         step: FilterStep,
         advertiser_ids: List[str],
@@ -229,7 +229,7 @@ class FilterExecutor:
         """
         # 对于 cross_level_down，需要两个步骤
         if step.step_type == "cross_level_down":
-            return self._execute_cross_level_down(
+            return await self._execute_cross_level_down(
                 step=step,
                 advertiser_ids=advertiser_ids,
                 time_range=time_range,
@@ -238,7 +238,7 @@ class FilterExecutor:
             )
 
         # 构建 DSL，如果所有条件都是维度表独有，我们已经得到匹配 IDs，直接返回
-        dsl, matched_ids = self._build_dsl_for_step(
+        dsl, matched_ids = await self._build_dsl_for_step(
             step=step,
             advertiser_ids=advertiser_ids,
             time_range=time_range,
@@ -256,7 +256,7 @@ class FilterExecutor:
 
         # 执行查询
         index = dsl.pop("index", step.index)
-        response = self.es_client.search(index=index, body=dsl)
+        response = await self.es_client.search(index=index, body=dsl)
 
         # 确定聚合路径
         if step.step_type == "cross_level_up":
@@ -271,7 +271,7 @@ class FilterExecutor:
 
         return entity_ids
 
-    def _build_dsl_for_step(
+    async def _build_dsl_for_step(
         self,
         step: FilterStep,
         advertiser_ids: List[str],
@@ -295,7 +295,7 @@ class FilterExecutor:
         step_type = step.step_type
 
         if step_type == "where_filter":
-            return self._build_where_filter_dsl(
+            return await self._build_where_filter_dsl(
                 step=step,
                 advertiser_ids=advertiser_ids,
                 previous_entity_ids=previous_entity_ids,
@@ -324,7 +324,7 @@ class FilterExecutor:
         else:
             raise ValueError(f"Unknown step type: {step_type}")
 
-    def _build_where_filter_dsl(
+    async def _build_where_filter_dsl(
         self,
         step: FilterStep,
         advertiser_ids: List[str],
@@ -412,7 +412,7 @@ class FilterExecutor:
                 "query": {"bool": {"must": must_clauses}},
                 "size": 1000,
             }
-            response = self.es_client.search(index=dim_index, body=dsl_dim)
+            response = await self.es_client.search(index=dim_index, body=dsl_dim)
 
             # 提取匹配到的 ID
             matched_ids = []
@@ -562,7 +562,7 @@ class FilterExecutor:
 
         return dsl
 
-    def _execute_cross_level_down(
+    async def _execute_cross_level_down(
         self,
         step: FilterStep,
         advertiser_ids: List[str],
@@ -658,7 +658,7 @@ class FilterExecutor:
                 "query": {"bool": {"must": must_clauses}},
                 "size": 1000,
             }
-            response = self.es_client.search(index=dim_index, body=dsl_dim)
+            response = await self.es_client.search(index=dim_index, body=dsl_dim)
 
             # 提取匹配到的 ID
             matched_ids = []
@@ -705,7 +705,7 @@ class FilterExecutor:
 
         # 执行第一步查询
         index_step1 = dsl_step1.pop("index", step.index)
-        response_step1 = self.es_client.search(index=index_step1, body=dsl_step1)
+        response_step1 = await self.es_client.search(index=index_step1, body=dsl_step1)
 
         # 提取高层级 ID
         high_level_ids = extract_entity_ids(response_step1, f"by_{high_level}")
@@ -760,7 +760,7 @@ class FilterExecutor:
 
         # 执行第二步查询
         index_step2 = dsl_step2.pop("index", target_level)
-        response_step2 = self.es_client.search(index=index_step2, body=dsl_step2)
+        response_step2 = await self.es_client.search(index=index_step2, body=dsl_step2)
 
         # 提取目标层级 ID
         return extract_entity_ids(response_step2, f"by_{target_level}")
