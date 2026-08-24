@@ -1,0 +1,32 @@
+# DataAgent Backend Dockerfile
+# FastAPI backend with MCP Client
+# Optimizations:
+#  - Use Tsinghua PyPI mirror for faster download in China
+#  - Install CPU-only torch (no CUDA) - much smaller (~190MB vs ~2GB)
+#  - Use pip with requirements.txt - avoids poetry pulling unnecessary CUDA packages from lock file
+
+FROM python:3.12-slim
+
+WORKDIR /app/backend
+
+# Use Tsinghua PyPI mirror for faster downloads
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+
+# Copy requirements.txt
+COPY backend/requirements.txt ./
+
+# Install all dependencies first from Tsinghua mirror (fast)
+# Then reinstall torch with CPU-only version from pytorch.org to avoid pulling CUDA packages
+RUN pip install --no-cache-dir --default-timeout=300 -r requirements.txt && \
+    pip install --no-cache-dir --default-timeout=300 "torch>=2.0.0" --force-reinstall --index-url https://download.pytorch.org/whl/cpu
+
+# Copy backend source
+COPY backend/src/ ./src/
+COPY backend/config/ ./config/
+COPY backend/.env* ./
+
+# Expose port
+EXPOSE 8000
+
+# Start FastAPI with uvicorn
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
