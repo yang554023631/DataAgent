@@ -13,6 +13,7 @@ interface ChatState {
   hitlType: 'cot_clarification' | 'quality_hitl' | null;
   qualityIssues: QualityIssueV2[];
   error: string | null;
+  finalReportV2: FinalReportV2 | null;
   _streamCleanup?: () => void;
 
   initSession: () => Promise<void>;
@@ -33,6 +34,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   hitlType: null,
   qualityIssues: [],
   error: null,
+  finalReportV2: null,
 
   initSession: async () => {
     try {

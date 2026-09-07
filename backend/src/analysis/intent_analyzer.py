@@ -283,6 +283,9 @@ class RuleBasedExtractor:
         ],
         AnalysisType.ENTITY_TABLE: [
             '列表', '排名', 'top', '前', '最高', '最低', '最好', '最差',
+            '列出', '找出', '哪些', '有哪些', '是哪些', '表格', '所有', '各个',
+            '排序', '按.*排序', '按.*排',
+            '只看前', '前五', '前五名', '三个', '五个',
             'list', 'rank', 'sort', 'order'
         ],
         AnalysisType.SUMMARY: [

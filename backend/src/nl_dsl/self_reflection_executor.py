@@ -284,15 +284,13 @@ def get_self_reflection_executor() -> SelfReflectionExecutor:
     """获取 SelfReflectionExecutor 单例"""
     global _executor_instance
     if _executor_instance is None:
-        from elasticsearch import Elasticsearch
+        from src.tools.custom_report_client import custom_report_client
         from .dsl_generator import get_dsl_generator
 
-        # TODO: 生产环境从配置文件读取 ES 地址
-        es_client = Elasticsearch(["http://localhost:9200"])
         generator = get_dsl_generator()
 
         _executor_instance = SelfReflectionExecutor(
-            es_client=es_client,
+            es_client=custom_report_client.es_client,
             dsl_generator=generator,
         )
     return _executor_instance

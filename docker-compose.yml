@@ -1,0 +1,113 @@
+version: '3.8'
+
+# Docker Compose for complete DataAgent with MCP servers
+# All five services:
+# - postgres: PostgreSQL for RAG vector storage (fewshot examples)
+# - mcp-postgres: PostgreSQL MCP server (readonly query only, SSE mode)
+# - mcp-elasticsearch: Elasticsearch MCP server (readonly query only, SSE mode)
+# - dataagent-backend: DataAgent FastAPI backend
+# - dataagent-frontend: DataAgent React frontend
+
+services:
+  # PostgreSQL for RAG vector storage (stores few-shot examples embeddings)
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: dataagent-postgres
+    environment:
+      - POSTGRES_USER=${RAG_DB_USER:-postgres}
+      - POSTGRES_PASSWORD=${RAG_DB_PASSWORD:-postgres}
+      - POSTGRES_DB=${RAG_DB_NAME:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+  # PostgreSQL MCP Server (readonly ad-hoc queries)
+  mcp-postgres:
+    build:
+      context: ../mcp-postgres
+      dockerfile: Dockerfile
+    container_name: mcp-postgres
+    ports:
+      - "8001:8001"
+    environment:
+      - TRANSPORT=sse
+      - POSTGRES_CONNECTION_STRING=${PG_DATABASE_URL}
+      - HOST=0.0.0.0
+      - PORT=8001
+      # Optional: - MCP_API_KEY=${MCP_POSTGRES_API_KEY}
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    networks:
+      - mcp-network
+
+  # Elasticsearch MCP Server (readonly ad-hoc queries)
+  mcp-elasticsearch:
+    build:
+      context: ../mcp-elasticsearch
+      dockerfile: Dockerfile
+    container_name: mcp-elasticsearch
+    ports:
+      - "8002:8002"
+    environment:
+      - TRANSPORT=sse
+      - ELASTICSEARCH_URL=${ELASTICSEARCH_URL}
+      - HOST=0.0.0.0
+      - PORT=8002
+      # Optional: - MCP_API_KEY=${MCP_ELASTICSEARCH_API_KEY}
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+  # DataAgent Backend (FastAPI)
+  dataagent-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: dataagent-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - USE_MCP=true
+      # MCP servers are accessed via Docker DNS
+      - MCP_POSTGRES_URL=http://mcp-postgres:8001/sse
+      - MCP_ELASTICSEARCH_URL=http://mcp-elasticsearch:8002/sse
+      # RAG PostgreSQL connection (this is the vector DB for few-shot examples)
+      # Connects to the postgres container in this compose network
+      - RAG_DB_HOST=postgres
+      - RAG_DB_PORT=5432
+      - RAG_DB_USER=${RAG_DB_USER:-postgres}
+      - RAG_DB_PASSWORD=${RAG_DB_PASSWORD:-postgres}
+      - RAG_DB_NAME=${RAG_DB_NAME:-postgres}
+    depends_on:
+      - postgres
+      - mcp-postgres
+      - mcp-elasticsearch
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+  # DataAgent Frontend (React + Nginx)
+  dataagent-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: dataagent-frontend
+    ports:
+      - "3001:3001"
+    depends_on:
+      - dataagent-backend
+    restart: unless-stopped
+    networks:
+      - mcp-network
+
+volumes:
+  postgres-data:
+
+networks:
+  mcp-network:
+    driver: bridge

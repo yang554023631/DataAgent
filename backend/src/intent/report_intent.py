@@ -162,7 +162,7 @@ class ReportIntentAnalyzer:
 
     # ---- 规则工具校验（与 LLM 结果交叉验证）----
 
-    def _rule_validate(self, result: ReportIntentResult, user_input: str) -> List[str]:
+    async def _rule_validate(self, result: ReportIntentResult, user_input: str) -> List[str]:
         """
         用规则工具校验 LLM 提取结果，返回不一致的字段列表
 
@@ -240,7 +240,7 @@ class ReportIntentAnalyzer:
 
         # 1. 如果advertiser_ids为空，从输入中搜索
         if not result.advertiser_ids:
-            matched_ids = extract_advertiser_from_input(user_input)
+            matched_ids = await extract_advertiser_from_input(user_input)
             if matched_ids:
                 result.advertiser_ids = matched_ids
                 logger.info(f"Name search extracted advertiser_ids: {matched_ids}")
@@ -253,7 +253,7 @@ class ReportIntentAnalyzer:
                     all_valid = False
                     break
             if not all_valid:
-                matched_ids = extract_advertiser_from_input(user_input)
+                matched_ids = await extract_advertiser_from_input(user_input)
                 if matched_ids:
                     result.advertiser_ids = matched_ids
                     logger.info(f"Name search replaced advertiser_ids: {matched_ids}")
@@ -296,7 +296,7 @@ class ReportIntentAnalyzer:
         if result.advertiser_names:
             from src.services.advertiser_service import get_advertiser_by_name
             for name in result.advertiser_names:
-                matched_advertisers = get_advertiser_by_name(name)
+                matched_advertisers = await get_advertiser_by_name(name)
                 for adv in matched_advertisers:
                     adv_id = adv["id"]
                     if adv_id not in result.advertiser_ids:
@@ -494,7 +494,7 @@ class ReportIntentAnalyzer:
             result.ad_level = existing_ad_level
             logger.debug(f"继承广告层级: {existing_ad_level}")
 
-    def _build_advertiser_lookup_report(self, result: ReportIntentResult) -> Optional[dict]:
+    async def _build_advertiser_lookup_report(self, result: ReportIntentResult) -> Optional[dict]:
         """
         基于 LLM 结构化提取结果，判断是否为纯广告主查询并生成 final_report。
 
@@ -525,7 +525,8 @@ class ReportIntentAnalyzer:
 
         if advertiser_ids:
             # 有具体广告主 ID → 返回广告主详情
-            advertisers = [get_advertiser_by_id(aid) for aid in advertiser_ids]
+            import asyncio
+            advertisers = await asyncio.gather(*[get_advertiser_by_id(aid) for aid in advertiser_ids])
             advertisers = [a for a in advertisers if a]
 
             if not advertisers:
@@ -574,7 +575,7 @@ class ReportIntentAnalyzer:
                 }
         else:
             # 没有具体广告主 → 返回广告主列表
-            advertisers = get_all_advertisers()
+            advertisers = await get_all_advertisers()
             if not advertisers:
                 return {
                     "title": "暂无可用广告主",
@@ -662,7 +663,7 @@ class ReportIntentAnalyzer:
         # Step 2.5: 基于规则的交叉验证和合并（必须在能力校验之前）
         # 使用规则提取作为补充，LLM 漏提的指标/维度通过规则提取补充
         # 即使 LLM 置信度低，也先用规则补充，看是否能凑齐必填字段
-        self._rule_validate(result, user_input)
+        await self._rule_validate(result, user_input)
 
         if result.confidence < 0.2:
             # 置信度太低，但先检查规则提取是否已经凑齐必填字段
@@ -684,7 +685,7 @@ class ReportIntentAnalyzer:
 
         # Step 3: 基于 LLM 结构化结果判断是否为纯广告主查询
         # （完全基于 LLM 输出的结构化字段，不依赖关键词规则）
-        final_report = self._build_advertiser_lookup_report(result)
+        final_report = await self._build_advertiser_lookup_report(result)
         if final_report is not None:
             logger.info(f"报表意图识别: 判定为纯广告主查询（基于LLM结构化结果），直接返回结果")
             route_info = {"route": "advertiser_lookup", "reason": "纯广告主查询", "analysis_type": "qa"}

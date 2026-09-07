@@ -1,0 +1,42 @@
+# MCP (Model Context Protocol) 配置
+# use_mcp: 是否启用 MCP 模式（true 使用 MCP Client 连接，false 使用原有直连）
+use_mcp: true
+
+# MCP Server 连接配置
+# 每个 server 支持两种类型：
+#   type: stdio - 本地子进程，通过标准输入输出通信（单机单容器推荐）
+#   type: sse - 远程服务，通过 SSE over HTTP 通信（分布式/多容器 Docker 推荐）
+servers:
+  postgres:
+    # 本地开发 stdio 模式
+    # type: stdio
+    # command: node
+    # args:
+    #   - /Users/simon/AL/mcp-postgres/dist/index.js
+    #   - --transport
+    #   - stdio
+    #   - -c
+    #   - ${PG_DATABASE_URL}
+    # # api_key 不需要（stdio 本地不需要认证）
+
+    # Docker Compose 部署：SSE 模式（独立容器）
+    type: sse
+    url: "http://mcp-postgres:8001/sse"
+    # api_key: "${MCP_POSTGRES_API_KEY}"
+
+  elasticsearch:
+    # 本地开发 stdio 模式
+    # type: stdio
+    # command: /Users/simon/miniconda3/bin/python
+    # args:
+    #   - -m
+    #   - mcp_elasticsearch
+    #   - --transport
+    #   - stdio
+    #   - --url
+    #   - "http://localhost:9200"
+
+    # Docker Compose 部署：SSE 模式（独立容器）
+    type: sse
+    url: "http://mcp-elasticsearch:8002/sse"
+    # api_key: "${MCP_ELASTICSEARCH_API_KEY}"

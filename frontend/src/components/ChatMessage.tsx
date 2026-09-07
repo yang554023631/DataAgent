@@ -37,7 +37,11 @@ export default function ChatMessage({ message, onSuggestionClick }: ChatMessageP
             {message.finalReport.metrics.length > 0 && (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 {message.finalReport.metrics.map((metric, idx) => (
-                  <MetricCard key={idx} {...metric} />
+                  <MetricCard
+                    key={idx}
+                    {...metric}
+                    trend={metric.trend as ('up' | 'down' | 'flat' | undefined)}
+                  />
                 ))}
               </div>
             )}

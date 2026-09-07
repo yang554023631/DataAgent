@@ -41,7 +41,7 @@ class AnalysisExecutor:
         self.es_client = es_client
         self.entity_name_resolver = entity_name_resolver or {}
 
-    def execute(
+    async def execute(
         self,
         analysis_plan: AnalysisPlan,
         entity_ids: Optional[List[Any]] = None,
@@ -91,7 +91,7 @@ class AnalysisExecutor:
 
             # 根据分析类型执行相应的分析
             if analysis_plan.analysis_type == "time_trend":
-                result = self._execute_time_trend(
+                result = await self._execute_time_trend(
                     analysis_plan=analysis_plan,
                     entity_ids=entity_ids,
                     entity_level=entity_level,
@@ -102,7 +102,7 @@ class AnalysisExecutor:
                     trace=trace,
                 )
             elif analysis_plan.analysis_type == "entity_table":
-                result = self._execute_entity_table(
+                result = await self._execute_entity_table(
                     analysis_plan=analysis_plan,
                     entity_ids=entity_ids,
                     entity_level=entity_level,
@@ -112,7 +112,7 @@ class AnalysisExecutor:
                     trace=trace,
                 )
             elif analysis_plan.analysis_type == "period_comparison":
-                result = self._execute_period_comparison(
+                result = await self._execute_period_comparison(
                     analysis_plan=analysis_plan,
                     entity_ids=entity_ids,
                     entity_level=entity_level,
@@ -122,7 +122,7 @@ class AnalysisExecutor:
                     trace=trace,
                 )
             elif analysis_plan.analysis_type == "audience_distribution":
-                result = self._execute_audience_distribution(
+                result = await self._execute_audience_distribution(
                     analysis_plan=analysis_plan,
                     entity_ids=entity_ids,
                     entity_level=entity_level,
@@ -132,7 +132,7 @@ class AnalysisExecutor:
                     trace=trace,
                 )
             elif analysis_plan.analysis_type == "summary":
-                result = self._execute_summary(
+                result = await self._execute_summary(
                     analysis_plan=analysis_plan,
                     entity_ids=entity_ids,
                     entity_level=entity_level,
@@ -154,7 +154,7 @@ class AnalysisExecutor:
                 trace=trace + [{"step": "execution", "status": "failed", "error": str(e)}],
             )
 
-    def _execute_time_trend(
+    async def _execute_time_trend(
         self,
         analysis_plan: AnalysisPlan,
         entity_ids: Optional[List[Any]],
@@ -225,7 +225,7 @@ class AnalysisExecutor:
             dsl["query"]["bool"]["filter"].append({"terms": {level_field: entity_ids}})
 
         # 执行查询（带重试）
-        response = self._execute_with_retry(dsl, "time_trend")
+        response = await self._execute_with_retry(dsl, "time_trend")
 
         # 提取数据
         trend_data = extract_trend_data(response, series_level=series_level)
@@ -309,7 +309,7 @@ class AnalysisExecutor:
             trace=trace,
         )
 
-    def _execute_entity_table(
+    async def _execute_entity_table(
         self,
         analysis_plan: AnalysisPlan,
         entity_ids: Optional[List[Any]],
@@ -355,7 +355,7 @@ class AnalysisExecutor:
             dsl["query"]["bool"]["filter"].append({"terms": {level_field: entity_ids}})
 
         # 执行查询（带重试）
-        response = self._execute_with_retry(dsl, "entity_table")
+        response = await self._execute_with_retry(dsl, "entity_table")
 
         # 提取数据
         table_data = extract_entity_table_data(response, group_by_level)
@@ -388,7 +388,7 @@ class AnalysisExecutor:
             trace=trace,
         )
 
-    def _execute_period_comparison(
+    async def _execute_period_comparison(
         self,
         analysis_plan: AnalysisPlan,
         entity_ids: Optional[List[Any]],
@@ -419,7 +419,7 @@ class AnalysisExecutor:
             dsl["query"]["bool"]["filter"].append({"terms": {level_field: entity_ids}})
 
         # 执行查询（带重试）
-        response = self._execute_with_retry(dsl, "period_comparison")
+        response = await self._execute_with_retry(dsl, "period_comparison")
 
         # 提取数据
         comparison_data = extract_comparison_data(response, analysis_plan.metrics)
@@ -506,7 +506,7 @@ class AnalysisExecutor:
             trace=trace,
         )
 
-    def _execute_audience_distribution(
+    async def _execute_audience_distribution(
         self,
         analysis_plan: AnalysisPlan,
         entity_ids: Optional[List[Any]],
@@ -551,7 +551,7 @@ class AnalysisExecutor:
             dsl["query"]["bool"]["filter"].append({"terms": {level_field: entity_ids}})
 
         # 执行查询（带重试）
-        response = self._execute_with_retry(dsl, "audience_distribution")
+        response = await self._execute_with_retry(dsl, "audience_distribution")
 
         # 提取数据
         audience_data = extract_audience_data(response)
@@ -630,7 +630,7 @@ class AnalysisExecutor:
             trace=trace,
         )
 
-    def _execute_summary(
+    async def _execute_summary(
         self,
         analysis_plan: AnalysisPlan,
         entity_ids: Optional[List[Any]],
@@ -656,7 +656,7 @@ class AnalysisExecutor:
             dsl["query"]["bool"]["filter"].append({"terms": {level_field: entity_ids}})
 
         # 执行查询（带重试）
-        response = self._execute_with_retry(dsl, "summary")
+        response = await self._execute_with_retry(dsl, "summary")
 
         # 提取数据
         summary_data = extract_summary_data(response, analysis_plan.metrics)
@@ -689,7 +689,7 @@ class AnalysisExecutor:
             trace=trace,
         )
 
-    def _execute_with_retry(self, dsl: Dict[str, Any], step_name: str) -> Dict[str, Any]:
+    async def _execute_with_retry(self, dsl: Dict[str, Any], step_name: str) -> Dict[str, Any]:
         """执行查询（带重试）"""
         max_attempts = 2  # 1 次重试，共 2 次尝试
         last_exception = None
@@ -697,7 +697,7 @@ class AnalysisExecutor:
 
         for attempt in range(1, max_attempts + 1):
             try:
-                return self.es_client.search(index=index, body=dsl)
+                return await self.es_client.search(index=index, body=dsl)
             except Exception as e:
                 last_exception = e
                 if attempt < max_attempts:

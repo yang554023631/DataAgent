@@ -345,7 +345,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ report, data, groupBy = [
       // 如果只有单个维度列，直接使用该维度值
       // 如果有 series_field，每个点就是一个分类，将 x_field + series_field 组合起来更清晰
       let category: string;
-      if (report?.chart_config?.series_field && dimensionColumns.length === 1) {
+      if (report?.chart_config?.series_field && dimensionColumns.length === 1 && xField) {
         // When we have a series field (like 'period'), combine it with x field for better readability
         const xVal = String(item[xField]) || '';
         const seriesVal = String(item[report.chart_config.series_field]) || '';

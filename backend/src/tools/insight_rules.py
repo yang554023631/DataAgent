@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from src.models.insight import Insight, InsightType, Severity, InsightSource
 from src.tools.insight_config import insight_config
-from src.tools.custom_report_client import es_client
+from src.tools.custom_report_client import custom_report_client
 from src.tools.hierarchy_utils import get_advertiser_status
 import logging
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # ============ ES查询辅助函数 ============
 
-def _query_daily_metrics(ad_group_id: int = None, creative_id: int = None,
+async def _query_daily_metrics(ad_group_id: int = None, creative_id: int = None,
                          start_date: str = None, end_date: str = None) -> List[Dict[str, Any]]:
     """查询按天聚合的基础指标（曝光、点击、消耗、转化、触达）"""
     must_conditions = []
@@ -39,7 +39,7 @@ def _query_daily_metrics(ad_group_id: int = None, creative_id: int = None,
         }
     }
 
-    response = es_client.search(index="ad_stat_data", body=query)
+    response = await custom_report_client.es_client.search(index="ad_stat_data", body=query)
     daily_data = []
     for bucket in response["aggregations"]["by_date"]["buckets"]:
         daily_data.append({
@@ -55,7 +55,7 @@ def _query_daily_metrics(ad_group_id: int = None, creative_id: int = None,
     daily_data.sort(key=lambda x: x["date"])
     return daily_data
 
-def _query_device_metrics(ad_group_id: int = None, creative_id: int = None,
+async def _query_device_metrics(ad_group_id: int = None, creative_id: int = None,
                           start_date: str = None, end_date: str = None) -> Dict[str, Dict[str, Any]]:
     """查询按设备（操作系统）聚合的指标"""
     must_conditions = [{"term": {"audience_type": 3}}]  # 操作系统
@@ -82,7 +82,7 @@ def _query_device_metrics(ad_group_id: int = None, creative_id: int = None,
         }
     }
 
-    response = es_client.search(index="ad_stat_audience", body=query)
+    response = await custom_report_client.es_client.search(index="ad_stat_audience", body=query)
     device_map = {1: "iOS", 2: "Android", 3: "其他"}
     result = {}
     for bucket in response["aggregations"]["by_device"]["buckets"]:
@@ -96,7 +96,7 @@ def _query_device_metrics(ad_group_id: int = None, creative_id: int = None,
         }
     return result
 
-def _query_region_metrics(ad_group_id: int = None, creative_id: int = None,
+async def _query_region_metrics(ad_group_id: int = None, creative_id: int = None,
                           start_date: str = None, end_date: str = None) -> Dict[str, Dict[str, Any]]:
     """查询按地域（城市）聚合的指标"""
     must_conditions = [{"term": {"audience_type": 7}}]  # 假设7是城市
@@ -125,7 +125,7 @@ def _query_region_metrics(ad_group_id: int = None, creative_id: int = None,
     }
 
     try:
-        response = es_client.search(index="ad_stat_audience", body=query)
+        response = await custom_report_client.es_client.search(index="ad_stat_audience", body=query)
         result = {}
         for bucket in response["aggregations"]["by_region"]["buckets"]:
             region_id = bucket["key"]
@@ -140,7 +140,7 @@ def _query_region_metrics(ad_group_id: int = None, creative_id: int = None,
     except:
         return {}
 
-def _batch_query_audience_metrics(
+async def _batch_query_audience_metrics(
     ids: List[int],
     id_field: str = "creative_id",
     audience_type: int = 3,
@@ -199,7 +199,7 @@ def _batch_query_audience_metrics(
         }
 
         try:
-            response = es_client.search(index="ad_stat_audience", body=query)
+            response = await custom_report_client.es_client.search(index="ad_stat_audience", body=query)
             for id_bucket in response["aggregations"]["by_id"]["buckets"]:
                 item_id = int(id_bucket["key"])
                 tags = {}
@@ -220,7 +220,7 @@ def _batch_query_audience_metrics(
     return result
 
 
-def _get_audience_data_from_cache(
+async def _get_audience_data_from_cache(
     query_result: Dict[str, Any],
     query_context: Dict[str, Any],
     audience_type: int,
@@ -274,14 +274,14 @@ def _get_audience_data_from_cache(
     return audience_cache, rows_by_id, id_field
 
 
-def _get_ad_group_time_range(ad_group_id: int) -> Tuple[Optional[str], Optional[str]]:
+async def _get_ad_group_time_range(ad_group_id: int) -> Tuple[Optional[str], Optional[str]]:
     """从adgroup表获取投放时间范围"""
     try:
         query = {
             "query": {"term": {"ad_group_id": ad_group_id}},
             "size": 1
         }
-        response = es_client.search(index="adgroup", body=query)
+        response = await custom_report_client.es_client.search(index="adgroup", body=query)
         if response["hits"]["total"]["value"] > 0:
             source = response["hits"]["hits"][0]["_source"]
             return source.get("start_time"), source.get("end_time")
@@ -290,7 +290,7 @@ def _get_ad_group_time_range(ad_group_id: int) -> Tuple[Optional[str], Optional[
     return None, None
 
 
-def _batch_query_daily_metrics(
+async def _batch_query_daily_metrics(
     ids: List[int],
     id_field: str = "creative_id",
     batch_size: int = 30,
@@ -350,7 +350,7 @@ def _batch_query_daily_metrics(
         }
 
         try:
-            response = es_client.search(index="ad_stat_data", body=query)
+            response = await custom_report_client.es_client.search(index="ad_stat_data", body=query)
             for id_bucket in response["aggregations"]["by_id"]["buckets"]:
                 item_id = int(id_bucket["key"])
                 daily = []
@@ -395,20 +395,32 @@ class RuleEngine:
         self._rules.append(rule)
         logger.info(f"注册规则: {rule.rule_id} - {rule.name}")
 
-    def analyze(self, query_result: Dict[str, Any], query_context: Dict[str, Any]) -> List[Insight]:
+    async def analyze(self, query_result: Dict[str, Any], query_context: Dict[str, Any]) -> List[Insight]:
         """执行所有规则，返回洞察列表"""
         insights: List[Insight] = []
 
-        for rule in self._rules:
+        # 所有规则现在可能都是 async，使用 gather 并发执行
+        async def run_rule(rule: Rule) -> Optional[Insight]:
             try:
                 insight = rule.check_fn(query_result, query_context)
+                if insight is not None and hasattr(insight, '__await__'):
+                    insight = await insight
                 if insight:
-                    insights.append(insight)
                     logger.info(f"规则 {rule.rule_id} 触发洞察: {insight.name}")
+                return insight
+            except NameError:
+                # NameError 通常是代码错误（漏修改变量名等），不应该静默吃掉
+                logger.critical(f"规则 {rule.rule_id} 执行失败 - NameError: {str(e)}", exc_info=True)
+                raise
             except Exception as e:
                 logger.error(f"规则 {rule.rule_id} 执行失败: {str(e)}", exc_info=True)
                 # 单个规则失败不影响整体执行
-                continue
+                return None
+
+        results = await asyncio.gather(*[run_rule(rule) for rule in self._rules])
+        for result in results:
+            if result:
+                insights.append(result)
 
         return insights
 
@@ -419,7 +431,7 @@ rule_engine = RuleEngine()
 
 # ============ 辅助函数 ============
 
-def _get_nested_value(row: Dict[str, Any], keys: List[str]) -> Optional[float]:
+async def _get_nested_value(row: Dict[str, Any], keys: List[str]) -> Optional[float]:
     """获取嵌套值，支持多个可能的键名"""
     for key in keys:
         if key in row:
@@ -430,11 +442,11 @@ def _get_nested_value(row: Dict[str, Any], keys: List[str]) -> Optional[float]:
     return None
 
 
-def _avg(values: List[float]) -> float:
+async def _avg(values: List[float]) -> float:
     return sum(values) / len(values) if values else 0
 
 
-def _calc_metrics(row: Dict[str, Any]) -> Dict[str, float]:
+async def _calc_metrics(row: Dict[str, Any]) -> Dict[str, float]:
     """从基础指标自动计算衍生指标"""
     impressions = float(_get_nested_value(row, ["impressions", "曝光", "曝光量"]) or 0)
     clicks = float(_get_nested_value(row, ["clicks", "点击", "点击量"]) or 0)
@@ -458,12 +470,12 @@ def _calc_metrics(row: Dict[str, Any]) -> Dict[str, float]:
     }
 
 
-def _is_summary_row(name: str) -> bool:
+async def _is_summary_row(name: str) -> bool:
     """判断是否是汇总行"""
     return name in ["总计", "合计", "汇总", "total", "Total", ""]
 
 
-def _format_item_name(row: Dict[str, Any]) -> str:
+async def _format_item_name(row: Dict[str, Any]) -> str:
     """格式化素材名称，包含ID"""
     name = row.get("name", row.get("creative_name"))
     item_id = row.get("id", row.get("creative_id", ""))
@@ -616,7 +628,7 @@ def a03_low_cpc(query_result: Dict[str, Any], query_context: Dict[str, Any]) -> 
     )
 
 
-def _get_daily_data_from_cache(
+async def _get_daily_data_from_cache(
     query_result: Dict[str, Any],
     query_context: Dict[str, Any],
 ) -> Tuple[Dict[int, List[Dict[str, Any]]], Dict[int, Dict[str, Any]], str]:
@@ -667,7 +679,7 @@ def _get_daily_data_from_cache(
     return daily_data_cache, rows_by_id, id_field
 
 
-def _get_id_field_and_value(dimension: str, row: Dict[str, Any]) -> Optional[int]:
+async def _get_id_field_and_value(dimension: str, row: Dict[str, Any]) -> Optional[int]:
     """从数据行中提取ID，根据维度类型选择对应的字段名"""
     if dimension == "creative":
         val = row.get("创意ID") or row.get("creative_id") or row.get("id")
@@ -1653,7 +1665,7 @@ def check_p10_spend_volatility(query_result: Dict[str, Any], context: Dict[str, 
     )
 
 
-def check_p11_advertiser_punished(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
+async def check_p11_advertiser_punished(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
     """P11: 广告主合规惩罚检测"""
     if not insight_config.is_rule_enabled('P11_advertiser_punished'):
         return None
@@ -1662,7 +1674,7 @@ def check_p11_advertiser_punished(query_result: Dict[str, Any], context: Dict[st
     if not advertiser_ids:
         return None
 
-    status_map = get_advertiser_status(advertiser_ids)
+    status_map = await get_advertiser_status(advertiser_ids)
     punished_advertisers = [
         (adv_id, info)
         for adv_id, info in status_map.items()
@@ -1688,7 +1700,7 @@ def check_p11_advertiser_punished(query_result: Dict[str, Any], context: Dict[st
     )
 
 
-def check_p12_advertiser_arrears(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
+async def check_p12_advertiser_arrears(query_result: Dict[str, Any], context: Dict[str, Any]) -> Optional[Insight]:
     """P12: 广告主欠费检测"""
     if not insight_config.is_rule_enabled('P12_advertiser_arrears'):
         return None
@@ -1697,7 +1709,7 @@ def check_p12_advertiser_arrears(query_result: Dict[str, Any], context: Dict[str
     if not advertiser_ids:
         return None
 
-    status_map = get_advertiser_status(advertiser_ids)
+    status_map = await get_advertiser_status(advertiser_ids)
     arrears_advertisers = [
         (adv_id, info)
         for adv_id, info in status_map.items()

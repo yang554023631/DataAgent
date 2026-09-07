@@ -32,7 +32,7 @@ class ReportFormatter:
     """报告包装器"""
 
     @classmethod
-    def format(
+    async def format(
         cls,
         analysis_plan_result: AnalysisPlanResult = None,
         analysis_result: NlDslAnalysisResult = None,
@@ -128,9 +128,9 @@ class ReportFormatter:
 
         # 4. 格式化数据表格
         if analysis_result is not None and analysis_result.data_table is not None:
-            data_table = cls._format_analysis_data_table(analysis_result.data_table, analysis_plan.metrics, analysis_plan)
+            data_table = await cls._format_analysis_data_table(analysis_result.data_table, analysis_plan.metrics, analysis_plan)
         else:
-            data_table = cls._format_data_table(chart_data.get("data", []), analysis_plan.metrics if analysis_plan else [], analysis_plan)
+            data_table = await cls._format_data_table(chart_data.get("data", []), analysis_plan.metrics if analysis_plan else [], analysis_plan)
 
         # 5. 生成亮点
         highlights = cls._generate_highlights(
@@ -336,7 +336,7 @@ class ReportFormatter:
         return title_base
 
     @classmethod
-    def _format_data_table(cls, data: List[Dict[str, Any]], metrics: List[str], analysis_plan: AnalysisPlan = None) -> Dict[str, Any]:
+    async def _format_data_table(cls, data: List[Dict[str, Any]], metrics: List[str], analysis_plan: AnalysisPlan = None) -> Dict[str, Any]:
         """格式化数据表格（从字典列表）"""
         if not data:
             return {"columns": [], "rows": []}
@@ -379,7 +379,7 @@ class ReportFormatter:
         }
 
     @classmethod
-    def _format_analysis_data_table(cls, data_table, metrics: List[str], analysis_plan: AnalysisPlan = None) -> Dict[str, Any]:
+    async def _format_analysis_data_table(cls, data_table, metrics: List[str], analysis_plan: AnalysisPlan = None) -> Dict[str, Any]:
         """格式化数据表格（从 AnalysisDataTable 对象）"""
         if not data_table:
             return {"columns": [], "rows": []}
@@ -557,7 +557,7 @@ class ReportFormatter:
             name_maps = {}
             for entity_type, ids in entity_ids_by_type.items():
                 if ids:
-                    name_maps[entity_type] = get_entity_names(entity_type, list(ids))
+                    name_maps[entity_type] = await get_entity_names(entity_type, list(ids))
                 else:
                     name_maps[entity_type] = {}
 
