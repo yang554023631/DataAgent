@@ -1,56 +1,59 @@
 import time
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
-from elasticsearch import Elasticsearch
 from src.models import QueryRequest, QueryResult
-from src.mcp_client.config import mcp_config
+from src.search import SearchClient
 
-# 根据配置选择 MCP 或直连 - 延迟导入 mcp_manager 避免循环依赖
-_es_mcp_client = None
-es_client = None
 
-def _init_client():
-    """延迟初始化客户端，避免循环导入"""
-    global _es_mcp_client, es_client
-    from src.main import mcp_manager
+class _ESSearchCompat:
+    """SearchClient 兼容适配器：把分解参数的 search 调用转换为标准 body 形式
 
-    if mcp_config.use_mcp and mcp_manager is not None:
-        # 使用 MCP 客户端
-        from src.search.elasticsearch_mcp import get_elasticsearch_mcp_client
-        _es_mcp_client = get_elasticsearch_mcp_client(mcp_manager)
+    历史代码习惯用 es_client.search(index=..., query=..., size=..., aggs=..., sort=...)
+    而 SearchClient Protocol 定义的是 search(index, body)。
+    这个适配器做转换，避免大规模修改调用方。
+    """
 
-        class EsClientProxy:
-            """MCP 模式下的 ES 客户端代理，接口兼容原 Elasticsearch 客户端"""
-            async def search(self, index: str, body: Dict[str, Any] = None, query: Dict[str, Any] = None, size: int = None, aggs: Dict[str, Any] = None, timeout: str = None, sort: List[Dict[str, Any]] = None, _source: Any = None) -> Dict[str, Any]:
-                """支持两种调用方式：
-                1. 原生 ES: search(index=index, body=dsl) - body 包含完整查询
-                2. CustomReportClient 风格: search(index=index, query=query, size=size, aggs=aggs, timeout=timeout, sort=sort, _source=_source)
-                """
-                if body is not None:
-                    # 原生方式：整个查询在 body 中
-                    return await _es_mcp_client.search(index, body)
-                else:
-                    # 分解参数方式 - only add non-None keys
-                    body = {}
-                    if query is not None:
-                        body["query"] = query
-                    if size is not None:
-                        body["size"] = size
-                    if aggs is not None:
-                        body["aggs"] = aggs
-                    if timeout is not None:
-                        body["timeout"] = timeout
-                    if sort is not None:
-                        body["sort"] = sort
-                    if _source is not None:
-                        body["_source"] = _source
-                    return await _es_mcp_client.search(index, body)
+    def __init__(self, search_client: SearchClient):
+        self._client = search_client
 
-        return EsClientProxy()
-    else:
-        # 原有直连模式
-        es_client = Elasticsearch(["http://localhost:9200"])
-        return es_client
+    async def search(
+        self,
+        index: str,
+        body: Dict[str, Any] | None = None,
+        query: Dict[str, Any] | None = None,
+        size: int | None = None,
+        aggs: Dict[str, Any] | None = None,
+        timeout: str | None = None,
+        sort: List[Dict[str, Any]] | None = None,
+        _source: Any = None,
+    ) -> Dict[str, Any]:
+        """支持两种调用方式：
+        1. 标准方式：search(index=index, body=dsl) - body 包含完整查询
+        2. 分解参数方式：search(index=index, query=query, size=size, aggs=aggs, ...)
+        """
+        if body is not None:
+            return await self._client.search(index, body)
+
+        # 分解参数方式 - 只组装非 None 的 key
+        body = {}
+        if query is not None:
+            body["query"] = query
+        if size is not None:
+            body["size"] = size
+        if aggs is not None:
+            body["aggs"] = aggs
+        if timeout is not None:
+            body["timeout"] = timeout
+        if sort is not None:
+            body["sort"] = sort
+        if _source is not None:
+            body["_source"] = _source
+        return await self._client.search(index, body)
+
+    def __getattr__(self, name: str):
+        """透传其他属性/方法到原始 client"""
+        return getattr(self._client, name)
+
 
 # data_type 映射
 DATA_TYPE_MAP = {
@@ -710,18 +713,18 @@ async def parse_es_result(response: Dict[str, Any], query_request, group_by: lis
 class CustomReportClient:
     """CustomReport 服务客户端
 
-    根据配置自动选择：MCP 模式 / 直连模式
+    接收 SearchClient 作为依赖（依赖注入），便于测试和替换实现。
     """
 
-    def __init__(self):
-        self._es_client = None
-
-    @property
-    def es_client(self):
-        """延迟初始化，避免循环导入"""
-        if self._es_client is None:
-            self._es_client = _init_client()
-        return self._es_client
+    def __init__(self, es_client: SearchClient):
+        """
+        Args:
+            es_client: 实现了 SearchClient 接口的 ES 客户端
+        """
+        # 内部用兼容 wrapper，支持分解参数的 search 调用
+        self.es_client = _ESSearchCompat(es_client)
+        # 原始 client 引用，需要访问其他方法时用
+        self._search_client = es_client
 
     async def execute_query(self, query_request: QueryRequest) -> QueryResult:
         """执行报表查询（直接查 ES）"""
@@ -739,11 +742,11 @@ class CustomReportClient:
                 query=es_query["query"],
                 size=es_query["size"],
                 aggs=es_query["aggs"],
-                timeout=es_query["timeout"]
+                timeout=es_query["timeout"],
             )
 
             # 解析结果
-            data = await parse_es_result(response.body, query_request, group_by)
+            data = await parse_es_result(response, query_request, group_by)
 
             execution_time = int((time.time() - start_time) * 1000)
 
@@ -762,15 +765,119 @@ class CustomReportClient:
             )
 
 
-# 单例 - 模块导入时不立即实例化，避免循环导入
-# 实际实例在第一次使用时创建
-_custom_report_client = None
+def create_custom_report_client(es_client: SearchClient) -> CustomReportClient:
+    """工厂函数：创建 CustomReportClient 实例
 
-def __getattr__(name):
-    """延迟属性访问，解决循环导入问题"""
+    推荐使用依赖注入的方式，在应用启动时创建并传入调用方。
+
+    Args:
+        es_client: 实现了 SearchClient 接口的 ES 客户端
+
+    Returns:
+        CustomReportClient 实例
+    """
+    return CustomReportClient(es_client)
+
+
+# === 兼容层：全局单例（逐步迁移到依赖注入后可删除）===
+# 保留 custom_report_client 全局变量，避免大量调用方同时修改
+# 应用启动时通过 init_custom_report_client() 初始化
+_custom_report_client: CustomReportClient | None = None
+
+
+def init_custom_report_client(es_client: SearchClient) -> CustomReportClient:
+    """初始化全局 custom_report_client 单例（兼容层）
+
+    在应用启动时调用，替代原来的延迟初始化。
+    逐步迁移后可删除此函数。
+    """
     global _custom_report_client
-    if name == "custom_report_client":
-        if _custom_report_client is None:
-            _custom_report_client = CustomReportClient()
+    _custom_report_client = CustomReportClient(es_client)
+    return _custom_report_client
+
+
+def _auto_init_custom_report_client() -> CustomReportClient:
+    """自动初始化 custom_report_client（兼容层：懒加载 fallback）
+
+    当应用没有显式调用 init_custom_report_client() 时，
+    尝试从环境变量和默认配置自动初始化。
+    这是为了兼容直接 import 并使用 custom_report_client 的场景。
+
+    推荐在应用启动时显式调用 init_custom_report_client()。
+    """
+    global _custom_report_client
+
+    # 尝试从 mcp_manager 初始化（main.py 启动场景）
+    try:
+        from src.main import mcp_manager
+        if mcp_manager is not None:
+            from src.search import create_search_client
+            es_client = create_search_client(mcp_manager)
+            _custom_report_client = CustomReportClient(es_client)
+            return _custom_report_client
+    except (ImportError, RuntimeError):
+        pass
+
+    # fallback: 尝试直连 ES（测试脚本 / 独立运行场景）
+    # 默认 localhost:9200，和原来的直连模式行为一致
+    try:
+        from elasticsearch import AsyncElasticsearch
+
+        class _DirectESSearchClient:
+            """直连 ES 的 SearchClient 适配器"""
+            def __init__(self, es_url: str):
+                self._client = AsyncElasticsearch([es_url])
+
+            async def search(self, index: str, body: Dict[str, Any]) -> Dict[str, Any]:
+                return await self._client.search(index=index, body=body)
+
+            async def list_indices(self) -> List[str]:
+                result = await self._client.cat.indices(format="json")
+                return [idx["index"] for idx in result]
+
+            async def get_mapping(self, index: str) -> Dict[str, Any]:
+                return await self._client.indices.get_mapping(index=index)
+
+        # 默认 localhost:9200，与原直连模式行为一致
+        es_client = _DirectESSearchClient("http://localhost:9200")
+        _custom_report_client = CustomReportClient(es_client)
         return _custom_report_client
-    raise AttributeError(f"module {__name__} has no attribute {name}")
+    except Exception:
+        # 实在初始化不了，就抛一个清楚的错误
+        raise RuntimeError(
+            "custom_report_client not initialized. "
+            "Call init_custom_report_client(es_client) at startup, "
+            "or set ES_URL environment variable for direct connection."
+        )
+
+
+class _CustomReportClientProxy:
+    """全局 custom_report_client 的代理对象（懒加载兼容层）
+
+    import 时不检查是否初始化，真正调用方法时才懒加载初始化。
+    这样可以兼容模块级的 `from .custom_report_client import custom_report_client`。
+    """
+
+    def __getattr__(self, name: str):
+        if _custom_report_client is None:
+            _auto_init_custom_report_client()
+        return getattr(_custom_report_client, name)
+
+
+# 模块级导出：代理对象，import 时不报错
+custom_report_client = _CustomReportClientProxy()
+
+
+__all__ = [
+    "CustomReportClient",
+    "create_custom_report_client",
+    "init_custom_report_client",
+    "custom_report_client",  # 兼容旧代码
+    "DATA_TYPE_MAP",
+    "DIMENSION_NAME_MAP",
+    "AUDIENCE_VALUE_MAPS",
+    "FACT_INDEX",
+    "AUDIENCE_INDEX",
+    "build_es_query",
+    "parse_es_result",
+]

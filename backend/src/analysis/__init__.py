@@ -1,128 +1,49 @@
-"""CoT Analysis Planner Module"""
+"""
+CoT Analysis Planner Module
 
-from .prompts import (
-    COT_SYSTEM_PROMPT,
-    COT_USER_PROMPT_TEMPLATE,
-    build_cot_user_prompt,
-    build_field_context_section,
-    build_advertisers_section,
-    build_few_shot_section,
-)
-from .intent_analyzer import (
-    IntentAnalyzer,
-    IntentAnalysisResult,
-    RuleBasedExtractor,
-    create_intent_analyzer,
-)
-from .fewshot_retriever import (
-    FewshotRetriever,
-    RetrievedExample,
-    get_fewshot_retriever,
-)
-from .cot_planner import (
-    CotPlanner,
-    CotPlanResult,
-    CotResultStatus,
-    ClarificationRequest,
-    get_cot_planner,
-)
-from .report_formatter import (
-    ReportFormatter,
-)
+Public interface (deep module):
+- CotPlanner / get_cot_planner     : 主入口，生成分析计划
+- IntentAnalyzer / create_intent_analyzer : 意图分析
+- ReportFormatter                  : 报告格式化
+- AnalysisPlanResult / CotResultStatus : 核心结果类型
+
+内部实现（不保证稳定，请从子模块直接导入）:
+- prompts, models, fewshot_retriever, chart_validator 等
+"""
+
+# === 公共接口 ===
+from .intent_analyzer import IntentAnalyzer, create_intent_analyzer
+from .cot_planner import CotPlanner, CotResultStatus, get_cot_planner
+from .report_formatter import ReportFormatter
 from .models import (
-    # Enums
-    EntityLevel,
-    FilterType,
-    AnalysisType,
-    ChartType,
-    # CoT Reasoning
-    CotStep,
-    CotReasoning,
-    # Quality Check
-    QualityCheck,
-    # Analysis Plan
-    AnalysisTimeRange,
-    AnalysisComparison,
-    AnalysisPlan,
-    # Field Context
-    FieldContext,
-    # Top-Level Result
     AnalysisPlanResult,
-    # Example
-    CotExample,
-    # Re-exports
-    FilterCondition,
-    FilterStep,
+    AnalysisResult,
+    QualityResult,
+    QualityIssue,
+    FieldContext,
+    CotReasoning,
+    AnalysisTimeRange,
     FilterPlan,
     FilterResult,
-    AnalysisChartConfig,
-    AnalysisDataTable,
-    AnalysisResult,
-    QualityCheckType,
-    QualityAction,
-    QualityIssue,
-    QualityResult,
-    EmptyCheckErrorType,
-    EmptyCheckResult,
 )
 
 __all__ = [
-    # Prompts
-    "COT_SYSTEM_PROMPT",
-    "COT_USER_PROMPT_TEMPLATE",
-    "build_cot_user_prompt",
-    "build_field_context_section",
-    "build_advertisers_section",
-    "build_few_shot_section",
-    # Intent Analyzer
-    "IntentAnalyzer",
-    "IntentAnalysisResult",
-    "RuleBasedExtractor",
-    "create_intent_analyzer",
-    # Few-shot Retriever
-    "FewshotRetriever",
-    "RetrievedExample",
-    "get_fewshot_retriever",
-    # CoT Planner
+    # 主入口
     "CotPlanner",
-    "CotPlanResult",
-    "CotResultStatus",
-    "ClarificationRequest",
     "get_cot_planner",
-    # Report Formatter
+    "IntentAnalyzer",
+    "create_intent_analyzer",
     "ReportFormatter",
-    # Enums
-    "EntityLevel",
-    "FilterType",
-    "AnalysisType",
-    "ChartType",
-    # CoT Reasoning
-    "CotStep",
-    "CotReasoning",
-    # Quality Check
-    "QualityCheck",
-    # Analysis Plan
-    "AnalysisTimeRange",
-    "AnalysisComparison",
-    "AnalysisPlan",
-    # Field Context
-    "FieldContext",
-    # Top-Level Result
+    # 核心状态/结果类型
     "AnalysisPlanResult",
-    # Example
-    "CotExample",
-    # Re-exports
-    "FilterCondition",
-    "FilterStep",
+    "CotResultStatus",
+    # 下游节点需要传递的类型
+    "AnalysisResult",
+    "QualityResult",
+    "QualityIssue",
+    "FieldContext",
+    "CotReasoning",
+    "AnalysisTimeRange",
     "FilterPlan",
     "FilterResult",
-    "AnalysisChartConfig",
-    "AnalysisDataTable",
-    "AnalysisResult",
-    "QualityCheckType",
-    "QualityAction",
-    "QualityIssue",
-    "QualityResult",
-    "EmptyCheckErrorType",
-    "EmptyCheckResult",
 ]

@@ -16,6 +16,8 @@ from src.api.sessions import router as sessions_router
 from src.api.streaming import router as streaming_router
 from src.mcp_client.config import load_mcp_config
 from src.mcp_client.client import MCPClientManager
+from src.search import create_search_client
+from src.tools.custom_report_client import init_custom_report_client
 from src.utils.logger import logger
 
 # 初始化日志（在所有模块导入之后、app 创建之前）
@@ -34,6 +36,11 @@ async def lifespan(app: FastAPI):
         mcp_manager = MCPClientManager(mcp_config)
         await mcp_manager.connect_all()
         logger.info("MCP client started successfully")
+
+        # 初始化数据访问层（依赖注入方式）
+        es_client = create_search_client(mcp_manager)
+        init_custom_report_client(es_client)
+        logger.info("Data access layer initialized (DI mode)")
     else:
         logger.info("MCP is disabled, using direct connection")
 
